@@ -19,6 +19,8 @@ import { AiModelCatalogService } from './ai-model-catalog.service';
 import { AiSettingsService } from './ai-settings.service';
 import { AiController } from './ai.controller';
 import { AutomationAskAiService } from './automation-ask-ai.service';
+import { AutomationDraftController } from './automation-draft.controller';
+import { AutomationDraftService } from './automation-draft.service';
 import { AssistantService } from './assistant.service';
 import { McpController } from './mcp.controller';
 import { McpService } from './mcp.service';
@@ -50,13 +52,16 @@ import { SubscriptionTools } from './tools/subscription-tools';
 @Global()
 @Module({
     imports: [AuthModule, ListsModule, FieldsModule, ViewsModule, AutomationsModule, DashboardsModule, TemplatesModule, BillingModule, RecordsModule, AggregateModule, CommentsModule, PublicListsModule, ApprovalsModule, RecordTemplatesModule, SignaturesModule],
-    controllers: [AiController, PlatformAiController, PersonalTokensController, McpController, OauthController, WellKnownController],
+    // v0.1.463 — «Describir con IA» del editor de automatizaciones va antes que el CRUD (`ai-draft` no es un id).
+    controllers: [AutomationDraftController, AiController, PlatformAiController, PersonalTokensController, McpController, OauthController, WellKnownController],
     providers: [
         AiModelCatalogService,
         AiSettingsService,
         AiQuotaService,
         // v0.1.460 — el paso «Preguntarle a la IA» de las automatizaciones (el motor lo pide por ModuleRef).
         AutomationAskAiService,
+        // v0.1.463 — «Describe la automatización y la armo» del editor.
+        AutomationDraftService,
         ProposalsStore,
         ConversationsStore,
         StructureTools,

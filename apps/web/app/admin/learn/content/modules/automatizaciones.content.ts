@@ -140,7 +140,7 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'El editor de automatizaciones ocupa toda la pantalla. Arriba van el **nombre** y la **descripción** (se escriben directamente sobre el título), y una barra con **Flujo / Lienzo**, el interruptor **Activa**, **Probar**, **Historial**, **Versiones**, **Duplicar** y **Guardar**. Debajo, la automatización se lee de arriba abajo: la tarjeta **Cuando** y después cada **Paso**.',
+                md: 'El editor de automatizaciones ocupa toda la pantalla. Arriba van el **nombre** y la **descripción** (se escriben directamente sobre el título), y una barra con **Flujo / Lienzo**, el interruptor **Activa**, **Describir con IA**, **Probar**, **Historial**, **Versiones**, **Duplicar** y **Guardar**. Debajo, la automatización se lee de arriba abajo: la tarjeta **Cuando** y después cada **Paso**.',
             },
             { t: 'demo', key: 'auto-crear', caption: 'Crear una automatización en blanco y abrir el menú de acciones.', fallback: 'auto-lienzo' },
             { t: 'h', text: 'Crear una paso a paso' },
@@ -160,6 +160,31 @@ export const articles: LearnArticle[] = [
                 t: 'callout',
                 tone: 'tip',
                 md: 'Mientras tengas cambios sin guardar, debajo de la barra aparece **Cambios sin guardar** y, si intentas salir, la app te avisa para que no los pierdas.',
+            },
+            { t: 'h', text: 'Contarla en palabras con la IA' },
+            { t: 'anim', key: 'ia-chat', caption: 'Describes lo que quieres que pase y la IA carga el disparador y los pasos en el editor para que los revises.' },
+            {
+                t: 'p',
+                md: 'Si prefieres no armarla a mano, toca **Describir con IA** (en las automatizaciones de la lista o arriba en el editor). Escribe lo que quieres que pase con tus palabras, o toca una de las **ideas** armadas con los campos de tu lista, y toca **Armar**. La IA lee los campos y las opciones de la lista y carga en el editor el disparador y todos los pasos: correos, esperas, **Si / Si no**, **Según el valor de…**, preguntas a la IA, repeticiones y qué hacer si un paso falla.',
+            },
+            {
+                t: 'steps',
+                items: [
+                    'Toca **Describir con IA** y escribe, por ejemplo: «cuando una factura pase a Vencida, mándale un correo al cliente y espera 2 días; si sigue vencida, avísame».',
+                    'Toca **Armar**. En unos segundos el editor se llena y arriba aparece un resumen de lo que armó.',
+                    'Lee **Revisa esto antes de guardar**: ahí dice lo que la IA no pudo saber (un destinatario, un número de WhatsApp). Esos pasos quedan vacíos y la automatización, pausada.',
+                    'Abre cada paso, completa lo que falte, toca **Probar** si quieres verla con un registro real y después **Guardar**.',
+                ],
+            },
+            {
+                t: 'settings',
+                title: 'Lo que tienes que saber',
+                rows: [
+                    { name: 'Nada se guarda solo', what: 'Lo que arma la IA queda en el editor hasta que toques **Guardar**. **Deshacer** vuelve a como estaba antes de pedírselo.' },
+                    { name: 'Pedir un cambio con IA', what: 'En una automatización que ya existe, di qué quieres cambiar («si el correo falla, avísame y sigue»). La IA te devuelve la automatización cambiada y la app te muestra **qué cambió**.' },
+                    { name: 'Tus claves no viajan', what: 'Las claves y secretos de tus pasos (webhooks, conexiones) nunca se le mandan a la IA: se conservan tal cual al guardar.' },
+                    { name: 'Cuenta como un pedido', what: 'Cada vez que tocas **Armar** o **Pedir el cambio** usa un pedido de la IA de tu plan, igual que el asistente.', tip: 'Si tu empresa usa su propia clave, no cuenta para la cuota del plan.' },
+                ],
             },
             { t: 'h', text: 'Cada paso, en su tarjeta' },
             {
@@ -220,6 +245,7 @@ export const articles: LearnArticle[] = [
                     { q: '¿Puedo cambiar el disparador de una automatización que ya existe?', a: 'Sí. Al cambiarlo se reinician sus ajustes (el campo de fecha, los filtros); revísalos antes de guardar. Queda una versión anterior por si quieres volver.' },
                     { q: '¿Cuántos pasos puede tener?', a: 'Los que necesites. Los «Si / Si no» se pueden anidar hasta cuatro niveles; si ves que la automatización crece demasiado, suele ser más claro partirla en dos.' },
                     { q: 'Cambié algo y ahora no anda, ¿cómo vuelvo atrás?', a: 'Toca **Versiones**: cada guardado queda guardado y puedes cargar uno anterior. Ver el artículo de probar e historial.' },
+                    { q: '¿Por qué «Describir con IA» aparece deshabilitado?', a: 'Porque la IA no está disponible para ti: tu empresa no la activó, se acabaron los pedidos del mes de tu plan o tu rol no puede usarla. Al pasar el mouse sobre el botón ves el motivo.' },
                 ],
             },
             {

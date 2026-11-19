@@ -29,6 +29,13 @@
  *       · un agente de IA → primero `update_fields` (la prioridad en «alta»,
  *         si la lista tiene ese campo) o `comment`, y después el resumen. Si la
  *         instrucción dice «falla», responde 400 (el agente falla con motivo).
+ *   - v0.1.463 (`submit_automation`, «Describir con IA» del editor de
+ *     automatizaciones): lee el esquema de la lista que viaja en el mensaje y
+ *     arma una automatización con sus campos reales (cuando cambia el estado
+ *     → según su valor, un correo al correo del registro → espera 2 días).
+ *     Con <automatizacion_actual> («Pedir un cambio») la devuelve igual con
+ *     un paso más al final (esperar 1 día). Si el pedido dice «corrige», la
+ *     primera vuelta usa un campo inventado (para probar el reintento).
  *   - cualquier otra: un texto corto.
  *
  * Uso:  node scripts/dev/fake-anthropic.mjs [puerto=4899]
@@ -152,6 +159,49 @@ function suggestionSubmit(p) {
     };
 }
 
+/** v0.1.463 — «Describir con IA»: una automatización armada con los campos reales de la lista. */
+function automationDraft(p) {
+    const first = p.messages.find((m) => m.role === 'user');
+    const text = typeof first.content === 'string' ? first.content : first.content.map((b) => b.text ?? '').join('\n');
+    const schemaRaw = /<esquema_de_la_lista>\n([\s\S]*?)\n<\/esquema_de_la_lista>/.exec(text)?.[1];
+    const currentRaw = /<automatizacion_actual>\n([\s\S]*?)\n<\/automatizacion_actual>/.exec(text)?.[1];
+    const asked = /<pedido>\n([\s\S]*?)\n<\/pedido>/.exec(text)?.[1] ?? '';
+    const schema = schemaRaw ? JSON.parse(schemaRaw) : { fields: [] };
+    const retrying = p.messages.some((m) => Array.isArray(m.content) && m.content.some((b) => b.type === 'tool_result'));
+    if (currentRaw) {
+        const cur = JSON.parse(currentRaw);
+        return {
+            name: cur.name,
+            description: cur.description ?? undefined,
+            trigger_type: cur.trigger_type,
+            trigger_config: cur.trigger_config,
+            actions: [...cur.actions, { type: 'wait', config: { mode: 'duration', amount: 1, unit: 'days' } }],
+            is_active: cur.is_active,
+        };
+    }
+    const fields = schema.fields ?? [];
+    const select = fields.find((f) => f.type === 'select');
+    const email = fields.find((f) => f.type === 'email');
+    const phone = fields.find((f) => f.type === 'phone');
+    const title = fields.find((f) => f.is_title) ?? fields.find((f) => f.type === 'text');
+    const option = select?.options?.find((o) => /venc|pend/i.test(`${o.value} ${o.label}`)) ?? select?.options?.[0];
+    const warnings = [];
+    if (/whatsapp/i.test(asked) && !phone) warnings.push('No encontré un campo de teléfono: completa el destinatario del WhatsApp.');
+    if (!email) warnings.push('No encontré un campo de correo: completa el destinatario del correo.');
+    const mail = { type: 'send_email', config: { to: email ? `{{${email.slug}}}` : '', subject: `Aviso: {{${title?.slug ?? 'record.id'}}}`, body: 'Hola, tu registro cambió de estado. Revísalo cuando puedas.' } };
+    const watched = /corrige/i.test(asked) && !retrying ? 'campo_inventado' : select?.slug;
+    return {
+        name: select ? `Avisar cuando «${select.label}» cambie` : 'Avisar al crear un registro',
+        trigger_type: select ? 'record_updated' : 'record_created',
+        trigger_config: select ? { changed_fields: [watched] } : {},
+        actions: [
+            select && option ? { type: 'switch', config: { field: select.slug, cases: [{ label: option.label, value: option.value, actions: [mail] }] } } : mail,
+            { type: 'wait', config: { mode: 'duration', amount: 2, unit: 'days' } },
+        ],
+        warnings,
+    };
+}
+
 function sse(res, events, gapMs = 0) {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
     if (!gapMs) {
@@ -271,7 +321,8 @@ createServer((req, res) => {
             const msg = { id: 'msg_fake', type: 'message', role: 'assistant', model: p.model, content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 900, output_tokens: 1 } };
             const events = [['message_start', { type: 'message_start', message: msg }]];
             const sugg = (p.tools ?? []).find((t) => t.name === 'submit_suggestions');
-            const chat = !sugg && !tool && (p.tools ?? []).some((t) => t.name === 'list_lists');
+            const draftTool = (p.tools ?? []).find((t) => t.name === 'submit_automation');
+            const chat = !sugg && !tool && !draftTool && (p.tools ?? []).some((t) => t.name === 'list_lists');
             const asked = lastUserText(p);
             const sys = systemText(p);
             const firstUser = (() => {
@@ -280,7 +331,7 @@ createServer((req, res) => {
                 return typeof u.content === 'string' ? u.content : u.content.map((b) => b.text ?? '').join('');
             })();
             const isAgent = !chat && /un agente de IA que trabaja dentro de/.test(sys);
-            const daily = !chat && !sugg && !tool && !isAgent ? dailyAnswer(sys, firstUser) : null;
+            const daily = !chat && !sugg && !tool && !isAgent && !draftTool ? dailyAnswer(sys, firstUser) : null;
             if (isAgent && /falla/i.test(firstUser)) {
                 res.writeHead(400, { 'content-type': 'application/json' });
                 res.end(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: 'Simulación: el modelo rechazó el pedido.' } }));
@@ -293,7 +344,7 @@ createServer((req, res) => {
                 res.end(JSON.stringify({ type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }));
                 return;
             }
-            if (chat) {
+            if (chat && !draftTool) {
                 const last = p.messages[p.messages.length - 1];
                 const firstTurn = typeof last.content === 'string' || !last.content.some((b) => b.type === 'tool_result');
                 if (/lento/i.test(asked)) gap = 700;
@@ -324,6 +375,12 @@ createServer((req, res) => {
                     events.push(['content_block_stop', { type: 'content_block_stop', index: 0 }]);
                     events.push(['message_delta', { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 220 } }]);
                 }
+            } else if (draftTool) {
+                const input = JSON.stringify(automationDraft(p));
+                events.push(['content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: `toolu_draft_${Date.now()}`, name: 'submit_automation', input: {} } }]);
+                events.push(['content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: input } }]);
+                events.push(['content_block_stop', { type: 'content_block_stop', index: 0 }]);
+                events.push(['message_delta', { type: 'message_delta', delta: { stop_reason: 'tool_use', stop_sequence: null }, usage: { output_tokens: 400 } }]);
             } else if (sugg) {
                 const last = p.messages[p.messages.length - 1];
                 const firstTurn = typeof last.content === 'string';

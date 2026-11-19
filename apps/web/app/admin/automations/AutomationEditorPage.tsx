@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import {
     AlertCircle,
@@ -15,6 +15,7 @@ import {
     Loader2,
     Play,
     Plus,
+    Sparkles,
     Trash2,
     Workflow,
 } from 'lucide-react';
@@ -37,7 +38,14 @@ import { useFields } from '@/hooks/useFields';
 import { useList, useLists } from '@/hooks/useLists';
 import { api, ApiError } from '@/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
-import { automationConfigIssues, type AutomationConfigIssue, type AutomationVersion } from '@imagina-base/shared';
+import {
+    automationConfigIssues,
+    type AutomationAiDraftResult,
+    type AutomationConfigIssue,
+    type AutomationVersion,
+} from '@imagina-base/shared';
+import { useAutomationAiDraftStatus } from '@/hooks/useAutomationAiDraft';
+import { lazyDialog } from '@/lib/lazyDialog';
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { automationsKeys } from '@/hooks/useAutomations';
 import { __, _n, sprintf } from '@/lib/i18n';
@@ -55,12 +63,15 @@ import type { FieldEntity } from '@/types/field';
 import type { ListSummary } from '@/types/list';
 
 import { ActionTypeMenu } from './ActionTypeMenu';
+import { AutomationAiDraftNote } from './AutomationAiDraftNote';
+import { draftToFormState, formStateAsVersion, formStateToCurrent, hasAutomationContent } from './aiDraft';
 import { AutomationRunsDrawer } from './AutomationRunsDrawer';
 import {
     actionConditionCount,
     onErrorBadge,
     onErrorTitle,
     actionMetaFor,
+    describeVersionChanges,
     summarizeAction,
     summarizeTrigger,
     triggerConditionCount,
@@ -88,6 +99,11 @@ import { TriggerOptions } from './TriggerOptions';
 // de automatizaciones simples se editan en el flujo vertical.
 const AutomationCanvas = lazy(() =>
     import('./AutomationCanvas').then((m) => ({ default: m.AutomationCanvas })),
+);
+
+// v0.1.463 — «Describir con IA»: el diálogo se baja la primera vez que se abre.
+const AutomationAiDraftDialog = lazyDialog(() =>
+    import('./AutomationAiDraftDialog').then((m) => ({ default: m.AutomationAiDraftDialog })),
 );
 
 type EditorMode = 'flow' | 'canvas';
@@ -271,6 +287,20 @@ function EditorBody({
     const [testOpen, setTestOpen] = useState(false);
     const [versionsOpen, setVersionsOpen] = useState(false);
     const [restored, setRestored] = useState<{ id: number; at: string; secrets: boolean } | null>(null);
+    // v0.1.463 — «Describir con IA» / «Pedir un cambio con IA». `?ai=1` (el
+    // botón del índice) lo abre al entrar en una automatización nueva.
+    const [searchParams, setSearchParams] = useSearchParams();
+    const aiStatus = useAutomationAiDraftStatus(list.id);
+    const [aiOpen, setAiOpen] = useState(() => !editing && searchParams.get('ai') === '1');
+    const [aiNote, setAiNote] = useState<{ result: AutomationAiDraftResult; before: AutomationFormState; changes: string[] } | null>(null);
+    useEffect(() => {
+        if (searchParams.get('ai') === null) return;
+        const next = new URLSearchParams(searchParams);
+        next.delete('ai');
+        setSearchParams(next, { replace: true });
+        // Sólo al entrar: después la URL ya no lo trae.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
     const duplicate = useDuplicateAutomation(list.id);
     const relationPaths = useRelationPaths(list.id);
     // Respuestas reales (de «Probar» o del probador de un webhook) por ruta
@@ -513,6 +543,37 @@ function EditorBody({
         [state.actions, state.triggerType, samples],
     );
 
+    // v0.1.463 — lo que devolvió la IA entra al editor SIN guardar; «Deshacer»
+    // vuelve a lo que había antes de pedirlo.
+    const aiChangeMode = editing !== null || hasAutomationContent(state, EMPTY_AUTOMATION_STATE.triggerType);
+    const aiUnavailable = aiStatus.data && !aiStatus.data.available ? aiStatus.data.reason ?? __('La IA no está disponible.') : null;
+    const stateRef = useRef(state);
+    stateRef.current = state;
+    const applyAiDraft = useCallback(
+        (result: AutomationAiDraftResult): void => {
+            const before = stateRef.current;
+            const next = draftToFormState(result.automation);
+            const changes =
+                result.mode === 'change'
+                    ? describeVersionChanges(formStateAsVersion(before), formStateAsVersion(next), fields, lists, actionsCatalog)
+                    : [];
+            setState(next);
+            setAiNote({ result, before, changes });
+            setExpanded(new Set());
+            setShowIssues(false);
+            setError(null);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        },
+        [fields, lists, actionsCatalog],
+    );
+    const undoAiDraft = (): void => {
+        if (!aiNote) return;
+        setState(aiNote.before);
+        setAiNote(null);
+        setExpanded(new Set(editing ? [] : ['trigger']));
+        toast.success(__('Listo: volvió a como estaba antes de pedírselo a la IA.'));
+    };
+
     const restoreVersion = (v: AutomationVersion): void => {
         setState((s) => ({
             ...s,
@@ -612,6 +673,23 @@ function EditorBody({
                                     {__('Ejecutar ahora')}
                                 </Button>
                             )}
+                            <span title={aiUnavailable ?? undefined} className="imcrm-inline-flex">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="imcrm-gap-1.5 imcrm-border-primary/40 imcrm-text-primary hover:imcrm-bg-primary/5"
+                                    onClick={() => setAiOpen(true)}
+                                    disabled={aiUnavailable !== null}
+                                    aria-label={aiChangeMode ? __('Pedir un cambio con IA') : __('Describir con IA')}
+                                    data-testid="imcrm-automation-ai"
+                                    data-tour="automation-ai-describe"
+                                >
+                                    <Sparkles className="imcrm-h-3.5 imcrm-w-3.5" />
+                                    <span className="imcrm-hidden sm:imcrm-inline">
+                                        {aiChangeMode ? __('Pedir un cambio con IA') : __('Describir con IA')}
+                                    </span>
+                                </Button>
+                            </span>
                             <Button
                                 variant="outline"
                                 size="sm"
@@ -678,6 +756,31 @@ function EditorBody({
                         <p className="imcrm-text-[11px] imcrm-font-medium imcrm-text-warning">
                             {__('Cambios sin guardar')}
                         </p>
+                    )}
+                    {aiNote && (
+                        <AutomationAiDraftNote
+                            result={aiNote.result}
+                            changes={aiNote.changes}
+                            onUndo={undoAiDraft}
+                            onAskChange={aiUnavailable === null ? () => setAiOpen(true) : null}
+                            onClose={() => setAiNote(null)}
+                        />
+                    )}
+                    {!aiNote && !aiChangeMode && aiUnavailable === null && (
+                        <button
+                            type="button"
+                            onClick={() => setAiOpen(true)}
+                            className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-dashed imcrm-border-primary/40 imcrm-bg-primary/5 imcrm-px-3 imcrm-py-2.5 imcrm-text-left imcrm-text-[13px] hover:imcrm-bg-primary/10"
+                            data-testid="imcrm-automation-ai-hint"
+                        >
+                            <Sparkles className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-primary" />
+                            <span className="imcrm-min-w-0 imcrm-flex-1">
+                                <span className="imcrm-font-medium">{__('¿Prefieres contarlo en palabras?')}</span>{' '}
+                                <span className="imcrm-text-muted-foreground">
+                                    {__('Describe lo que quieres que pase y la IA arma el disparador y los pasos. La revisas antes de guardar.')}
+                                </span>
+                            </span>
+                        </button>
                     )}
                     {restored && (
                         <p className="imcrm-rounded-md imcrm-border imcrm-border-info/30 imcrm-bg-info/5 imcrm-px-3 imcrm-py-2 imcrm-text-[12px]" data-testid="imcrm-restored-note">
@@ -946,6 +1049,20 @@ function EditorBody({
                 fields={fields}
                 actionsCatalog={actionsCatalog}
                 onResponses={(responses) => setSamples((prev) => ({ ...prev, ...responses }))}
+            />
+            <AutomationAiDraftDialog
+                open={aiOpen}
+                onOpenChange={setAiOpen}
+                listId={list.id}
+                listName={list.name}
+                fields={fields}
+                current={
+                    aiChangeMode
+                        ? formStateToCurrent({ ...state, triggerConfig: cleanTriggerConfig(state.triggerConfig) }, editing?.id)
+                        : null
+                }
+                status={aiStatus.data}
+                onResult={applyAiDraft}
             />
         </AutomationFlowContext.Provider>
         </AutomationEditorAutomationContext.Provider>

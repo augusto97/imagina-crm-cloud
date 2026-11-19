@@ -3838,4 +3838,38 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a Tableros', href: '/dashboards' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.463-describir-automatizacion-ia',
+        version: '0.1.463',
+        date: '2026-11-19',
+        kind: 'feature',
+        title: 'Cuenta la automatización en palabras y la IA la arma',
+        summary:
+            '«Describir con IA» arma el disparador y los pasos con los campos de tu lista. La revisas en el editor y nada se guarda hasta que tú lo decides.',
+        media: {
+            slides: [
+                {
+                    title: 'Dilo como se lo dirías a alguien',
+                    text: 'En las automatizaciones de la lista toca «Describir con IA» y escribe lo que quieres que pase, o toca una de las ideas armadas con tus campos.',
+                    illustration: 'ia-chat',
+                },
+                {
+                    title: 'Se carga en el editor',
+                    text: 'Disparador, correos, esperas, ramas y qué hacer si un paso falla. Arriba ves un resumen y lo que te falta completar; «Deshacer» vuelve a como estaba.',
+                    illustration: 'auto-flujo',
+                },
+                {
+                    title: 'Pide un cambio',
+                    text: 'En una automatización que ya existe, «Pedir un cambio con IA» la ajusta y te muestra qué cambió. Tus claves y secretos nunca se le mandan.',
+                    illustration: 'auto-lienzo',
+                },
+            ],
+        },
+        body: [
+            '- Si a la IA le falta un dato (un destinatario, un número), lo deja vacío, te lo avisa y deja la automatización **pausada** hasta que lo completes.',
+            '- Cada vez que tocas **Armar** o **Pedir el cambio** usa un pedido de la IA de tu plan.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists', tour: 'automation-basics' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

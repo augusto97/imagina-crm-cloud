@@ -17173,6 +17173,93 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         probabilidades 25/50/75/100/0 y vista previa 6.800.000 con Propuesta
         al 60 %, click en noviembre → sólo sus 3 negocios, sin errores de JS).
 
+  - [x] **«Describe la automatización y la armo» dentro del editor (v0.1.463,
+        addendum ADR-S21 y ADR-S47, idea E7 del banco)**: la IA arma una
+        automatización desde lo que la persona cuenta en sus palabras, o cambia
+        la que está abierta, y el resultado se CARGA EN EL EDITOR: nada se
+        guarda hasta «Guardar». Sin migración.
+        (a) **Dónde**: botón **«Describir con IA»** en el índice de
+        automatizaciones de cada lista (también en el estado vacío;
+        `data-tour="automations-ai-draft"`, lleva a `…/automations/new?ai=1`,
+        que abre el diálogo solo y limpia la dirección) y en la barra del editor
+        (`data-tour="automation-ai-describe"`): en una automatización nueva
+        «Describir con IA», y **«Pedir un cambio con IA»** cuando ya existe o el
+        editor ya tiene pasos o un disparador elegido (p. ej. «Automatizar»
+        desde un botón: así no se pierde lo que trajo la persona). En una nueva
+        y vacía, además, una tarjeta «¿Prefieres contarlo en palabras?». Sin IA
+        disponible el botón queda deshabilitado y el motivo sale al pasar el
+        mouse (`GET /lists/:l/automations/ai-draft/status`, no gasta nada).
+        (b) **El diálogo** (`AutomationAiDraftDialog`, a pedido con `lazyDialog`:
+        chunk propio de 4,9 KB gz, la app sigue en 810/820 KB): texto libre
+        (hasta 2.000 caracteres, Ctrl/⌘+Enter), 3-4 **ideas armadas con los
+        campos REALES de la lista** (`aiDraftExamples`: la selección con la
+        opción que pide atención —vencida, pendiente…—, el correo, la fecha con
+        la persona, el teléfono, el texto largo) y «Armar» / «Pedir el cambio»,
+        con el paso en que va («Armando…», «Revisando que funcione con tu
+        lista…», «Corrigiendo un detalle…») y el motivo si falla.
+        (c) **Arriba del editor** (`AutomationAiDraftNote`,
+        `data-tour="automation-ai-result"`): el resumen en palabras («Cuando
+        cambia «Estado» → Según «Estado»: 1 rama → Espera 2 días»), **qué
+        cambió** al pedir un cambio (el MISMO `describeVersionChanges` del
+        historial de versiones), **«Revisa esto antes de guardar»** con lo que
+        la IA no pudo saber, «Pedir otro cambio» y **«Deshacer»** (vuelve al
+        estado de antes de pedirlo).
+        (d) **Servidor** (`AutomationDraftService` + `AutomationDraftController`,
+        `POST /lists/:l/automations/ai-draft` → 202 `{id}` y
+        `GET …/ai-draft/:id`): la IA trabaja en segundo plano y el navegador
+        pregunta cada 1,5 s (un proxy corta una respuesta larga); el pedido vive
+        en Redis 1 h, es de esa persona y esa lista, y dos clics reusan el que
+        está corriendo. Exige `manage_automations` (guard) y `use_ai_assistant`
+        (`can()`), el módulo `automations` del plan (`@PlanModule`) y el de `ai`
+        (la resolución de la clave), y ver la lista ENTERA
+        (`assertWholeList`). UN pedido de la cuota con la MISMA resolución de
+        clave, modelo, esfuerzo y consentimiento del asistente
+        (`AiSettingsService.resolve` + `AiQuotaService.reserve/settle`: se
+        devuelve si el proveedor no contesta). Bitácora `automation.ai_draft`
+        con modo, largo y automatización — nunca el texto.
+        (e) **El modelo no escribe**: su ÚNICA herramienta es
+        `submit_automation`, con el MISMO esquema de `propose_create_automation`
+        (+ `warnings`), y lo que entrega pasa por el MISMO constructor
+        (`StructureTools.buildAutomationDraft`, extraído de
+        `propose_create_automation`, que ahora lo usa): slugs → ids, ramas,
+        esperas, IA, «Si falla», conectores, correos diseñados, firmas,
+        aprobaciones. Si no valida, UN reintento con los errores como
+        `tool_result`; si vuelve a fallar, `invalid_automation` con el motivo.
+        Lo que falta (un destinatario, un número, un dato obligatorio de un
+        conector: `validateActionTypes({ missing })`) no rompe: queda vacío,
+        se avisa y la automatización llega **pausada** para que «Guardar»
+        funcione. Lo que escribe la persona viaja como su pedido; el esquema de
+        la lista (`get_list_schema` recortado: campos con sus ids, opciones,
+        otras listas) y la automatización actual viajan como DATOS etiquetados.
+        **Los secretos de la automatización actual nunca van al modelo**
+        (`redactAutomationSecrets`) y se reponen al volver
+        (`restoreRedactedSecrets`); un marcador que no se puede reponer se quita
+        y se avisa.
+        (f) De paso, el resumen del asistente/MCP nombra el campo de «Según el
+        valor de…» (antes «Según un campo»). Simulador de desarrollo
+        `scripts/dev/fake-anthropic.mjs` con `submit_automation` (arma con la
+        primera selección y el correo, «corrige» fuerza un reintento, pedir un
+        cambio agrega una espera).
+        Ayuda: guía `automation-ai-draft`, sección «Contarla en palabras con la
+        IA» en Aprende → Automatizaciones → El editor (ilustración `ia-chat`),
+        paso nuevo `ai` en el recorrido `automation-basics` y novedad con
+        carrusel (ilustraciones `ia-chat`, `auto-flujo`, `auto-lienzo`). Tests:
+        `automation-ai-draft.spec` (8, Postgres + Redis reales con un modelo
+        falso: arma una nueva con la rama por id y gasta 1 pedido sin guardar
+        nada; reintento con los errores y doble falla; sin IA / empresa sin
+        activar / rol sin IA / agente sin la lista entera sin gastar cuota;
+        proveedor caído devuelve el pedido; pedir un cambio sin mandar secretos y
+        reponiéndolos; dato faltante → aviso y pausada; el pedido es de esa
+        persona y lista; piezas puras), `automation-ai-draft.test` en shared (2)
+        y `aiDraft.test` en el front (7) — shared 1134, front 1007, specs del
+        área 227/227 — + E2E navegador 33/33 contra la IA simulada (escritorio
+        claro: índice → diálogo con ideas → armar → resumen sin guardar → un
+        pedido de la cuota → bitácora sin el texto → deshacer → armar y guardar
+        → la automatización corre al pasar un registro a «Vencida» y toma la
+        rama; pedir un cambio → «Agregó un paso» → deshacer; sin IA, botón
+        deshabilitado con el motivo y 503 del servidor; celular 390×844 oscuro
+        sin scroll lateral).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -4257,6 +4257,34 @@ falla».** Cierra E2 y la parte de E3 que no son subflujos:
    vencimiento («por fecha») y la retención, `with_errors` cuenta como una
    corrida que salió (`status <> 'failed'`).
 
+**Addendum v0.1.463 — «Describe la automatización y la armo» (E7).** El editor
+de automatizaciones suma un camino en lenguaje natural sobre las mismas piezas
+del asistente (ADR-S21):
+
+- **El modelo no escribe.** Tiene UNA herramienta, `submit_automation`, con el
+  esquema de `propose_create_automation` más `warnings`. Lo que entrega pasa por
+  el MISMO constructor (`StructureTools.buildAutomationDraft`), que traduce slugs
+  a ids y valida igual que una propuesta del asistente; si no valida, un único
+  reintento con los errores como `tool_result`. El resultado NO se guarda: vuelve
+  al editor, donde la persona lo revisa y toca «Guardar» (el `POST`/`PATCH` de
+  siempre, con su validación y sus versiones).
+- **Borradores tolerantes.** Lo que la IA no puede saber (destinatario, número,
+  dato obligatorio de un conector) queda vacío y se avisa en vez de rechazar el
+  borrador; si al borrador le falta algo para correr, llega pausado, así
+  «Guardar» nunca rebota por `assertRunnable`.
+- **Datos vs. pedido.** El texto de la persona es su pedido; el esquema de la
+  lista y la automatización actual viajan como datos etiquetados. Los secretos
+  de la automatización actual se tapan antes de mandarla y se reponen al volver
+  (los que no se pueden reponer se quitan y se avisa).
+- **Segundo plano + consulta.** `POST /lists/:l/automations/ai-draft` devuelve un
+  id (202) y el navegador consulta `GET …/ai-draft/:id`: la IA puede tardar más
+  que el tope de un proxy. El pedido vive 1 h en Redis, es de la persona y la
+  lista, y uno en curso se reusa. UN pedido de la cuota por borrador (con la
+  clave, el modelo, el esfuerzo y el consentimiento de ADR-S21), devuelto si el
+  proveedor falla. Permisos: `manage_automations` + `use_ai_assistant`, módulos
+  `automations` y `ai` del plan, y ver la lista entera. Bitácora
+  `automation.ai_draft` sin el texto.
+
 
 ### ADR-S48 — Portal con contraseña por empresa, pagos del cliente y formularios verificados (v0.1.289)
 

@@ -32,7 +32,7 @@ export const meta: LearnModuleMeta = {
             summary: 'Crea una automatización en blanco, agrega pasos con «+», reordénalos, cámbiale el tipo y míralos como lista o como diagrama.',
             minutes: 7,
             level: 'basic',
-            keywords: 'crear automatizacion en blanco flujo lienzo diagrama canvas pasos agregar accion guardar pausada',
+            keywords: 'crear automatizacion en blanco flujo lienzo diagrama canvas pasos agregar accion guardar pausada ia describir con ia palabras pedir un cambio',
             needs: 'manage_automations',
         },
         {

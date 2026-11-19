@@ -430,7 +430,13 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.462**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.463**
+(**«Describe la automatización y la armo»** — «Describir con IA» en el índice
+y en la barra del editor de automatizaciones, y «Pedir un cambio con IA» en una
+que ya existe: la IA arma o cambia la automatización con los campos de la lista
+y el resultado se carga en el editor SIN guardar, con resumen, «qué cambió»,
+avisos de lo que falta y «Deshacer»; un pedido de la cuota de IA; sin
+migración; addendum ADR-S47). Antes **v0.1.462**
 (**comparar períodos en los tableros + pronóstico de ventas** — «Comparar
 con…» en cada widget (período anterior, año pasado o un rango; «hasta el mismo
 día») y «Comparar» del tablero, calculado en el servidor en el mismo bundle;
@@ -2351,6 +2357,28 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-19 · v0.1.463** — **«Describe la automatización y la armo» en el
+  editor** (E7; addendum ADR-S21 y ADR-S47). Sin migración. «Describir con IA»
+  en el índice de automatizaciones (`?ai=1` abre el diálogo en el editor nuevo)
+  y en la barra del editor; «Pedir un cambio con IA» si la automatización ya
+  existe o el editor tiene pasos o un disparador elegido. El resultado se carga
+  en el editor SIN guardar, con resumen, «qué cambió» (`describeVersionChanges`),
+  avisos y «Deshacer». Servidor: `AutomationDraftService` en segundo plano
+  (Redis 1 h, el navegador pregunta cada 1,5 s), UN pedido de la cuota con la
+  resolución de siempre, herramienta única `submit_automation` validada por el
+  MISMO constructor de `propose_create_automation` (`buildAutomationDraft`,
+  extraído), un reintento con los errores, lo que falta se avisa y la deja
+  pausada, secretos tapados al ir y repuestos al volver, bitácora
+  `automation.ai_draft` sin el texto. Diálogo a pedido (chunk de 4,9 KB gz; la
+  app sigue en 810/820). De paso, el resumen del asistente nombra el campo de
+  «Según el valor de…». **Pendiente / dudas**: el estado «la IA está
+  disponible» se cachea 30 s en el navegador (si la apagan en otra pestaña, el
+  botón sigue activo hasta entonces y el servidor responde 503 con el motivo,
+  que el diálogo muestra); el disparador heredado `field_changed` no está en el
+  enum de `submit_automation` (el de `propose_create_automation` tampoco); el
+  resumen puede mostrar `[oculto]` en la etiqueta de un webhook cuya URL lleva
+  un secreto (la automatización devuelta no lo lleva); el simulador
+  `fake-anthropic.mjs` sólo cubre selección + correo + espera.
 - **2026-11-19 · v0.1.462** — **Comparar períodos en los tableros + pronóstico
   de ventas** (J2 + J3; ADR-S113; sin migración). «Comparar con…» en cada
   widget (período anterior, año pasado o un rango; «hasta el mismo día»;

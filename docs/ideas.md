@@ -83,8 +83,9 @@ aquí, pospuestos:
 **Oleada 7 · el usuario eligió el 2026-10-26 sólo «Empezar fácil»**, ampliado
 con guías y recorridos interactivos, centro de ayuda y novedades (F7 + I7 +
 I9 se publicaron en v0.1.318-v0.1.320 y salieron de este banco). Siguen aquí, sin
-elegir: lo que queda de E3 (los subflujos), E7 y G4 (la «IA en el día a día» —F1, F2 y pedir
-al agente desde la ficha o en lote— salió en v0.1.456)
+elegir: lo que queda de E3 (los subflujos) y G4 (la «IA en el día a día» —F1, F2 y pedir
+al agente desde la ficha o en lote— salió en v0.1.456; E7, «Describe la automatización y la
+armo», salió en v0.1.463)
 (calendario en dos sentidos).
 
 ---
@@ -131,7 +132,6 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 |---|---|---|
 | E3 · Subflujos (una automatización que llama a otra, con sus datos) | medio · M | **Lo demás de E3 salió en v0.1.460**: «Según el valor de…» (varias ramas) y «Si este paso falla» (detener, seguir, reintentar hasta 3 veces u otros pasos). E2 salió completa: «Preguntarle a la IA» también en v0.1.460. |
 | E4 · Scripts en JavaScript aislado | medio-bajo · L | Necesita un sandbox serio. |
-| E7 · «Describe la automatización y la armo» dentro del editor | medio · S | El asistente ya sabe crearlas. |
 
 ### F. Inteligencia artificial
 | Idea | Valor · esfuerzo | Nota |
