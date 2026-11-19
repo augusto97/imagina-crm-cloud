@@ -683,7 +683,7 @@ export const TOURS: TourDef[] = [
                 target: 'automations-new',
                 art: 'automation-whatsapp',
                 title: 'Automatizaciones de la lista',
-                body: 'Cada lista tiene las suyas. Empieza **Desde plantilla** (recetas listas para usar) o **En blanco**.',
+                body: 'Cada lista tiene las suyas. Empieza **Desde plantilla** (recetas listas para usar), cuéntala en palabras con **Describir con IA** o arma una **En blanco**.',
             },
             {
                 id: 'folders',
@@ -708,6 +708,15 @@ export const TOURS: TourDef[] = [
                 art: 'auto-disparadores',
                 title: 'Cuándo',
                 body: 'El disparador: cuando se crea un registro, cuando cambia un campo, cuando llega una fecha, de forma programada, cuando entra un formulario…',
+            },
+            {
+                id: 'ai',
+                target: 'automation-ai-describe',
+                placement: 'bottom',
+                art: 'ia-chat',
+                title: 'O cuéntalo en palabras',
+                body: '**Describir con IA** arma el disparador y los pasos a partir de lo que escribas, con los campos de esta lista. Los revisas en el editor y nada se guarda hasta que toques **Guardar**.',
+                when: (ctx) => ctx.can('use_ai_assistant'),
             },
             {
                 id: 'action',

@@ -19,6 +19,7 @@ import {
     Play,
     Plus,
     Search,
+    Sparkles,
     Trash2,
     X,
     Zap,
@@ -52,6 +53,7 @@ import {
 import { useTrashedToast } from '@/hooks/useTrash';
 import { useRelationPaths } from '@/hooks/useRelationPaths';
 import { useFields } from '@/hooks/useFields';
+import { useAutomationAiDraftStatus } from '@/hooks/useAutomationAiDraft';
 import { useList, useLists } from '@/hooks/useLists';
 import { ApiError } from '@/lib/api';
 import { __, sprintf } from '@/lib/i18n';
@@ -168,6 +170,8 @@ export function AutomationsPage(): JSX.Element {
     const automations = useAutomations(listId);
     const foldersQ = useAutomationFolders(listId);
     const fields = useFields(listId);
+    // v0.1.463 — «Describir con IA»: si la IA no está disponible, el botón dice por qué.
+    const aiStatus = useAutomationAiDraftStatus(listId);
     const lists = useLists();
     const relationPaths = useRelationPaths(listId);
 
@@ -493,6 +497,24 @@ export function AutomationsPage(): JSX.Element {
     }
 
     const newHref = `/lists/${list.data.slug}/automations/new`;
+    const aiUnavailable = aiStatus.data && !aiStatus.data.available ? aiStatus.data.reason ?? __('La IA no está disponible.') : null;
+    const aiButton = (anchor: boolean): JSX.Element => (
+        <span title={aiUnavailable ?? undefined} className="imcrm-inline-flex">
+            {aiUnavailable === null ? (
+                <Button asChild variant="outline" className="imcrm-gap-2" data-testid={anchor ? 'automations-ai-draft' : undefined} data-tour={anchor ? 'automations-ai-draft' : undefined}>
+                    <Link to={`${newHref}?ai=1`}>
+                        <Sparkles className="imcrm-h-4 imcrm-w-4 imcrm-text-primary" />
+                        {__('Describir con IA')}
+                    </Link>
+                </Button>
+            ) : (
+                <Button variant="outline" className="imcrm-gap-2" disabled data-testid={anchor ? 'automations-ai-draft' : undefined} data-tour={anchor ? 'automations-ai-draft' : undefined}>
+                    <Sparkles className="imcrm-h-4 imcrm-w-4" />
+                    {__('Describir con IA')}
+                </Button>
+            )}
+        </span>
+    );
     const hasAny = all.length > 0;
     const selecting = selected.size > 0;
 
@@ -527,6 +549,7 @@ export function AutomationsPage(): JSX.Element {
                         <LayoutTemplate className="imcrm-h-4 imcrm-w-4" />
                         {__('Desde plantilla')}
                     </Button>
+                    {aiButton(true)}
                     <Button asChild variant="outline" className="imcrm-gap-2">
                         <Link to={newHref}>
                             <Plus className="imcrm-h-4 imcrm-w-4" />
@@ -564,6 +587,7 @@ export function AutomationsPage(): JSX.Element {
                                 <LayoutTemplate className="imcrm-h-4 imcrm-w-4" />
                                 {__('Elegir una plantilla')}
                             </Button>
+                            {aiButton(false)}
                             <Button asChild variant="outline" className="imcrm-gap-2">
                                 <Link to={newHref}>
                                     <Plus className="imcrm-h-4 imcrm-w-4" />

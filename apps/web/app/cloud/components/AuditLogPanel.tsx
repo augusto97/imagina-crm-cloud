@@ -63,6 +63,7 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'booking.delete': { text: 'eliminó la agenda de citas', danger: true },
     'widget.create': { text: 'creó el widget de contacto' },
     'automation.webhook_secret': { text: 'cambió el secreto del webhook de la automatización' },
+    'automation.ai_draft': { text: 'le pidió a la IA que armara o cambiara una automatización de la lista' },
     'widget.publish': { text: 'publicó el widget de contacto' },
     'widget.unpublish': { text: 'dejó de publicar el widget de contacto' },
     'widget.regenerate_link': { text: 'cambió el código del widget de contacto' },

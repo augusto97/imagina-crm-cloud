@@ -261,6 +261,8 @@ export type AuditAction =
     // consentimiento en línea), lo que se creó con la bienvenida y el borrado
     // de los datos de ejemplo.
     | 'onboarding.ai_request'
+    // v0.1.463 — «Describir con IA» / «Pedir un cambio con IA» del editor de automatizaciones (nunca el texto).
+    | 'automation.ai_draft'
     | 'onboarding.apply'
     | 'onboarding.samples_delete'
     // v0.1.339 (ADR-S88) — «Crear desde un archivo»: el análisis con IA (con

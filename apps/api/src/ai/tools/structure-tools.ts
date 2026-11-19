@@ -639,7 +639,8 @@ const widgetSpecInput = z.object({
 });
 type WidgetSpecInput = z.infer<typeof widgetSpecInput>;
 
-const automationSpec = z.object({
+/** v0.1.463 — exportado: «Describir con IA» del editor entrega su automatización con ESTE mismo vocabulario. */
+export const automationSpec = z.object({
     list: z.string().max(63).describe('Slug de la lista'),
     name: z.string().min(1).max(190),
     description: z.string().max(2000).optional(),
@@ -706,7 +707,7 @@ const automationSpec = z.object({
         ),
     is_active: z.boolean().optional().describe('Default true'),
 });
-type AutomationSpec = z.infer<typeof automationSpec>;
+export type AutomationSpec = z.infer<typeof automationSpec>;
 
 // ── Payloads (lo que se guarda y después se aplica) ─────────────────────
 
@@ -2500,6 +2501,42 @@ export class StructureTools implements AiProposalApplier {
     }
 
     private async proposeCreateAutomation(ctx: AiToolContext, input: AutomationSpec): Promise<AiToolResult> {
+        const built = await this.buildAutomationDraft(ctx, input);
+        const { list, automation } = built;
+        return this.saveProposal(ctx, {
+            kind: 'create_automation',
+            title: `Crear la automatización «${input.name}» en «${list.name}»`,
+            summary: built.summary,
+            destructive: false,
+            listSlug: list.slug,
+            preview: {
+                lists: [],
+                fields: [],
+                widgets: [],
+                automation: { name: input.name, trigger: built.trigger, actions: built.actions },
+                changes: [],
+                blocks: firstEmailDesignBlocks(automation.actions as unknown[]),
+            },
+            payload: { kind: 'create_automation', listId: list.id, listSlug: list.slug, input: automation },
+        });
+    }
+
+    /**
+     * v0.1.463 — De una automatización en el vocabulario del modelo (slugs,
+     * nombres de listas, flujos y plantillas) a la que guarda el editor (por
+     * ids), validada. Es el ÚNICO constructor: lo usan `propose_create_automation`
+     * (asistente y MCP) y «Describir con IA» del editor de automatizaciones.
+     *
+     * `missing` (sólo «Describir con IA»): un dato OBLIGATORIO de una acción de
+     * conector que falta no rechaza la automatización; se anota para avisarle a
+     * la persona (no hay de dónde sacar un teléfono que la lista no tiene). Lo
+     * demás —tipos, slugs, conexiones a su alcance— se valida igual.
+     */
+    async buildAutomationDraft(
+        ctx: AiToolContext,
+        input: AutomationSpec,
+        opts: { missing?: string[] } = {},
+    ): Promise<{ list: List; fields: Field[]; automation: CreateAutomationInput; trigger: string; actions: string[]; summary: string }> {
         const list = await this.resolveList(ctx, input.list);
         await this.automations.assertWholeList(ctx.tenantId, String(list.id), ctx).catch((err: Error) => {
             throw new AiToolError(err.message);
@@ -2542,24 +2579,17 @@ export class StructureTools implements AiProposalApplier {
             if (!l) throw new AiToolError(`La lista destino «${target}» no existe. Listas: ${lists.map((x) => x.slug).join(', ')}.`);
             return l.id;
         });
-        const connectorLabel = await this.validateActionTypes(ctx, parsed.data.actions as unknown[]);
-        const actionLabels = describeActions(parsed.data.actions as Array<{ type: string; config: Record<string, unknown> }>, bySlug, connectorLabel);
-        return this.saveProposal(ctx, {
-            kind: 'create_automation',
-            title: `Crear la automatización «${input.name}» en «${list.name}»`,
-            summary: `${triggerLabel(parsed.data.trigger_type, parsed.data.trigger_config ?? {}, fields)} → ${actionLabels.join(' → ')}.`,
-            destructive: false,
-            listSlug: list.slug,
-            preview: {
-                lists: [],
-                fields: [],
-                widgets: [],
-                automation: { name: input.name, trigger: triggerLabel(parsed.data.trigger_type, parsed.data.trigger_config ?? {}, fields), actions: actionLabels },
-                changes: [],
-                blocks: firstEmailDesignBlocks(parsed.data.actions as unknown[]),
-            },
-            payload: { kind: 'create_automation', listId: list.id, listSlug: list.slug, input: parsed.data },
-        });
+        const connectorLabel = await this.validateActionTypes(ctx, parsed.data.actions as unknown[], { missing: opts.missing });
+        const actionLabels = describeActions(parsed.data.actions as Array<{ type: string; config: Record<string, unknown> }>, bySlug, connectorLabel, fields);
+        const trigger = triggerLabel(parsed.data.trigger_type, parsed.data.trigger_config ?? {}, fields);
+        return {
+            list,
+            fields,
+            automation: parsed.data,
+            trigger,
+            actions: actionLabels,
+            summary: `${trigger} → ${actionLabels.join(' → ')}.`,
+        };
     }
 
     private async proposeUpdateList(ctx: AiToolContext, input: UpdateListSpec): Promise<AiToolResult> {
@@ -3109,14 +3139,14 @@ export class StructureTools implements AiProposalApplier {
                 patch.actions = merged.data.actions;
                 changes.push({
                     label: 'Acciones',
-                    from: describeActions(auto.actions as Array<{ type: string; config: Record<string, unknown> }>, bySlug, connectorLabel).join(' → '),
-                    to: describeActions(merged.data.actions as Array<{ type: string; config: Record<string, unknown> }>, bySlug, connectorLabel).join(' → '),
+                    from: describeActions(auto.actions as Array<{ type: string; config: Record<string, unknown> }>, bySlug, connectorLabel, fields).join(' → '),
+                    to: describeActions(merged.data.actions as Array<{ type: string; config: Record<string, unknown> }>, bySlug, connectorLabel, fields).join(' → '),
                 });
             }
             automationPreview = {
                 name: merged.data.name,
                 trigger: triggerLabel(merged.data.trigger_type, merged.data.trigger_config ?? {}, fields),
-                actions: describeActions(merged.data.actions as Array<{ type: string; config: Record<string, unknown> }>, bySlug, connectorLabel),
+                actions: describeActions(merged.data.actions as Array<{ type: string; config: Record<string, unknown> }>, bySlug, connectorLabel, fields),
             };
         }
         if (Object.keys(patch).length === 0) throw new AiToolError('No hay ningún cambio respecto a la automatización actual.');
@@ -4879,7 +4909,7 @@ export class StructureTools implements AiProposalApplier {
     private async validateActionTypes(
         ctx: AiToolContext,
         actions: unknown[],
-        opts: { strict?: boolean } = {},
+        opts: { strict?: boolean; missing?: string[] } = {},
     ): Promise<(cfg: Record<string, unknown>) => string> {
         const strict = opts.strict ?? true;
         const connections = await this.connectors.list(ctx.tenantId, ctx.userId, ctx.role).catch(() => []);
@@ -4950,6 +4980,11 @@ export class StructureTools implements AiProposalApplier {
                 }
                 const missing = act.params.filter((p) => p.required && String(values[p.key] ?? '').trim() === '');
                 if (missing.length > 0) {
+                    // v0.1.463 — «Describir con IA»: no rechaza, avisa (la persona lo completa en el editor).
+                    if (opts.missing) {
+                        opts.missing.push(`Al paso ${where} («${act.label}») le falta: ${missing.map((p) => p.label || p.key).join(', ')}. Complétalo antes de activarla.`);
+                        return;
+                    }
                     throw new AiToolError(`A «${act.label}» le faltan datos obligatorios: ${missing.map((p) => p.key).join(', ')}.`);
                 }
                 // D3 — una plantilla de WhatsApp tiene que existir, estar aprobada y llevar todas sus variables.
@@ -5725,6 +5760,8 @@ function describeActions(
     actions: Array<{ type: string; config: Record<string, unknown> }>,
     lists: Map<string, List>,
     connectorLabel: (cfg: Record<string, unknown>) => string = (cfg) => `Conector: ${String(cfg.action_key ?? '')}`,
+    /** v0.1.463 — para nombrar el campo de «Según el valor de…» («Según «Estado»…»). */
+    fields: readonly Field[] = [],
 ): string[] {
     return actions.map((a) => {
         const cfg = a.config ?? {};
@@ -5748,8 +5785,10 @@ function describeActions(
                 return connectorLabel(cfg);
             case 'if_else':
                 return 'Condicional sí / no';
-            case 'switch':
-                return describeSwitch(cfg);
+            case 'switch': {
+                const sourceId = Number(cfg.source_field_id);
+                return describeSwitch(cfg, fields.find((f) => f.id === sourceId)?.label ?? null);
+            }
             case 'ask_ai':
                 return describeAskAi(cfg);
             case 'wait':
