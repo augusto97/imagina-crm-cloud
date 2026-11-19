@@ -381,7 +381,7 @@ describe('v0.1.453 — débito automático de los clientes de una agencia (Postg
         expect(m.text).toContain(first.url!);
 
         // El plan de suscripción lo maneja la agencia: no aparece entre los planes ni se edita.
-        const plansList = await subs.listPlans(agency, connId);
+        const plansList = await subs.listPlans(agency, { userId: admin.id, role: 'admin' }, connId);
         expect(plansList.some((p) => p.name.startsWith('Básico'))).toBe(false);
         const [managed] = await pg.db.select().from(subscriptionPlans).where(eq(subscriptionPlans.tenantId, agency));
         expect((managed!.providerRefs as Record<string, unknown>).agency_plan_id).toBe('basico');
