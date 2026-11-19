@@ -430,7 +430,20 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.450**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.451**
+(**la agencia le cobra a sus clientes, primera parte** — en la consola de la
+agencia, «Planes para tus clientes» (nombre, valor, cada cuánto, qué límites de
+la plataforma dan y días de gracia/aviso) y, por cliente, «Plan y pagos»: el
+plan, hasta cuándo está pagado y cada pago que la agencia registra a mano
+(transferencia, efectivo…), con el período encadenado y «deshacer» el último.
+Vencida la fecha y la gracia, la empresa cliente queda en solo lectura (motivo
+`agency_unpaid`) hasta que se registre el pago; a los dos les llega un aviso.
+La empresa cliente ve su plan y sus pagos en Ajustes → Suscripción. El
+operador elige qué planes de la plataforma puede usar cada agencia para sus
+planes. Migración 0135. ADR-S108 addendum. **La división creció**: v0.1.452
+el cobro EN LÍNEA con la cuenta de Mercado Pago o PayPal de la agencia,
+v0.1.453 el cobro de la plataforma a la agencia; G8 DIAN espera proveedor y
+credenciales de prueba). Antes **v0.1.450**
 (**la marca de la agencia en sus clientes** — el equipo de una empresa cliente
 ve la app con la marca de su agencia (nombre, logo, colores, pestaña, ícono de
 la app instalable, correos de su cuenta y el contacto de soporte en la Ayuda),
@@ -441,9 +454,7 @@ correo/WhatsApp de soporte). La pantalla de entrar por el subdominio de un
 cliente sale con la marca de la agencia, una sesión abierta en el dominio de la
 agencia sirve para sus clientes y los enlaces de la app de un cliente salen
 por el dominio de la agencia si responde. Sin migración ni novedad (es de
-agencias). ADR-S108 addendum. **Siguen**: v0.1.451 planes y cobro de la
-agencia a sus clientes, v0.1.452 cobro de la plataforma a la agencia; G8 DIAN
-espera proveedor y credenciales de prueba). Antes **v0.1.449**
+agencias). ADR-S108 addendum). Antes **v0.1.449**
 (**modo agencia, primera parte** — el operador marca una empresa como agencia
 en Plataforma → Empresas (con el plan con que nacen sus clientes y un tope);
 sus administradores tienen la sección «Agencia» (en el celular, Más → Empresas
@@ -2261,6 +2272,29 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-19 · v0.1.451** — **La agencia le cobra a sus clientes, primera
+  parte** (I3, ADR-S108 addendum). Planes de la agencia en
+  `tenants.settings.agency_billing` (hasta 20: nombre, valor, moneda, período
+  1/3/6/12, `limits_plan` entre los que el operador le habilita en
+  `settings.agency.client_plans`, activo; gracia, aviso y si avisar al
+  cliente); el plan elegido se copia al cliente (`settings.agency_plan`, valor
+  ajustable por cliente) y la fecha va en `tenants.agency_paid_until`
+  (migración 0135, con `agency_payments` y RLS por la agencia). Pagos a mano con
+  el período encadenado (desde la fecha o desde hoy si venció), sólo el último
+  se deshace. Acceso `agency_unpaid` en `agencyClientAccess` y
+  `agencyAccessSql` (todos los caminos). Avisos antes/al vencer/al cortar con
+  dedup en Redis. Pantallas: «Planes para tus clientes», resumen de la
+  consola, «Plan y pagos» por cliente, Ajustes → Suscripción del cliente y
+  aviso arriba 10 días antes; montos con `parseLooseAmount` (atrapado en el
+  E2E: «1.500.000» no pasaba con el lector del formato regional). Bitácora
+  `agency.billing|client_billing|payment|payment_undo`. **La división creció**:
+  v0.1.452 cobro en línea con la cuenta de la agencia (necesita una lista
+  «Empresas cliente» propia en la agencia porque los links de pago cuelgan de
+  un registro), v0.1.453 cobro de la plataforma a la agencia. Sin novedad (es
+  de agencias). Tests: `agency-billing.spec` (4), 7 de shared, suites
+  relacionadas 161/161, RLS 8/8; E2E navegador 33/33 (escritorio y celular
+  oscuro). **Pendientes del usuario**: Redis, `NPM_TOKEN`, DIAN y usuario propio
+  para la app (sin cambios).
 - **2026-11-19 · v0.1.450** — **La marca de la agencia en sus clientes** (I3,
   ADR-S108 addendum). Interpretación de «sólo la de la agencia»: la app que ve
   el EQUIPO del cliente (riel, nombre, logo, colores, pestaña, manifiesto de la

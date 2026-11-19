@@ -34,9 +34,10 @@ portal, verificar con el archivo y asistente/MCP— y v0.1.448 —el código por
 o WhatsApp—) y **G8** (facturación DIAN: falta elegir proveedor y tener
 credenciales de prueba) e **I3** (modo agencia: decisiones tomadas el
 2026-11-18, ver §2; la base salió en v0.1.449 —consola de la agencia, entrar
-con rastro, pausar, plan gestionado— y la marca de la agencia en v0.1.450;
-siguen los planes y el cobro a sus clientes en v0.1.451 y el cobro de la
-plataforma a la agencia en v0.1.452).
+con rastro, pausar, plan gestionado—, la marca de la agencia en v0.1.450 y
+sus planes con pagos registrados a mano en v0.1.451; siguen el cobro en línea
+con la cuenta de la agencia en v0.1.452 y el cobro de la plataforma a la
+agencia en v0.1.453).
 
 ---
 
@@ -83,8 +84,10 @@ aquí, pospuestos:
   cliente puede ver; y los clientes de una agencia sólo ven la marca de la
   agencia (white-label completo, sin la marca de la plataforma). **Hecho en
   v0.1.449**: el modelo, la consola de la agencia y el acceso con rastro;
-  **en v0.1.450** la marca de la agencia en sus clientes. **Queda**: los dos
-  cobros (v0.1.451-452).
+  **en v0.1.450** la marca de la agencia en sus clientes; **en v0.1.451** los
+  planes de la agencia, el «pagado hasta» de cada cliente y los pagos
+  registrados a mano. **Queda**: el cobro en línea con la cuenta de la agencia
+  (v0.1.452) y el cobro de la plataforma a la agencia (v0.1.453).
 - **G5 · Importadores**, Airtable primero (base completa con vínculos y
   adjuntos, por token de la persona); después Notion, ClickUp, Trello y monday.
 - **G3 · Google Sheets sincronizado en los dos sentidos.** La integración de

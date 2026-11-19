@@ -12,11 +12,11 @@ import {
     type AgencyOverview,
     type AgencyPayment,
     type SetAgencyClientBillingInput,
+    parseLooseAmount,
 } from '@imagina-base/shared';
 import { Loader2, Undo2, X } from 'lucide-react';
 
 import { formatMoney } from '@/cloud/components/payments/paymentUi';
-import { parseNumberInput } from '@/admin/records/bulk/bulkOpMeta';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -123,7 +123,7 @@ function PlanSection({ client, overview }: { client: AgencyClient; overview: Age
     const options = overview.billing.plans.filter((p) => p.active || p.id === current);
     const chosen = overview.billing.plans.find((p) => p.id === planId) ?? null;
     const planChanged = planId !== current;
-    const priceN = parseNumberInput(price);
+    const priceN = parseLooseAmount(price);
     const priceChanged = planId !== NO_PLAN && priceN !== null && (planChanged ? priceN !== chosen?.price : priceN !== b.plan?.price);
     const paidChanged = planId !== NO_PLAN && !planChanged && paidUntil !== ymdOf(b.paid_until) && paidUntil !== '';
     const dirty = planChanged || priceChanged || paidChanged;
@@ -173,8 +173,8 @@ function PlanSection({ client, overview }: { client: AgencyClient; overview: Age
             title={__('Plan')}
             hint={__('Lo que le cobras. Al asignarlo queda pagado por un período desde hoy; después registras cada pago.')}
         >
-            <div className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-3 sm:imcrm-grid-cols-3">
-                <label className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-text-sm sm:imcrm-col-span-1">
+            <div className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-3 sm:imcrm-grid-cols-2">
+                <label className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-text-sm sm:imcrm-col-span-2">
                     <span className="imcrm-font-medium">{__('Plan')}</span>
                     <Select value={planId} onChange={(e) => pickPlan(e.target.value)} data-testid="agency-billing-plan">
                         <option value={NO_PLAN}>{__('Sin plan (no le cobro)')}</option>
@@ -251,7 +251,7 @@ function PaymentSection({ client }: { client: AgencyClient }): JSX.Element {
     const submit = (e: React.FormEvent): void => {
         e.preventDefault();
         setError(null);
-        const amountN = amount.trim() === '' ? suggested : parseNumberInput(amount);
+        const amountN = amount.trim() === '' ? suggested : parseLooseAmount(amount);
         if (amountN === null || amountN < 0) {
             setError(__('Escribe el valor pagado (sólo números).'));
             return;

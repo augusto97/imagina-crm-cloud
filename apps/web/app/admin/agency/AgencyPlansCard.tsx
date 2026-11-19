@@ -7,10 +7,10 @@ import {
     agencyPlanIdFor,
     type AgencyOverview,
     type AgencyPlan,
+    parseLooseAmount,
 } from '@imagina-base/shared';
 import { Plus, Receipt, Trash2 } from 'lucide-react';
 
-import { parseNumberInput } from '@/admin/records/bulk/bulkOpMeta';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -110,7 +110,7 @@ export function AgencyPlansCard({ overview, usage }: { overview: AgencyOverview;
         e.preventDefault();
         const problems: string[] = [];
         const parsedPlans = plans.map((p, i) => {
-            const price = parseNumberInput(p.price);
+            const price = parseLooseAmount(p.price);
             if (price === null || price < 0) problems.push(`${__('Plan')} ${i + 1}: ${__('escribe el valor (sólo números).')}`);
             return {
                 id: p.id,

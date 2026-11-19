@@ -33,6 +33,7 @@ export function MyAgencyBillingPanel({ agencyName }: { agencyName: string }): JS
     const support = data?.support ?? null;
     const state = data ? billingStateLabel(data.billing) : null;
     const tz = resolveTimeZone(getTenantTimeZone(), browserTimeZone());
+    const payments = (data?.payments ?? []).filter((p) => !p.undone_at);
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-4" data-testid="settings-agency-managed">
@@ -71,26 +72,24 @@ export function MyAgencyBillingPanel({ agencyName }: { agencyName: string }): JS
                 )}
             </Card>
 
-            {data && data.payments.length > 0 && (
+            {payments.length > 0 && (
                 <Card>
                     <CardHeader>
                         <CardTitle className="imcrm-text-base">{__('Tus pagos')}</CardTitle>
                     </CardHeader>
                     <CardContent>
                         <ul className="imcrm-divide-y imcrm-divide-border" data-testid="my-agency-payments">
-                            {data.payments
-                                .filter((p) => !p.undone_at)
-                                .map((p) => (
-                                    <li key={p.id} className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-x-3 imcrm-gap-y-1 imcrm-py-2 imcrm-text-sm">
-                                        <span className="imcrm-font-medium">{formatMoney(p.amount, p.currency)}</span>
-                                        <span className="imcrm-text-muted-foreground">
-                                            {__(AGENCY_PAYMENT_METHOD_LABELS[p.method])} · {formatDate(zonedInstant(p.paid_on, tz, { h: 12 }))}
-                                        </span>
-                                        <span className="imcrm-ml-auto imcrm-text-[12px] imcrm-text-muted-foreground">
-                                            {`${__('Cubre hasta el')} ${formatDate(new Date(p.period_to))}`}
-                                        </span>
-                                    </li>
-                                ))}
+                            {payments.map((p) => (
+                                <li key={p.id} className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-x-3 imcrm-gap-y-1 imcrm-py-2 imcrm-text-sm">
+                                    <span className="imcrm-font-medium">{formatMoney(p.amount, p.currency)}</span>
+                                    <span className="imcrm-text-muted-foreground">
+                                        {__(AGENCY_PAYMENT_METHOD_LABELS[p.method])} · {formatDate(zonedInstant(p.paid_on, tz, { h: 12 }))}
+                                    </span>
+                                    <span className="imcrm-ml-auto imcrm-text-[12px] imcrm-text-muted-foreground">
+                                        {`${__('Cubre hasta el')} ${formatDate(new Date(p.period_to))}`}
+                                    </span>
+                                </li>
+                            ))}
                         </ul>
                     </CardContent>
                 </Card>
