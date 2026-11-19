@@ -3658,4 +3658,38 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager', 'agent'] },
     },
+    {
+        key: 'v0.1.457-campos-condicionales-solo-lectura',
+        version: '0.1.457',
+        date: '2026-11-19',
+        kind: 'feature',
+        title: 'Campos que aparecen cuando hacen falta y campos de sólo ver',
+        summary:
+            'Un campo puede aparecer sólo cuando otro cumple una condición (el NIT sólo si el cliente es una empresa), y cada rol puede ver un campo sin poder cambiarlo.',
+        media: {
+            slides: [
+                {
+                    title: 'Mostrar sólo si…',
+                    text: 'En el campo eliges la condición: «Tipo de cliente» es «Empresa». En el alta y en la ficha aparece en cuanto se cumple; oculto no es obligatorio y lo guardado se conserva.',
+                    illustration: 'lc-validacion',
+                },
+                {
+                    title: 'Ver sin poder cambiar',
+                    text: 'En Permisos, junto a cada campo, eliges «Puede ver y cambiar», «Sólo ver» o «No lo ve». Con «Sólo ver» el campo se ve con un candado.',
+                    illustration: 'equipo-hidden-fields',
+                },
+                {
+                    title: 'Por rol, equipo o persona',
+                    text: 'El acceso de una persona manda sobre el de su equipo, y el del equipo sobre el de su rol. Las automatizaciones siguen cambiando esos campos.',
+                    illustration: 'equipo-precedence',
+                },
+            ],
+        },
+        body: [
+            '- **Mostrar sólo si…**: abre el campo en **Configurar lista → Campos** y agrega una o varias reglas sobre otros campos (que se cumplan todas o alguna). En la tabla, la celda donde no aplica se ve atenuada.',
+            '- **Sólo ver**: en **Configurar lista → Permisos → Ajuste fino**, o desde el campo en **Quién lo ve**. Ese rol no lo cambia a mano: ni en la tabla, ni en la ficha, ni al pegar, importar o editar en lote.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

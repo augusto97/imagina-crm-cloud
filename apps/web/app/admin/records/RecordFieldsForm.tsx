@@ -15,6 +15,7 @@ import type { RecordEntity } from '@/types/record';
 
 import { isDerivedFieldType } from '@/lib/fieldTypeCatalog';
 import { isRequiredNow } from '@/lib/fieldRules';
+import { conditionHiddenFields } from '@/lib/fieldVisibility';
 
 import { DateCellEditor } from './DateCellEditor';
 import { RelationPicker } from '@/components/fields/RelationPicker';
@@ -102,9 +103,14 @@ export function RecordFieldsForm({
     hiddenSlugs,
     history = null,
 }: RecordFieldsFormProps): JSX.Element {
+    // v0.1.457 (A7) — «Mostrar sólo si…»: el campo aparece en cuanto se
+    // cumple su condición (con los valores que se están escribiendo). Su
+    // valor guardado no se borra: sólo no se muestra ni se exige.
+    const hiddenByCondition = conditionHiddenFields(fields, values);
     const visible = fields
         .filter((f) => (onlyNonInline ? NON_INLINE_TYPES.includes(f.type) : true))
         .filter((f) => !hiddenSlugs?.includes(f.slug))
+        .filter((f) => !hiddenByCondition.has(f.id))
         // v0.1.170 — los derivados (computed/lookup/rollup) no tienen nada que
         // cargar en el alta: aparecen sólo al editar, como lectura.
         .filter((f) => !(recordId === undefined && isDerivedFieldType(f.type)))

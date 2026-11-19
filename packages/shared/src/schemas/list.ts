@@ -14,6 +14,13 @@ export const listSchema = z.object({
     group_id: idSchema.nullable().default(null),
     created_at: isoDateTimeSchema,
     updated_at: isoDateTimeSchema,
+    /**
+     * C4 (v0.1.457) — lo que la persona que pide puede hacer con los campos de
+     * ESTA lista, derivado de su acceso (rol, rol propio, equipo o persona) y
+     * nunca persistido: los campos que ve pero no puede cambiar (candado con
+     * el motivo en la celda, la ficha y el alta). Sólo en las respuestas.
+     */
+    my_access: z.object({ readonly_field_ids: z.array(idSchema) }).optional(),
 });
 export type List = z.infer<typeof listSchema>;
 

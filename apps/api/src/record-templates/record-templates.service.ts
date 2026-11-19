@@ -436,7 +436,17 @@ export class RecordTemplatesService {
         const tplData = withoutHiddenWrites(list.settings, fields, actor, root.data);
         const rootData = await this.dropNonMembers(tenantId, fields, { ...tplData, ...input.data }, new Set(Object.keys(input.data)), warnings);
         const lenient = opts.lenientRequired === true;
-        const rootPrep = await this.records.prepareCreate(tenantId, actor, list, fields, { data: rootData, parent_id: input.parent_id ?? null }, { lenientRequired: lenient });
+        // C4 — lo que pone la PLANTILLA (la armó un administrador) puede ir en un
+        // campo que quien crea sólo ve; lo que trae el alta, no.
+        const fromTemplate = new Set(Object.keys(tplData).filter((k) => !(k in input.data)));
+        const rootPrep = await this.records.prepareCreate(
+            tenantId,
+            actor,
+            list,
+            fields,
+            { data: rootData, parent_id: input.parent_id ?? null },
+            { lenientRequired: lenient, allowReadonly: fromTemplate },
+        );
 
         // Subtareas: leen el registro principal YA resuelto (fechas desde un
         // campo, personas desde un campo Persona). Una subtarea no puede tener

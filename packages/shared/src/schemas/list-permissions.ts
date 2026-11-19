@@ -29,6 +29,14 @@ export const rolePermissionsSchema = z.object({
     /** Slugs de campos ocultos para este rol (no se devuelven ni se pueden editar). */
     fields_hidden: z.array(z.string()).default([]),
     /**
+     * C4 (v0.1.457) — campos que este rol VE pero no puede cambiar. Por ID
+     * (regla de oro nº 1; la clave sigue la convención `*_field_ids`, así
+     * plantillas, duplicar y migrar una empresa la re-apuntan solas). Lo
+     * escriben igual las automatizaciones, las sincronizaciones, los botones
+     * y las plantillas (corren como el sistema); un administrador, siempre.
+     */
+    readonly_field_ids: z.array(idSchema).max(1000).optional(),
+    /**
      * C3 — Sólo para invitados: «puede comentar» aunque no edite. Del lado del
      * equipo no aplica (quien ve un registro puede comentarlo, como siempre).
      */
@@ -129,9 +137,13 @@ export function mostPermissive(list: readonly RolePermissions[]): RolePermission
     const best = (pick: (p: RolePermissions) => Scope): Scope =>
         list.map(pick).reduce((a, b) => (rank[b] > rank[a] ? b : a), 'none' as Scope);
     let hidden: string[] | null = null;
+    // C4 — de sólo lectura sólo si TODOS los equipos lo marcan (lo más permisivo).
+    let readonly: number[] | null = null;
     for (const p of list) {
         const own = new Set(p.fields_hidden ?? []);
         hidden = hidden === null ? [...own] : hidden.filter((h) => own.has(h));
+        const ro = new Set(p.readonly_field_ids ?? []);
+        readonly = readonly === null ? [...ro] : readonly.filter((id) => ro.has(id));
     }
     return {
         view: best((p) => p.view),
@@ -139,7 +151,44 @@ export function mostPermissive(list: readonly RolePermissions[]): RolePermission
         edit: best((p) => p.edit),
         delete: best((p) => p.delete),
         fields_hidden: hidden ?? [],
+        ...(readonly && readonly.length > 0 ? { readonly_field_ids: readonly } : {}),
     };
+}
+
+/** C4 — los campos de sólo lectura de un acceso (ids, sin repetir). */
+export function readonlyFieldIdsOf(p: Pick<RolePermissions, 'readonly_field_ids'> | null | undefined): number[] {
+    return [...new Set((p?.readonly_field_ids ?? []).filter((id) => Number.isInteger(id) && id > 0))];
+}
+
+/**
+ * C4 — Lo que una persona puede hacer con cada campo según su acceso (lo que
+ * ve la UI en Permisos): `edit` (ver y cambiar), `read` (sólo ver) o `none`
+ * (no lo ve). Ocultar gana sobre sólo lectura.
+ */
+export type FieldAccessLevel = 'edit' | 'read' | 'none';
+
+export function fieldAccessLevel(p: Pick<RolePermissions, 'fields_hidden' | 'readonly_field_ids'>, field: { id: number; slug: string }): FieldAccessLevel {
+    if ((p.fields_hidden ?? []).includes(field.slug)) return 'none';
+    if ((p.readonly_field_ids ?? []).includes(field.id)) return 'read';
+    return 'edit';
+}
+
+/** C4 — Aplica un nivel a un campo en un acceso (devuelve un acceso nuevo). */
+export function withFieldAccessLevel<P extends Pick<RolePermissions, 'fields_hidden' | 'readonly_field_ids'>>(
+    p: P,
+    field: { id: number; slug: string },
+    level: FieldAccessLevel,
+): P {
+    const hidden = new Set(p.fields_hidden ?? []);
+    const readonly = new Set(p.readonly_field_ids ?? []);
+    hidden.delete(field.slug);
+    readonly.delete(field.id);
+    if (level === 'none') hidden.add(field.slug);
+    if (level === 'read') readonly.add(field.id);
+    const next = { ...p, fields_hidden: [...hidden] };
+    if (readonly.size > 0) return { ...next, readonly_field_ids: [...readonly] };
+    const { readonly_field_ids: _drop, ...rest } = next;
+    return rest as P;
 }
 
 /** Defaults por rol cuando la lista no tiene ACL configurada (refleja las

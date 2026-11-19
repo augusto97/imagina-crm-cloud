@@ -34,6 +34,7 @@ describe('Bundle de la ficha del registro (Postgres real)', () => {
     let svc: RecordViewService;
     let recs: RecordsService;
     let comments: CommentsService;
+    let listsSvc: ListsService;
     let tenantId: number;
     let admin: Actor;
     let agent: Actor;
@@ -48,6 +49,7 @@ describe('Bundle de la ficha del registro (Postgres real)', () => {
         const tenantDb = new TenantDb(pg.db);
         const rt = new RealtimeService();
         const lists = new ListsService(tenantDb, new ListsRepository(), rt);
+        listsSvc = lists;
         const fields = new FieldsService(tenantDb, new FieldsRepository(), lists, rt);
         const activity = new ActivityService(tenantDb, new ActivityRepository(), lists);
         recs = new RecordsService(
@@ -159,6 +161,28 @@ describe('Bundle de la ficha del registro (Postgres real)', () => {
     it('un registro que la persona no ve → 404, sin calcular nada más', async () => {
         const ajeno = await recs.create(tenantId, admin, 'clientes', { data: { [nombreKey]: 'Ajeno' } });
         await expect(svc.bundle(tenantId, agent, 'clientes', ajeno.id)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('v0.1.457 — la lista viaja como la sirve GET /lists: recortada y con my_access de quien mira', async () => {
+        const nombreId = Number(nombreKey.slice(1));
+        await listsSvc.updatePermissions(tenantId, 'clientes', {
+            permissions: { agent: { view: 'own', create: true, edit: 'own', delete: 'none', fields_hidden: [], readonly_field_ids: [nombreId] } },
+        });
+        try {
+            const cli = await recs.create(tenantId, admin, 'clientes', { data: { [nombreKey]: 'Ajustes' } });
+            const asAdmin = await svc.bundle(tenantId, admin, 'clientes', cli.id);
+            expect(asAdmin.list.my_access).toEqual({ readonly_field_ids: [] });
+            expect((asAdmin.list.settings as Record<string, unknown>).permissions).toBeDefined();
+            const mine = await recs.create(tenantId, agent, 'clientes', { data: {} });
+            const asAgent = await svc.bundle(tenantId, agent, 'clientes', mine.id);
+            expect(asAgent.list.my_access).toEqual({ readonly_field_ids: [nombreId] });
+            // Los permisos de la lista no le llegan a quien no la administra.
+            expect((asAgent.list.settings as Record<string, unknown>).permissions).toBeUndefined();
+        } finally {
+            await listsSvc.updatePermissions(tenantId, 'clientes', {
+                permissions: { agent: { view: 'own', create: true, edit: 'own', delete: 'none', fields_hidden: [] } },
+            });
+        }
     });
 
     it('una subtarea no trae subtareas', async () => {

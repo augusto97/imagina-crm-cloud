@@ -13,6 +13,12 @@ export interface ListSummary {
     created_at: string;
     updated_at: string;
     table_suffix?: string;
+    /**
+     * v0.1.457 (C4) — el acceso por campo de QUIEN PIDE la lista, ya resuelto
+     * (rol, rol propio, equipos y acceso personal): los campos que ve pero no
+     * puede cambiar. Los ajustes de permisos sólo le llegan a quien administra.
+     */
+    my_access?: { readonly_field_ids: number[] };
 }
 
 export interface CreateListInput {

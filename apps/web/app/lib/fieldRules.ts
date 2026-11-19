@@ -1,5 +1,6 @@
 import {
     checkRequiredIf,
+    fieldsHiddenByCondition,
     fieldValidationOf,
     isUserWritableType,
     jsonbKeyForField,
@@ -48,15 +49,25 @@ export function isRequiredNow(field: FieldEntity, fields: readonly FieldEntity[]
 export function draftErrors(fields: readonly FieldEntity[], valuesBySlug: Record<string, unknown>): Record<string, string> {
     const errors: Record<string, string> = {};
     const data: Record<string, unknown> = {};
+    // v0.1.457 (A7) — «obligatorio» se decide después: un campo oculto por su
+    // condición («Mostrar sólo si…») no se exige (igual que el servidor).
+    const requiredEmpty: FieldEntity[] = [];
     for (const f of fields) {
         if (!isUserWritableType(f.type as FieldType)) continue;
         if (!(f.slug in valuesBySlug)) continue;
-        const res = validateFieldValue({ type: f.type as FieldType, config: f.config, is_required: f.is_required }, valuesBySlug[f.slug]);
+        const res = validateFieldValue({ type: f.type as FieldType, config: f.config, is_required: false }, valuesBySlug[f.slug]);
         if (!res.ok) errors[f.slug] = res.error;
-        else data[jsonbKeyForField(f.id)] = res.value;
+        else {
+            data[jsonbKeyForField(f.id)] = res.value;
+            if (f.is_required && f.type !== 'checkbox' && res.value === null) requiredEmpty.push(f);
+        }
     }
     const ruleFields = fields.map((f) => ({ id: f.id, slug: f.slug, label: f.label, type: f.type as FieldType, config: f.config }));
-    for (const e of checkRequiredIf(ruleFields, data)) {
+    const hidden = fieldsHiddenByCondition(ruleFields, data);
+    for (const f of requiredEmpty) {
+        if (!hidden.has(f.id) && errors[f.slug] === undefined) errors[f.slug] = 'Este campo es obligatorio.';
+    }
+    for (const e of checkRequiredIf(ruleFields, data, { hiddenByCondition: hidden })) {
         if (e.field.slug && errors[e.field.slug] === undefined) errors[e.field.slug] = e.message;
     }
     return errors;

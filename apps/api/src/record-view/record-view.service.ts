@@ -28,7 +28,16 @@ import { ChecklistsService } from '../checklists/checklists.service';
 import { RecordsService, type Actor } from '../records/records.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { TimeTrackingService } from '../time-tracking/time-tracking.service';
-import { aclExtras, effectivePermissions, guestExtraHidden, guestSafeListSettings, withDependentComputed } from '../lists/list-acl';
+import {
+    aclExtras,
+    effectivePermissions,
+    guestExtraHidden,
+    guestSafeListSettings,
+    memberListSettings,
+    readonlyFieldIdsFor,
+    withDependentComputed,
+} from '../lists/list-acl';
+import { can } from '../authz/can';
 
 /** Piezas que se piden en paralelo, con tope (el pool de conexiones es compartido). */
 const PARALLEL = 4;
@@ -232,8 +241,17 @@ export class RecordViewService {
             )
         ).filter((x): x is NonNullable<typeof x> => x !== null);
 
+        // La lista va como la sirve `GET /lists/:id` a quien pide (este bundle
+        // siembra esa misma caché): los ajustes recortados para quien no
+        // administra listas y `my_access` (C4: lo que ve pero no puede cambiar).
+        const who = { ...aclExtras(actor), role: actor.role, userId: actor.userId };
+        const listSettings = (list.settings ?? {}) as Record<string, unknown>;
         return {
-            list,
+            list: {
+                ...list,
+                settings: memberListSettings(listSettings, who, can(who, 'manage_lists')),
+                my_access: { readonly_field_ids: [...readonlyFieldIdsFor(listSettings, who)] },
+            },
             fields,
             record,
             description: description ?? null,
@@ -306,7 +324,7 @@ export class RecordViewService {
                       ),
                   );
         return {
-            list: { ...list, group_id: null, settings: guestSafeListSettings(settings) },
+            list: { ...list, group_id: null, settings: guestSafeListSettings(settings), my_access: { readonly_field_ids: [...readonlyFieldIdsFor(settings, who)] } },
             fields,
             record,
             description: description ?? null,

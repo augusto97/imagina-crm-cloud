@@ -75,7 +75,7 @@ import { ButtonFieldControl, usePortalButtonHidden } from '@/admin/records/butto
 import { ActivityFeed } from './ActivityFeed';
 import { RecordAiSummaryCard } from '../ai/RecordAi';
 import { FieldDisplay, optionsOf } from './FieldDisplay';
-import { fieldEditable, useLayoutCtx } from './LayoutContext';
+import { fieldEditable, useConditionHiddenIds, useLayoutCtx } from './LayoutContext';
 import { surfaceClass, tint } from './layoutTheme';
 import { RecordStatsView } from './RecordStatsView';
 import { RelatedBlockView } from './RelatedBlockView';
@@ -450,8 +450,11 @@ function idList(raw: unknown): number[] {
 /** Un campo con la forma elegida; lápiz para editarlo sin salir de la tarjeta. */
 function FieldBlock({ block }: { block: LayoutBlock }): JSX.Element | null {
     const ctx = useLayoutCtx();
+    const conditionHidden = useConditionHiddenIds();
     const field = ctx.fieldsById.get(Number(block.config.field_id));
     if (!field) return <MissingField />;
+    // A7 — «Mostrar sólo si…»: no aparece hasta que se cumple su condición.
+    if (conditionHidden.has(field.id)) return null;
     const c = block.config;
     if (field.type === 'button') return <ButtonFieldBlock block={block} field={field} />;
     const value = ctx.values[field.slug];
@@ -532,7 +535,11 @@ function FieldBlock({ block }: { block: LayoutBlock }): JSX.Element | null {
  */
 export function FieldsBlock({ ids, layout, columns }: { ids: number[]; layout: string; columns: number }): JSX.Element {
     const ctx = useLayoutCtx();
-    const list = ids.map((id) => ctx.fieldsById.get(id)).filter((f): f is FieldEntity => f !== undefined);
+    const conditionHidden = useConditionHiddenIds();
+    const all = ids.map((id) => ctx.fieldsById.get(id)).filter((f): f is FieldEntity => f !== undefined);
+    // A7 — los campos ocultos por su condición aparecen en cuanto se cumple.
+    const list = all.filter((f) => !conditionHidden.has(f.id));
+    if (all.length > 0 && list.length === 0) return <></>;
     if (list.length === 0) return <p className="imcrm-px-2 imcrm-py-2 imcrm-text-sm imcrm-text-muted-foreground">{__('Sin campos en este bloque.')}</p>;
     const cols = layout === 'grid' ? Math.max(1, Math.min(3, columns)) : 1;
     return (

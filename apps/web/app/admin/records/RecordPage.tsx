@@ -69,6 +69,7 @@ import { __, sprintf } from '@/lib/i18n';
 import { CAP, useCanAny } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 import { ManagedFieldsContext, managedLockedReasons, useManagedFieldLocks } from '@/admin/records/managedFields';
+import { FieldAccessContext, readonlyLockedReasons, useReadonlyFieldIdsOf } from '@/admin/records/fieldAccess';
 
 /**
  * Vista "Card" — página completa de un record con:
@@ -135,9 +136,15 @@ export function RecordPage(): JSX.Element {
     const goneInSource = recordGoneInSource(storeRules, record.data);
     // E5 — las columnas del SLA (si la lista es una mesa de ayuda) tampoco se editan a mano.
     const managedLocks = useManagedFieldLocks(list.data?.settings);
+    // v0.1.457 (C4) — lo que quien mira ve pero no puede cambiar.
+    const readonlyIds = useReadonlyFieldIdsOf(list.data);
     const lockedReasons = useMemo(
-        () => ({ ...lockedReasonsFor(storeRules, fields.data ?? [], values), ...managedLockedReasons(managedLocks, fields.data ?? []) }),
-        [storeRules, fields.data, values, managedLocks],
+        () => ({
+            ...lockedReasonsFor(storeRules, fields.data ?? [], values),
+            ...readonlyLockedReasons(readonlyIds, fields.data ?? []),
+            ...managedLockedReasons(managedLocks, fields.data ?? []),
+        }),
+        [storeRules, fields.data, values, managedLocks, readonlyIds],
     );
     const [error, setError] = useState<string | null>(null);
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -254,6 +261,7 @@ export function RecordPage(): JSX.Element {
         return (
             <StoreRulesContext.Provider value={storeRules}>
             <ManagedFieldsContext.Provider value={managedLocks}>
+            <FieldAccessContext.Provider value={readonlyIds}>
                 <RecordLayoutView
                     key={record.data.id}
                     list={list.data}
@@ -302,6 +310,7 @@ export function RecordPage(): JSX.Element {
                         </>
                     }
                 />
+            </FieldAccessContext.Provider>
             </ManagedFieldsContext.Provider>
             </StoreRulesContext.Provider>
         );

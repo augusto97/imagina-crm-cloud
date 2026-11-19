@@ -122,6 +122,7 @@ import {
 import { lazyDialog } from '@/lib/lazyDialog';
 import { lazyWithReload } from '@/lib/lazyWithReload';
 import { ManagedFieldsContext, useManagedFieldLocks } from '@/admin/records/managedFields';
+import { FieldAccessContext, useReadonlyFieldIdsOf } from '@/admin/records/fieldAccess';
 import { PaymentSyncListContext } from '@/admin/records/StoreColumnBadge';
 
 // v0.1.256 — los diálogos que se abren a pedido viajan en su propio chunk
@@ -453,6 +454,8 @@ export function RecordsPage(): JSX.Element {
     );
     // E5 — las columnas que mantiene el SLA de la mesa de ayuda (candado en la celda).
     const managedLocks = useManagedFieldLocks(list.data?.settings);
+    // v0.1.457 (C4) — campos que quien mira ve pero no puede cambiar.
+    const readonlyIds = useReadonlyFieldIdsOf(list.data);
     const paymentSyncList = isPaymentSyncList(list.data?.settings);
     const canImportRecords = useCan(CAP.IMPORT_RECORDS) && !mirror;
     const canExportRecords = useCan(CAP.EXPORT_RECORDS);
@@ -1003,6 +1006,7 @@ const applyView = (view: SavedViewEntity | null): void => {
         // v0.1.68 generaba una barra interna que no quería).
         <StoreRulesContext.Provider value={storeRules}>
         <ManagedFieldsContext.Provider value={managedLocks}>
+        <FieldAccessContext.Provider value={readonlyIds}>
         <PaymentSyncListContext.Provider value={paymentSyncList}>
         <PageStickyTopContext.Provider value={pageStickyTop}>
         <GridHistoryProvider listId={list.data.id}>
@@ -1588,7 +1592,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                         onOpenChange={setCsvUpdateOpen}
                         listId={list.data.id}
                         storeManaged={!!mirror}
-                        isLocked={(id) => storeColumnKind(storeRules, id) === 'store_locked' || (managedLocks?.has(id) ?? false)}
+                        isLocked={(id) => storeColumnKind(storeRules, id) === 'store_locked' || (managedLocks?.has(id) ?? false) || (readonlyIds?.has(id) ?? false)}
                     />
                 </Suspense>
             )}
@@ -1642,7 +1646,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                         search={debouncedSearch}
                         matchingCount={matchingCount}
                         canEditMatching={canBulkEdit}
-                        isLocked={(f) => storeColumnKind(storeRules, f.id) === 'store_locked' || (managedLocks?.has(f.id) ?? false)}
+                        isLocked={(f) => storeColumnKind(storeRules, f.id) === 'store_locked' || (managedLocks?.has(f.id) ?? false) || (readonlyIds?.has(f.id) ?? false)}
                         initialDrafts={bulkEditPreset?.drafts}
                         title={bulkEditPreset?.title}
                         onDone={() => setSelectedIds([])}
@@ -2077,6 +2081,7 @@ const applyView = (view: SavedViewEntity | null): void => {
         </GridHistoryProvider>
         </PageStickyTopContext.Provider>
         </PaymentSyncListContext.Provider>
+        </FieldAccessContext.Provider>
         </ManagedFieldsContext.Provider>
         </StoreRulesContext.Provider>
     );

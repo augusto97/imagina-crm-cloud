@@ -315,13 +315,30 @@ export class ListsService {
                 }
             }
         }
+        // C4 — los campos de sólo lectura tienen que ser campos de ESTA lista (un
+        // id cualquiera se descarta: no puede quedar guardado apuntando a otro).
+        const fieldIds = await this.tenantDb.withTenant(tenantId, async (tx) =>
+            new Set(
+                (await tx.select({ id: fields.id }).from(fields).where(and(eq(fields.tenantId, tenantId), eq(fields.listId, list.id)))).map(
+                    (r) => r.id,
+                ),
+            ),
+        );
+        const cleanReadonly = (map: Record<string, RolePermissions>): Record<string, RolePermissions> =>
+            Object.fromEntries(
+                Object.entries(map).map(([k, p]) => {
+                    const ids = [...new Set((p.readonly_field_ids ?? []).filter((id) => fieldIds.has(id)))];
+                    const { readonly_field_ids: _drop, ...rest } = p;
+                    return [k, ids.length > 0 ? { ...rest, readonly_field_ids: ids } : rest];
+                }),
+            );
         const settings = {
             ...list.settings,
             permissions: {
-                permissions: nextPermissions,
+                permissions: cleanReadonly(nextPermissions),
                 assignment_field_id: nextAssignment,
-                users: nextUsers,
-                teams: nextTeams,
+                users: cleanReadonly(nextUsers),
+                teams: cleanReadonly(nextTeams),
                 assignment_team_field_id: nextTeamAssignment,
             },
         };

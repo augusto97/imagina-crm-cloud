@@ -6,7 +6,11 @@ import {
     autonumberSettings,
     defaultKindsFor,
     fieldDefaultOf,
+    fieldShowIfOf,
     fieldValidationOf,
+    showIfCycle,
+    showIfOpNeedsValue,
+    showIfSourceOps,
     isUserWritableType,
     suggestAutonumberPrefix,
     validationKindsFor,
@@ -43,6 +47,7 @@ import {
     validateFieldValue,
     type CreateFieldInput,
     type Field,
+    type FieldShowIfCondition,
     type FieldType,
     type ManagedFieldLock,
     type MirrorListMarker,
@@ -346,6 +351,8 @@ export class FieldsService {
         selfId: number | null,
         type: FieldType,
         config: Record<string, unknown>,
+        /** A7 — la config que tenía el campo (para conservar reglas de un campo que está en la papelera). */
+        previous: Record<string, unknown> | null = null,
     ): Promise<Record<string, unknown>> {
         if (!isUserWritableType(type)) return config;
         const fail = (key: string, message: string): never => {
@@ -432,7 +439,80 @@ export class FieldsService {
         } else if (config.validation === null) {
             delete out.validation;
         }
+
+        // A7 — «Mostrar sólo si…».
+        if (config.show_if === null || config.show_if === undefined) {
+            delete out.show_if;
+        } else {
+            const showIf = await this.normalizeShowIf(tx, tenantId, listId, selfId, config, previous, fail);
+            if (showIf) out.show_if = showIf;
+            else delete out.show_if;
+        }
         return out;
+    }
+
+    /**
+     * A7 — Valida «Mostrar sólo si…»: cada regla apunta a OTRO campo de esta
+     * lista que se pueda usar como condición, con un operador de su tipo y el
+     * valor que ese operador pide; sin ciclos (A depende de B y B de A). Una
+     * regla que ya estaba guardada y cuyo campo hoy está en la papelera se
+     * CONSERVA (no aplica mientras tanto y vuelve a aplicar si se recupera);
+     * una regla nueva hacia un campo que no está, se rechaza.
+     */
+    private async normalizeShowIf(
+        tx: Tx,
+        tenantId: number,
+        listId: number,
+        selfId: number | null,
+        config: Record<string, unknown>,
+        previous: Record<string, unknown> | null,
+        fail: (key: string, message: string) => never,
+    ): Promise<{ logic: 'and' | 'or'; conditions: FieldShowIfCondition[] } | null> {
+        const raw = config.show_if as { conditions?: unknown } | null;
+        if (raw && Array.isArray(raw.conditions) && raw.conditions.length > 10) {
+            fail('show_if', 'Una condición puede tener hasta 10 reglas.');
+        }
+        const rule = fieldShowIfOf(config);
+        if (!rule) return null;
+        const fields = (await this.repo.listByList(tx, tenantId, listId)).map(toField);
+        const byId = new Map(fields.map((f) => [f.id, f]));
+        const kept = new Set((fieldShowIfOf(previous ?? {})?.conditions ?? []).map((c) => c.field_id));
+        const conditions: FieldShowIfCondition[] = [];
+        for (const c of rule.conditions) {
+            const id = c.field_id as number;
+            if (selfId !== null && id === selfId) fail('show_if', 'Un campo no puede depender de sí mismo.');
+            const other = byId.get(id);
+            if (!other) {
+                // Ya estaba y su campo está en la papelera: se conserva tal cual.
+                if (kept.has(id)) {
+                    conditions.push(c);
+                    continue;
+                }
+                return fail('show_if', 'El campo de la condición no es de esta lista.');
+            }
+            const ops = showIfSourceOps(other.type);
+            if (ops.length === 0) fail('show_if', `«${other.label}» no se puede usar en una condición: se usan campos que se completan a mano.`);
+            if (!ops.includes(c.op)) fail('show_if', `Esa regla no aplica a «${other.label}».`);
+            if (!showIfOpNeedsValue(c.op)) {
+                conditions.push({ field_id: id, op: c.op });
+                continue;
+            }
+            conditions.push({ field_id: id, op: c.op, value: normalizeShowIfValue(other.type, c.op, c.value, other.label, fail) });
+        }
+        if (conditions.length === 0) return null;
+        const next = { logic: rule.logic, conditions };
+        if (selfId !== null) {
+            const cycle = showIfCycle(fields, selfId, next);
+            if (cycle) {
+                const names = cycle.map((id) => `«${byId.get(id)?.label ?? id}»`).join(' → ');
+                throw new BadRequestException({
+                    code: 'show_if_cycle',
+                    message: `Esa condición se cierra sobre sí misma (${names}): un campo no puede depender, directa o indirectamente, de uno que depende de él.`,
+                    data: { status: 400, errors: { show_if: 'Condición circular' } },
+                });
+            }
+        }
+        return next;
     }
 
     async list(tenantId: number, listIdOrSlug: string): Promise<Field[]> {
@@ -683,7 +763,7 @@ export class FieldsService {
                         newConfig = { ...newConfig, options: texts.map((v) => ({ value: v, label: v })) };
                     }
                 }
-                newConfig = await this.normalizeRules(tx, tenantId, listId, current.id, toType, newConfig);
+                newConfig = await this.normalizeRules(tx, tenantId, listId, current.id, toType, newConfig, current.config);
                 if (toType === 'formula') newConfig = await this.normalizeFormula(tx, tenantId, listId, current.id, newConfig);
                 changes.type = toType;
                 changes.config = newConfig;
@@ -697,7 +777,7 @@ export class FieldsService {
                 await this.assertThroughConfig(tx, tenantId, listId, current.type as FieldType, changes.config);
                 if (current.type === 'button') await assertButtonConfigRefs(tx, tenantId, listId, current.id, changes.config);
                 if (current.type === 'approval') changes.config = await normalizeApprovalFieldConfig(tx, tenantId, listId, changes.config);
-                changes.config = await this.normalizeRules(tx, tenantId, listId, current.id, current.type as FieldType, changes.config);
+                changes.config = await this.normalizeRules(tx, tenantId, listId, current.id, current.type as FieldType, changes.config, current.config);
                 if (current.type === 'formula') changes.config = await this.normalizeFormula(tx, tenantId, listId, current.id, changes.config);
             }
             if (patch.is_indexed !== undefined) {
@@ -1537,4 +1617,32 @@ export async function numberExistingRecords(
         GROUP BY upd.period
         ON CONFLICT (field_id, period) DO UPDATE SET next_value = GREATEST(autonumber_counters.next_value, EXCLUDED.next_value)`);
     await tx.execute(sql`select set_config('app.keep_autonumber', 'off', true)`);
+}
+
+/**
+ * A7 — El valor de una regla de «Mostrar sólo si…» con la forma que espera el
+ * operador: una lista para «es alguno de», sí/no para una casilla, un número
+ * para los numéricos, y una opción que exista para las selecciones.
+ */
+function normalizeShowIfValue(
+    type: string,
+    op: string,
+    value: unknown,
+    label: string,
+    fail: (key: string, message: string) => never,
+): unknown {
+    if (type === 'checkbox') return value === true || value === 'true' || value === 1 || value === '1';
+    const list = op === 'in' || op === 'nin';
+    const items = (Array.isArray(value) ? value : [value]).filter((v) => v !== null && v !== undefined && v !== '');
+    if (items.length === 0) return fail('show_if', `Falta el valor de la regla sobre «${label}».`);
+    if (['number', 'currency', 'percent', 'rating', 'duration'].includes(type)) {
+        const nums = items.map((v) => (typeof v === 'number' ? v : Number(v)));
+        if (nums.some((n) => !Number.isFinite(n))) fail('show_if', `El valor de la regla sobre «${label}» tiene que ser un número.`);
+        return list ? nums : nums[0];
+    }
+    const texts = items.map((v) => String(v));
+    if (type === 'date' && texts.some((t) => !/^\d{4}-\d{2}-\d{2}$/.test(t))) {
+        fail('show_if', `El valor de la regla sobre «${label}» tiene que ser una fecha.`);
+    }
+    return list ? texts : texts[0];
 }

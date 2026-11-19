@@ -1043,6 +1043,63 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
         expect(final.users.map((u) => u.user_id)).toEqual([ub!.id]);
     });
 
+    it('v0.1.457 — «Mostrar sólo si…» y campos de sólo lectura, por slug', async () => {
+        const pros = await lists.create(tenantId, { name: 'Prospectos' });
+        await fields.create(tenantId, String(pros.id), { label: 'Nombre', type: 'text' });
+        await fields.create(tenantId, String(pros.id), {
+            label: 'Tipo',
+            type: 'select',
+            config: { options: [{ value: 'empresa', label: 'Empresa' }, { value: 'persona', label: 'Persona' }] },
+        });
+        await fields.create(tenantId, String(pros.id), { label: 'Monto', type: 'currency', config: { currency: 'COP' } });
+
+        // La condición se escribe por slug y la opción por su etiqueta; se guarda por id y por valor.
+        const badCond = await call('propose_add_fields', {
+            list: 'prospectos',
+            fields: [{ label: 'NIT', type: 'text', show_if: { conditions: [{ field: 'no_existe', op: 'is_not_null' }] } }],
+        });
+        expect(isError(badCond)).toBe(true);
+        const add = json(await call('propose_add_fields', {
+            list: 'prospectos',
+            fields: [{ label: 'NIT', type: 'text', show_if: { conditions: [{ field: 'tipo', op: 'eq', value: 'Empresa' }] } }],
+        }));
+        await apply(add.proposal_id);
+        const fs = await fields.listByListId(tenantId, pros.id);
+        const tipo = fs.find((f) => f.slug === 'tipo')!;
+        const monto = fs.find((f) => f.slug === 'monto')!;
+        const nit = fs.find((f) => f.slug === 'nit')!;
+        expect(nit.config.show_if).toEqual({ logic: 'and', conditions: [{ field_id: tipo.id, op: 'eq', value: 'empresa' }] });
+
+        // Un ciclo vuelve como error corregible.
+        const cyc = await call('propose_update_field', { list: 'prospectos', field: 'tipo', show_if: { conditions: [{ field: 'nit', op: 'is_not_null' }] } });
+        expect(isError(cyc)).toBe(true);
+        expect(JSON.stringify(json(cyc))).toContain('se cierra sobre sí misma');
+
+        // Sólo lectura por rol: por slug, guardado por id.
+        const badRo = await call('propose_set_list_permissions', {
+            list: 'prospectos',
+            roles: { agent: { view: 'all', create: true, edit: 'all', delete: 'none', fields_hidden: [], readonly_fields: ['no_existe'] } },
+        });
+        expect(isError(badRo)).toBe(true);
+        const perm = json(await call('propose_set_list_permissions', {
+            list: 'prospectos',
+            roles: { agent: { view: 'all', create: true, edit: 'all', delete: 'none', fields_hidden: [], readonly_fields: ['monto'] } },
+        }));
+        await apply(perm.proposal_id);
+        const doc = await lists.getPermissions(tenantId, 'prospectos');
+        expect(doc.permissions.agent!.readonly_field_ids).toEqual([monto.id]);
+
+        // El esquema lo cuenta por slug.
+        const schema = json(await call('get_list_schema', { list: 'prospectos' })) as {
+            fields: Array<{ slug: string; show_if?: { conditions: Array<{ field: string | null; op: string }> } }>;
+            field_access: { roles: Record<string, { readonly_fields: string[] }> };
+        };
+        expect(schema.fields.find((f) => f.slug === 'nit')!.show_if!.conditions).toEqual([
+            expect.objectContaining({ field: 'tipo', op: 'eq', value: 'empresa' }),
+        ]);
+        expect(schema.field_access.roles.agent!.readonly_fields).toEqual(['monto']);
+    });
+
     it('SEC-31: aplicar la MISMA propuesta dos veces en paralelo la ejecuta una sola vez', async () => {
         const p = json(await call('propose_create_list', { lists: [{ name: 'Doble aplicación', fields: [{ label: 'Nombre', type: 'text' }] }] }));
         const [a, b] = await Promise.all([

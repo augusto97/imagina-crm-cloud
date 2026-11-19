@@ -50,6 +50,8 @@ import { FieldHeaderMenu } from '@/admin/records/FieldHeaderMenu';
 import { StoreColumnBadge } from '@/admin/records/StoreColumnBadge';
 import { storeAccessFor, useStoreRules } from '@/admin/records/storeRules';
 import { managedReason, useManagedFields } from '@/admin/records/managedFields';
+import { readonlyReason, useReadonlyFieldIds } from '@/admin/records/fieldAccess';
+import { makeConditionReasons } from '@/lib/fieldVisibility';
 import { renderCellValue } from '@/admin/records/renderCellValue';
 import type { ActiveSort } from '@/admin/records/recordsState';
 import { FooterAggregateCell, footerIsAggregatable, type AggregateKind } from './FooterAggregateCell';
@@ -213,6 +215,9 @@ export function TableView({
     // y cada celda dice si se puede editar (mismas reglas que el backend).
     const storeRules = useStoreRules();
     const managedLocks = useManagedFields();
+    // v0.1.457 — sólo lectura por rol (C4) y campos que no aplican a una fila (A7).
+    const readonlyIds = useReadonlyFieldIds();
+    const conditionReason = useMemo(() => makeConditionReasons(fields), [fields]);
     const canCreateRecords = useCan(CAP.CREATE_RECORDS) && storeRules === null;
     // En una lista de la tienda o del sitio, el menú sólo ofrece quitar lo que la fuente ya borró (v0.1.336).
     const canDeleteRecords = useCanAny(CAP.DELETE_RECORDS, CAP.DELETE_OWN_RECORDS);
@@ -277,7 +282,9 @@ export function TableView({
                 accessorFn: (row) => (field.type === 'relation' ? row.relations?.[field.slug] : row.fields[field.slug]),
                 cell: (ctx) => {
                     const access = storeAccessFor(storeRules, field, ctx.row.original);
-                    const editable = (
+                    // A7 — el campo no aplica a esta fila («Mostrar sólo si…»): atenuado con el motivo.
+                    const dim = conditionReason?.(ctx.row.original.fields, field.id) ?? null;
+                    const cell = (
                         <EditableCell
                             listId={listId}
                             recordId={ctx.row.original.id}
@@ -286,7 +293,15 @@ export function TableView({
                             canEdit={canEditRecords && (guestEditable === null || guestEditable.has(ctx.row.original.id))}
                             lockedReason={access?.access === 'locked' ? access.reason : null}
                             record={ctx.row.original}
+                            dimReason={dim}
                         />
+                    );
+                    const editable = dim ? (
+                        <div className="imcrm-opacity-40" title={dim} data-condition-hidden="true">
+                            {cell}
+                        </div>
+                    ) : (
+                        cell
                     );
                     // El chevron de subtareas vive en la PRIMERA columna de
                     // campo (la que hace de "nombre"), como en ClickUp. Las
@@ -352,7 +367,7 @@ export function TableView({
                 meta: { fieldId: null },
             },
         ];
-    }, [fields, listId, canEditRecords, guestEditable, expandedIds, storeRules]);
+    }, [fields, listId, canEditRecords, guestEditable, expandedIds, storeRules, conditionReason]);
 
     // Footer aggregations: pedimos sum/avg/count/min/max para todos
     // los fields visibles que son numéricos / fecha / checkbox / etc.
@@ -532,11 +547,14 @@ export function TableView({
             return typeof v === 'string' && v.trim() !== '' ? v : `#${r.id}`;
         },
         locked:
-            storeRules || managedLocks
+            storeRules || managedLocks || readonlyIds
                 ? (field, record) => {
                       // v0.1.383 — lo que escribe una sincronización de cobros tampoco se pega ni se rellena.
                       const managed = field ? managedReason(managedLocks, field.id) : null;
                       if (managed) return managed;
+                      // C4 — ni lo que quien pega sólo puede ver.
+                      const ro = field ? readonlyReason(readonlyIds, field.id) : null;
+                      if (ro) return ro;
                       if (!storeRules) return null;
                       const a = storeAccessFor(storeRules, field, record);
                       return a?.access === 'locked' ? a.reason : null;

@@ -629,6 +629,30 @@ export const articles: LearnArticle[] = [
                     { name: 'Prueba un valor', what: 'Escribe un ejemplo y ves en el momento si cumple o no, antes de guardar la regla.' },
                 ],
             },
+            { t: 'h', text: 'Mostrar sólo si…' },
+            {
+                t: 'p',
+                md: 'Un campo puede aparecer sólo cuando hace falta: el **NIT** sólo si el «Tipo de cliente» es «Empresa», el **Motivo de pérdida** sólo si el estado es «Perdido». En **Mostrar sólo si…** eliges otro campo de la lista, la regla (**es**, **no es**, **es alguno de**, **contiene**, **es mayor que**, **está vacío**…) y el valor. Puedes sumar varias reglas y decidir si se cumplen **todas** o **alguna**.',
+            },
+            {
+                t: 'steps',
+                items: [
+                    'Abre el campo en **Configurar lista → Campos**.',
+                    'En **Mostrar sólo si…** toca **Agregar una condición**.',
+                    'Elige el campo, la regla y el valor (por ejemplo: «Tipo de cliente» **es** «Empresa»).',
+                    'Guarda. En el alta y en la ficha el campo aparece en cuanto se cumple la condición.',
+                ],
+            },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Mientras está oculto', what: 'No se pide ni se exige: un obligatorio oculto por su condición no frena el guardado.' },
+                    { name: 'Lo que ya estaba guardado', what: 'Se conserva. Si la condición vuelve a cumplirse, el valor reaparece tal cual.' },
+                    { name: 'En la tabla', what: 'La columna sigue, y la celda donde el campo no aplica se ve atenuada: al pasar el mouse dice por qué.' },
+                    { name: 'Condiciones en cadena', what: 'Un campo puede depender de otro que también tiene condición. Lo que no puede es formar un círculo (A depende de B y B de A): eso no se guarda.' },
+                    { name: 'Si el otro campo se borra', what: 'La regla deja de aplicar y el campo se muestra siempre. El editor del campo avisa para que la cambies o la quites.' },
+                ],
+            },
             {
                 t: 'callout',
                 tone: 'info',
@@ -640,7 +664,7 @@ export const articles: LearnArticle[] = [
                 t: 'settings',
                 rows: [
                     { name: 'Descripción', what: 'Una ayuda corta que se muestra debajo del campo en los formularios: «Sin puntos ni dígito de verificación».' },
-                    { name: 'Quién lo ve', what: 'Por cada rol, **Lo ve** u **Oculto**. Un campo oculto no se muestra en la tabla, la ficha, los filtros ni las exportaciones de ese rol.', tip: 'Ideal para el costo de un producto o el salario en una lista de personal.' },
+                    { name: 'Quién lo ve', what: 'Por cada rol, **Puede ver y cambiar**, **Sólo ver** (con un candado: lo ve pero no lo cambia a mano) o **No lo ve**. Un campo que un rol no ve no se muestra en la tabla, la ficha, los filtros ni las exportaciones de ese rol.', tip: 'Ideal para el costo de un producto o el salario en una lista de personal.' },
                 ],
             },
             {

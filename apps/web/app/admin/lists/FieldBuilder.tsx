@@ -45,6 +45,7 @@ import {
 import { useToast } from '@/components/ui/toast';
 import { fieldsKeys, useCreateField, useDeleteField, useFields, useReorderFields } from '@/hooks/useFields';
 import { formulaDeleteWarning } from '@/lib/formulaDependents';
+import { showIfDeleteWarning } from '@/lib/fieldVisibility';
 import { useTrashedToast } from '@/hooks/useTrash';
 import { useFieldTypes } from '@/hooks/useFieldTypes';
 import { useList, useUpdateList } from '@/hooks/useLists';
@@ -303,6 +304,7 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                     'Deja de aparecer en la tabla, la ficha y los formularios, y va a la papelera con lo que ya estaba cargado: puedes recuperarlo tal cual durante 30 días.',
                 ),
                 formulaDeleteWarning(field, all),
+                showIfDeleteWarning(field, all),
             ]
                 .filter(Boolean)
                 .join(' '),

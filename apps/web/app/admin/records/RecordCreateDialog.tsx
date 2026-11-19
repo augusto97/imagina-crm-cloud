@@ -27,6 +27,7 @@ import type { FieldEntity } from '@/types/field';
 
 import { CreateDuplicateHint } from './duplicates/DuplicateHints';
 import { RecordFieldsForm } from './RecordFieldsForm';
+import { readonlyLockedReasons, useReadonlyFieldIds, withoutReadonlyValues } from './fieldAccess';
 import { RecordTitleInput } from './RecordTitleInput';
 import { titleFieldOf } from '@/lib/recordTitle';
 import { describeDate, describePerson, templateSummary } from './templates/templateModel';
@@ -89,6 +90,11 @@ export function RecordCreateDialog({
     const template = useMemo(() => (templates.data ?? []).find((t) => t.id === tplId) ?? null, [templates.data, tplId]);
     const pending = create.isPending || createFrom.isPending;
     const titleField = titleFieldOf(fields);
+    // v0.1.457 (C4) — lo que quien crea ve pero no puede cambiar: se muestra
+    // con su valor por defecto y el candado, y no se manda (lo pone el servidor).
+    const readonlyIds = useReadonlyFieldIds();
+    const readonlyReasons = useMemo(() => readonlyLockedReasons(readonlyIds, fields), [readonlyIds, fields]);
+    const titleReadonly = titleField !== undefined && readonlyIds?.has(titleField.id) === true;
     const { reset: resetCreate } = create;
     const [values, setValues] = useState<Record<string, unknown>>({});
     const [error, setError] = useState<string | null>(null);
@@ -201,13 +207,14 @@ export function RecordCreateDialog({
             setError(__('Revisa los campos marcados.'));
             return;
         }
+        const sendValues = withoutReadonlyValues(readonlyIds, fields, values);
         try {
             if (template) {
                 // C6 — el registro, sus subtareas y sus checklists en UNA
                 // transacción; lo escrito en el alta pisa lo de la plantilla.
                 const tplFixed = tplFixedRef.current;
                 const typedValues: Record<string, unknown> = {};
-                for (const [slug, v] of Object.entries(values)) {
+                for (const [slug, v] of Object.entries(sendValues)) {
                     // El prefill del grupo (o del vínculo) viaja siempre.
                     if (initialValues && slug in initialValues) {
                         typedValues[slug] = v;
@@ -225,7 +232,7 @@ export function RecordCreateDialog({
                     toast.warning(sprintf(__('Se creó desde «%s», con avisos'), template.name), res.result.warnings.slice(0, 3).join(' '));
                 }
             } else {
-                await create.mutateAsync(parentId != null ? { values, parentId } : values);
+                await create.mutateAsync(parentId != null ? { values: sendValues, parentId } : sendValues);
             }
             onOpenChange(false);
         } catch (err) {
@@ -341,8 +348,8 @@ export function RecordCreateDialog({
                                                 && setValues((v) => ({ ...v, [titleField.slug]: next }))
                                             }
                                             fallback={__('Nuevo registro')}
-                                            editable
-                                            autoFocus
+                                            editable={!titleReadonly}
+                                            autoFocus={!titleReadonly}
                                             className="imcrm--ml-1.5"
                                         />
                                         {titleField && fieldErrors[titleField.slug] !== undefined && (
@@ -363,6 +370,7 @@ export function RecordCreateDialog({
                                         fieldErrors={fieldErrors}
                                         density="compact"
                                         showTypeIcon
+                                        lockedReasons={readonlyReasons}
                                         // El título grande de arriba YA es ese campo: no se repite.
                                         hiddenSlugs={titleField ? [titleField.slug] : undefined}
                                     />

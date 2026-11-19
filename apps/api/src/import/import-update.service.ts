@@ -23,11 +23,11 @@ import { ListsService } from '../lists/lists.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { BulkHistoryService, type BulkItemInput } from '../records/bulk-history.service';
 import { RecordsService, type Actor } from '../records/records.service';
-import { hiddenFieldsFor } from '../lists/list-acl';
+import { hiddenFieldsFor, readonlyFieldIdsFor } from '../lists/list-acl';
 import { storeRuleError } from '../records/store-rule-check';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { parseCsv } from './csv-parser';
-import { ImportService, coerceCellValue } from './import.service';
+import { ImportService, coerceCellValue, readonlyColumnMessage } from './import.service';
 import { can } from '../authz/can';
 import { keyExpr, normalizeKey } from '../records/record-key';
 
@@ -85,7 +85,8 @@ export class ImportUpdateService {
             unmatched: 0,
             to_create: 0,
             error_count: 0,
-            errors: [],
+            // C4 — las columnas de sólo lectura para quien actualiza: avisadas arriba.
+            errors: ctx.ignored.map((message) => ({ row: 0, message })),
             unmatched_sample: [],
             sample: [],
             truncated: ctx.truncated,
@@ -245,14 +246,25 @@ export class ImportUpdateService {
             }
         }
         const mapping = new Map<number, string>();
+        // C4 — un campo que quien actualiza sólo puede ver (no cambiar) sirve
+        // para emparejar, pero su columna no se escribe: se ignora con aviso.
+        const readonly = actor.role === 'admin' ? new Set<number>() : readonlyFieldIdsFor(list.settings, actor);
+        const ignored: string[] = [];
         for (const [k, slug] of Object.entries(input.mapping)) {
             const idx = Number(k);
             if (!Number.isInteger(idx) || idx < 0 || idx === matchCol) continue;
-            if (!bySlug.has(slug)) throw bad(`La columna «${slug}» no existe o no se puede actualizar desde un archivo.`);
+            const field = bySlug.get(slug);
+            if (!field) throw bad(`La columna «${slug}» no existe o no se puede actualizar desde un archivo.`);
+            if (readonly.has(field.id)) {
+                ignored.push(readonlyColumnMessage(parsed.headers[idx] ?? slug, field.label));
+                continue;
+            }
             mapping.set(idx, slug);
         }
-        if (mapping.size === 0 && input.mode === 'update') throw bad('Elige al menos una columna para actualizar.');
-        return { list, store, rows, truncated, fields, bySlug, mapping, keyField, matchCol };
+        if (mapping.size === 0 && input.mode === 'update') {
+            throw bad(ignored.length > 0 ? `${ignored.join(' ')} Elige al menos una columna que puedas cambiar.` : 'Elige al menos una columna para actualizar.');
+        }
+        return { list, store, rows, truncated, fields, bySlug, mapping, keyField, matchCol, ignored };
     }
 
     /**

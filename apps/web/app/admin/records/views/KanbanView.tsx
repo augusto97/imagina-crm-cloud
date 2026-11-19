@@ -74,6 +74,7 @@ import {
 import { StickyHScrollbar } from './StickyHScrollbar';
 import { usePageStickyTop } from './stickyTop';
 import { managedReason, useManagedFields } from '@/admin/records/managedFields';
+import { readonlyReason, useReadonlyFieldIds } from '@/admin/records/fieldAccess';
 
 /**
  * Vista Kanban — v0.1.297 «Kanban para ventas» (B5).
@@ -291,9 +292,13 @@ export function KanbanView({
     // E5 + v0.1.383 — un tablero agrupado por una columna protegida (el SLA, el
     // estado de una suscripción o de un pago) no se mueve a mano.
     const managedLocks = useManagedFields();
+    // C4 — ni por lo que quien mira sólo puede ver.
+    const readonlyIds = useReadonlyFieldIds();
     const lockedReason = useEventCallback((field: FieldEntity, record: RecordEntity): string | null => {
         const managed = managedReason(managedLocks, field.id);
         if (managed) return managed;
+        const ro = readonlyReason(readonlyIds, field.id);
+        if (ro) return ro;
         const access = storeAccessFor(storeRules, field, record);
         return access?.access === 'locked' ? access.reason : null;
     });
@@ -453,7 +458,8 @@ export function KanbanView({
     );
     const groupWritable =
         !['lookup', 'rollup', 'computed', 'formula', 'ai', 'time_tracked', 'approval', 'checklist_progress'].includes(groupByField.type) &&
-        !managedLocks?.has(groupByField.id);
+        !managedLocks?.has(groupByField.id) &&
+        !readonlyIds?.has(groupByField.id);
     const canDrag = canEdit && groupWritable && !touchOnly;
 
     const laneCandidates = fields.filter((f) => f.id !== groupByField.id && ['select', 'user', 'team', 'checkbox'].includes(f.type));

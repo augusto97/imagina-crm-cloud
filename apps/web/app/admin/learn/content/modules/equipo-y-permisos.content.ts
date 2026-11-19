@@ -559,11 +559,22 @@ export const articles: LearnArticle[] = [
                         tip: 'Quien crea un registro siempre lo ve, aunque su «Puede ver» diga otra cosa.',
                     },
                     {
-                        name: 'Campos que este rol NO debe ver',
-                        what: 'Las columnas marcadas no llegan a la pantalla de ese rol ni puede modificarlas: ni en la tabla, ni en la ficha, ni en exportaciones, búsquedas, filtros o tableros.',
+                        name: 'Qué puede hacer este rol con cada campo',
+                        what: 'Junto a cada campo eliges **Puede ver y cambiar**, **Sólo ver** o **No lo ve**. Con **No lo ve**, la columna no llega a la pantalla de ese rol: ni en la tabla, ni en la ficha, ni en exportaciones, búsquedas, filtros o tableros.',
                         tip: 'Costos, márgenes, salarios, observaciones internas.',
                     },
+                    {
+                        name: 'Sólo ver',
+                        what: 'El campo se ve con un candado y el motivo, pero ese rol no lo cambia a mano: ni en la tabla, ni en la ficha, ni en el alta, ni al pegar, importar o editar en lote. Las automatizaciones y las sincronizaciones sí lo siguen cambiando, y quien administra siempre puede.',
+                        tip: 'Ideal para el precio acordado, el estado de facturación o lo que aprueba otra persona.',
+                    },
                 ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Por persona y por equipo también',
+                md: 'El acceso de una persona puntual manda sobre el de su equipo, y el del equipo sobre el de su rol. Si alguien está en varios equipos, un campo es **Sólo ver** para esa persona únicamente si **todos** sus equipos lo marcan así. El mismo ajuste también se ve desde el campo: **Configurar lista → Campos → Quién lo ve**.',
             },
             {
                 t: 'anim',

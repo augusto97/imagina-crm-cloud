@@ -27,6 +27,8 @@ import { useFields } from '@/hooks/useFields';
 import { __ } from '@/lib/i18n';
 import type { FieldEntity, FieldTypeSlug } from '@/types/field';
 
+import { FieldShowIfEditor } from './FieldShowIfEditor';
+
 /**
  * v0.1.300 — Valor por defecto y validaciones de un campo que se escribe a mano.
  *
@@ -82,10 +84,13 @@ export function FieldRulesEditor({ type, config, onChange, listId, currentFieldI
     const defaultKinds = defaultKindsFor(t);
     const kinds = validationKindsFor(t);
     const hasValidation = kinds.range !== null || kinds.length || kinds.format || kinds.requiredIf;
-    if (defaultKinds.length === 0 && !hasValidation) return null;
+    // v0.1.457 (A7) — «Mostrar sólo si…» aplica a todo campo que se escribe a mano.
+    const hasShowIf = listId !== undefined;
+    if (defaultKinds.length === 0 && !hasValidation && !hasShowIf) return null;
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="field-rules-editor">
+            {hasShowIf && <FieldShowIfEditor config={config} onChange={onChange} listId={listId} currentFieldId={currentFieldId} />}
             {defaultKinds.length > 0 && <DefaultValueSection type={t} config={config} onChange={onChange} />}
             {hasValidation && (
                 <ValidationSection type={t} config={config} onChange={onChange} listId={listId} currentFieldId={currentFieldId} />
