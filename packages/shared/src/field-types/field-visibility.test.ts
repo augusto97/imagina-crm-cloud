@@ -10,7 +10,7 @@ import {
     showIfDependents,
     showIfSourceOps,
 } from './field-visibility';
-import { fieldAccessLevel, mostPermissive, withFieldAccessLevel } from '../schemas/list-permissions';
+import { fieldAccessLevel, mostPermissive, withFieldAccessLevel, type RolePermissions } from '../schemas/list-permissions';
 import { fieldRulesSchema } from '../schemas/field-rules';
 
 const tipo = {
@@ -108,7 +108,7 @@ describe('A7 — Mostrar sólo si…', () => {
 describe('C4 — sólo lectura por rol', () => {
     const f = { id: 4, slug: 'monto' };
     it('nivel por campo y combinación entre equipos', () => {
-        const base = { view: 'all' as const, create: true, edit: 'all' as const, delete: 'all' as const, fields_hidden: [] as string[] };
+        const base: RolePermissions = { view: 'all', create: true, edit: 'all', delete: 'all', fields_hidden: [] };
         const ro = withFieldAccessLevel(base, f, 'read');
         expect(fieldAccessLevel(ro, f)).toBe('read');
         expect(fieldAccessLevel(withFieldAccessLevel(ro, f, 'none'), f)).toBe('none');
