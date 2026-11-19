@@ -155,11 +155,86 @@ export type UpdateTenantFormatInput = z.infer<typeof updateTenantFormatSchema>;
  * y el formato regional (viaja aquí porque el branding ya se fetchea en el
  * boot de todo miembro — sin request extra).
  */
+/**
+ * v0.1.450 (I3, ADR-S108) — La marca de la AGENCIA para una empresa cliente.
+ * Es la marca de la APP (riel, nombre, color, logo, pestaña, app instalable,
+ * correos de la cuenta): el equipo del cliente nunca ve la de la plataforma.
+ * Lo que ven los clientes DEL cliente (portal, formularios, agenda, tienda)
+ * sigue con la marca propia de la empresa (`settings.branding`).
+ */
+export const inheritedBrandingSchema = z.object({
+    source: z.literal('agency'),
+    /** Nombre de la agencia (para «Tu agencia…», el soporte). */
+    name: z.string(),
+    app_name: z.string().nullable().default(null),
+    primary_color: z.string().nullable().default(null),
+    sidebar_color: z.string().nullable().default(null),
+    app_bar_color: z.string().nullable().default(null),
+    logo_url: z.string().nullable().default(null),
+});
+export type InheritedBranding = z.infer<typeof inheritedBrandingSchema>;
+
 export const brandingResponseSchema = brandingSchema.extend({
     logo_url: z.string().nullable().default(null),
     format: tenantFormatSchema.default({}),
+    /** v0.1.450 — la marca de la agencia (si la empresa es cliente de una). */
+    inherited: inheritedBrandingSchema.nullable().default(null),
+    /**
+     * v0.1.450 — llave firmada para pedir el manifiesto de la app instalable
+     * con la marca de la agencia (`?b=`): un cliente que instala la app desde
+     * la dirección de la plataforma no ve el nombre de la plataforma.
+     */
+    manifest_brand: z.string().nullable().default(null),
 });
 export type BrandingResponse = z.infer<typeof brandingResponseSchema>;
+
+/**
+ * v0.1.450 — La marca de la APP para una empresa: la propia o, si es cliente
+ * de una agencia, SÓLO la de la agencia (decisión del usuario, ADR-S108).
+ * `white_label` = nunca mostrar la marca de la plataforma.
+ */
+export interface AppBranding {
+    app_name: string | null;
+    primary_color: string | null;
+    sidebar_color: string | null;
+    app_bar_color: string | null;
+    logo_url: string | null;
+    white_label: boolean;
+    /** Nombre de la agencia, si la marca viene de una. */
+    agency_name: string | null;
+}
+
+export function appBranding(b: {
+    app_name?: string | null;
+    primary_color?: string | null;
+    sidebar_color?: string | null;
+    app_bar_color?: string | null;
+    logo_url?: string | null;
+    inherited?: InheritedBranding | null;
+}): AppBranding {
+    const inh = b.inherited ?? null;
+    if (inh) {
+        return {
+            // Sin nombre de app propio, el de la agencia: nunca el de la plataforma.
+            app_name: inh.app_name ?? inh.name,
+            primary_color: inh.primary_color,
+            sidebar_color: inh.sidebar_color,
+            app_bar_color: inh.app_bar_color,
+            logo_url: inh.logo_url,
+            white_label: true,
+            agency_name: inh.name,
+        };
+    }
+    return {
+        app_name: b.app_name ?? null,
+        primary_color: b.primary_color ?? null,
+        sidebar_color: b.sidebar_color ?? null,
+        app_bar_color: b.app_bar_color ?? null,
+        logo_url: b.logo_url ?? null,
+        white_label: false,
+        agency_name: null,
+    };
+}
 
 /**
  * Branding para superficies SIN sesión de miembro (portal del cliente,

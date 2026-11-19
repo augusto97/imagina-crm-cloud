@@ -109,7 +109,9 @@ export class AuthController {
     @HttpCode(200)
     @UseGuards(SessionGuard)
     setupTwoFactor(@Req() req: FastifyRequest): Promise<TotpSetup> {
-        return this.auth.setupTwoFactor(req.authUserId as number);
+        // v0.1.450 — el nombre que muestra la app del teléfono sigue la marca
+        // de la empresa abierta (sólo si la persona es miembro: lo revisa el servicio).
+        return this.auth.setupTwoFactor(req.authUserId as number, { host: req.host, tenantId: headerTenantId(req) });
     }
 
     /** Paso 2: confirma el código y devuelve los códigos de respaldo. */
@@ -201,7 +203,7 @@ export class AuthController {
     async resendVerification(@Req() req: FastifyRequest): Promise<void> {
         // v0.1.238 — "Reenviar" sin correo de plataforma lo dice (503) en vez
         // de responder 204 y que la persona espere un mensaje que no sale.
-        await this.auth.resendEmailVerification(req.authUserId as number);
+        await this.auth.resendEmailVerification(req.authUserId as number, { host: req.host, tenantId: headerTenantId(req) });
     }
 
     /** v0.1.116 — Sesiones activas de la cuenta (panel "Dispositivos"). */
@@ -267,8 +269,9 @@ export class AuthController {
     @HttpCode(204)
     async forgotPassword(
         @Body(new ZodValidationPipe(forgotPasswordSchema)) input: ForgotPasswordInput,
+        @Req() req?: FastifyRequest,
     ): Promise<void> {
-        await this.auth.requestPasswordReset(input.email);
+        await this.auth.requestPasswordReset(input.email, { host: req?.host });
     }
 
     /** Setea la nueva contraseña con el token del email. */
@@ -291,4 +294,11 @@ export class AuthController {
             maxAge: this.env.SESSION_TTL_SECONDS,
         });
     }
+}
+
+/** El id de la empresa abierta en la app (`X-Tenant-Id`), si es un número. */
+function headerTenantId(req: FastifyRequest): number | null {
+    const raw = req.headers['x-tenant-id'];
+    const v = Array.isArray(raw) ? raw[0] : raw;
+    return typeof v === 'string' && /^\d{1,15}$/.test(v) ? Number(v) : null;
 }

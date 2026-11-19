@@ -162,6 +162,7 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'agency.client_resume': { text: 'reactivó la empresa cliente' },
     'agency.enter': { text: 'entró por primera vez como parte de la agencia a' },
     'agency.access': { text: 'entró como parte de la agencia a' },
+    'agency.support': { text: 'cambió el contacto de soporte que ven sus empresas cliente' },
     'agency.link': { text: 'quedó como empresa cliente de una agencia:' },
     'agency.unlink': { text: 'dejó de ser empresa cliente de la agencia', danger: true },
     'agency.settings': { text: 'cambió los ajustes de la agencia' },

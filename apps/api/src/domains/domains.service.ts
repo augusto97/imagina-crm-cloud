@@ -5,6 +5,8 @@ import type Redis from 'ioredis';
 import {
     brandingSchema,
     customDomainInputSchema,
+    DEFAULT_PLATFORM_APP_NAME,
+    parsePlatformBrand,
     type DomainDnsReport,
     type DomainKind,
     type DomainVerifyResult,
@@ -22,6 +24,10 @@ import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
 import { shops, tenants } from '../db/schema';
 import { FilesService } from '../files/files.service';
+import { agencyBrandFromRow, agencyOf, readManifestBrandToken } from '../agency/agency-brand';
+import { AuthService } from '../auth/auth.service';
+import { tenantBoundToHost } from '../auth/host-tenant';
+import { PLATFORM_BRAND_KEY } from '../brand/platform-brand.service';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import { REDIS } from '../redis/redis.module';
 import { MailService } from '../mail/mail.service';
@@ -60,7 +66,63 @@ export class DomainsService {
         private readonly files: FilesService,
         @Optional() @Inject(REDIS) private readonly redis?: Redis,
         @Optional() private readonly mail?: MailService,
+        @Optional() private readonly auth?: AuthService,
     ) {}
+
+    /**
+     * v0.1.450 (ADR-S108) — AuthService no puede depender de este servicio
+     * (este módulo importa el de auth): se le registra cómo resolver el nombre
+     * y la dirección de los correos de la cuenta.
+     */
+    onModuleInit(): void {
+        this.auth?.registerAccountBrandResolver((q) => this.accountBrand(q));
+    }
+
+    /**
+     * v0.1.450 — Nombre y dirección para los correos de la CUENTA (invitación,
+     * recuperar la contraseña, confirmar el correo, segundo factor):
+     * - pedido desde el dominio de una empresa → esa empresa y ese dominio;
+     * - una empresa cliente de una agencia → la marca de la agencia (nunca la
+     *   de la plataforma) y el dominio de la agencia si lo tiene;
+     * - una empresa con nombre de app propio → ese nombre;
+     * - si no, el nombre de la plataforma (Plataforma → Marca).
+     */
+    async accountBrand(q: { tenantId?: number | null; host?: string }): Promise<{ name: string; base: string }> {
+        const fallbackBase = this.env.APP_BASE_URL.replace(/\/+$/, '');
+        const hostTenant = q.host ? await tenantBoundToHost(this.db, this.env, q.host) : null;
+        const tenantId = hostTenant ?? q.tenantId ?? null;
+        let base = fallbackBase;
+        if (hostTenant !== null) {
+            const h = this.normalizeHost(q.host);
+            if (h) base = `https://${h}`;
+        } else if (tenantId !== null) {
+            base = (await this.baseUrlFor(tenantId, 'app').catch(() => fallbackBase)).replace(/\/+$/, '');
+        }
+        if (tenantId !== null) {
+            const agency = await agencyOf(this.db, tenantId);
+            if (agency) {
+                const inh = agencyBrandFromRow(agency, this.files, 60);
+                return { name: inh.app_name ?? inh.name, base };
+            }
+            const [row] = await this.db.select({ name: tenants.name, settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+            const parsed = brandingSchema.safeParse((row?.settings as Record<string, unknown> | null)?.branding ?? {});
+            const appName = parsed.success ? parsed.data.app_name : null;
+            if (appName) return { name: appName, base };
+            // En el dominio propio de una empresa, nunca el nombre de la plataforma.
+            if (hostTenant !== null && row) return { name: row.name, base };
+        }
+        return { name: await this.platformName(), base };
+    }
+
+    private async platformName(): Promise<string> {
+        try {
+            const raw = await this.redis?.get(PLATFORM_BRAND_KEY);
+            if (raw) return parsePlatformBrand(JSON.parse(raw)).app_name?.trim() || DEFAULT_PLATFORM_APP_NAME;
+        } catch {
+            // sin Redis: el de fábrica
+        }
+        return DEFAULT_PLATFORM_APP_NAME;
+    }
 
     /** Base de subdominios (o null si el operador no la configuró). */
     baseDomain(): string | null {
@@ -97,6 +159,8 @@ export class DomainsService {
             settings: tenants.settings,
             archivedAt: tenants.archivedAt,
             portalDomain: tenants.portalDomain,
+            isAgency: tenants.isAgency,
+            agencyId: tenants.agencyId,
         };
         // 1) Dominio propio exacto: el del equipo o el del portal del cliente.
         let [row] = await this.db
@@ -116,7 +180,7 @@ export class DomainsService {
             }
         }
         if (!row || row.archivedAt !== null) return { tenant: null };
-        return { tenant: this.bootTenant(row, row.portalDomain === host ? 'portal' : 'app') };
+        return { tenant: await this.bootTenant(row, row.portalDomain === host ? 'portal' : 'app') };
     }
 
     /**
@@ -139,15 +203,34 @@ export class DomainsService {
             .where(eq(tenants.slug, clean))
             .limit(1);
         if (!row || row.archivedAt !== null) return { tenant: null };
-        return { tenant: this.bootTenant(row, 'portal') };
+        return { tenant: await this.bootTenant(row, 'portal') };
     }
 
-    private bootTenant(
-        row: { id: number; slug: string; name: string; settings: unknown },
+    private async bootTenant(
+        row: { id: number; slug: string; name: string; settings: unknown; isAgency?: boolean; agencyId?: number | null },
         surface: 'app' | 'portal',
-    ): NonNullable<PublicBoot['tenant']> {
+    ): Promise<NonNullable<PublicBoot['tenant']>> {
         const parsed = brandingSchema.safeParse((row.settings as Record<string, unknown> | null)?.branding ?? {});
         const b = parsed.success ? parsed.data : brandingSchema.parse({});
+        // v0.1.450 (ADR-S108) — la pantalla de entrar del EQUIPO de una
+        // empresa cliente lleva la marca de su agencia (el portal sigue con la
+        // marca propia de la empresa: lo ven sus clientes, no su equipo).
+        const agency = surface === 'app' && row.agencyId ? await agencyOf(this.db, row.id) : null;
+        if (agency) {
+            const inh = agencyBrandFromRow(agency, this.files, 3600);
+            return {
+                id: row.id,
+                slug: row.slug,
+                name: row.name,
+                app_name: inh.app_name ?? inh.name,
+                primary_color: inh.primary_color,
+                app_bar_color: inh.app_bar_color,
+                logo_url: inh.logo_url,
+                surface,
+                is_agency: false,
+                white_label: true,
+            };
+        }
         return {
             id: row.id,
             slug: row.slug,
@@ -158,7 +241,27 @@ export class DomainsService {
             // URL firmada: el visitante todavía no tiene sesión.
             logo_url: b.logo_file_id !== null ? this.files.signedUrl(row.id, b.logo_file_id, 3600) : null,
             surface,
+            is_agency: row.isAgency === true,
+            white_label: false,
         };
+    }
+
+    /**
+     * v0.1.450 (ADR-S108) — El manifiesto de la app instalable pedido con la
+     * llave firmada de una empresa cliente (`?b=`): lleva el nombre y el color
+     * de su AGENCIA, así quien instala la app desde la dirección de la
+     * plataforma no ve el nombre de la plataforma. Sólo nombre y color (lo
+     * mismo que dice la pantalla de entrar del dominio de la agencia).
+     */
+    async agencyManifestBrand(
+        rawToken: unknown,
+    ): Promise<{ name: string; app_name: string | null; primary_color: string | null; app_bar_color: string | null } | null> {
+        const tenantId = readManifestBrandToken(this.files, rawToken);
+        if (tenantId === null) return null;
+        const agency = await agencyOf(this.db, tenantId);
+        if (!agency) return null;
+        const inh = agencyBrandFromRow(agency, this.files, 60);
+        return { name: inh.name, app_name: inh.app_name, primary_color: inh.primary_color, app_bar_color: inh.app_bar_color };
     }
 
     /**
@@ -595,19 +698,37 @@ export class DomainsService {
      */
     async baseUrlFor(tenantId: number, surface: DomainKind = 'app'): Promise<string> {
         // v0.1.338 (ADR-S87) — sin «Dominio propio» en el plan, los enlaces salen
-        // por la plataforma.
-        if (await planModuleOff(this.db, tenantId, 'custom_domain')) return this.env.APP_BASE_URL;
+        // por la plataforma (o, v0.1.450, por el dominio de su agencia).
+        const ownOff = await planModuleOff(this.db, tenantId, 'custom_domain');
         const [row] = await this.db
-            .select({ app: tenants.customDomain, portal: tenants.portalDomain })
+            .select({ app: tenants.customDomain, portal: tenants.portalDomain, agencyId: tenants.agencyId })
             .from(tenants)
             .where(eq(tenants.id, tenantId))
             .limit(1);
-        const candidates = surface === 'portal' ? [row?.portal, row?.app] : [row?.app];
-        for (const domain of candidates) {
+        const candidates: Array<[number, string | null | undefined]> = ownOff
+            ? []
+            : surface === 'portal'
+              ? [[tenantId, row?.portal], [tenantId, row?.app]]
+              : [[tenantId, row?.app]];
+        // v0.1.450 (ADR-S108) — los enlaces de la APP de una empresa cliente
+        // salen por el dominio de su agencia si ella no tiene uno propio (la
+        // sesión de ese dominio también sirve para sus clientes). El portal NO:
+        // lo ven los clientes de la empresa, no tienen por qué ver la agencia.
+        if (surface === 'app' && row?.agencyId) {
+            const [agency] = await this.db
+                .select({ app: tenants.customDomain, archivedAt: tenants.archivedAt })
+                .from(tenants)
+                .where(eq(tenants.id, row.agencyId))
+                .limit(1);
+            if (agency && agency.archivedAt === null && !(await planModuleOff(this.db, row.agencyId, 'custom_domain'))) {
+                candidates.push([row.agencyId, agency.app]);
+            }
+        }
+        for (const [owner, domain] of candidates) {
             // Verificado no alcanza: el servidor web tiene que ATENDERLO (en
             // nginx cada dominio se agrega a mano). Un enlace a un dominio que
             // no responde deja al cliente afuera, así que se usa el siguiente.
-            if (domain && (await this.isServing(tenantId, domain))) return `https://${domain}`;
+            if (domain && (await this.isServing(owner, domain))) return `https://${domain}`;
         }
         return this.env.APP_BASE_URL;
     }

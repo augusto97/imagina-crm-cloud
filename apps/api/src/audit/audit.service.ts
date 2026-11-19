@@ -277,6 +277,7 @@ export type AuditAction =
     | 'agency.client_resume'
     | 'agency.enter'
     | 'agency.access'
+    | 'agency.support'
     | 'agency.link'
     | 'agency.unlink'
     | 'agency.settings';

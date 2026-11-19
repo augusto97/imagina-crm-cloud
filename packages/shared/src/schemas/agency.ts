@@ -99,3 +99,4 @@ export type UpdateAgencyClientInput = z.infer<typeof updateAgencyClientSchema>;
 /** Lo que devuelve «Entrar»: la empresa a la que pasar. */
 export const agencyEnterResultSchema = z.object({ tenant_id: idSchema, tenant_slug: z.string() });
 export type AgencyEnterResult = z.infer<typeof agencyEnterResultSchema>;
+

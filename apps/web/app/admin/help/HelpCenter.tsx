@@ -1,7 +1,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { InstallOffer } from '@/components/pwa/InstallOffer';
-import { useBrandingData } from '@/hooks/useBranding';
+import { useAppName } from '@/hooks/useBranding';
 import { useLists } from '@/hooks/useLists';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { __ } from '@/lib/i18n';
@@ -32,7 +32,7 @@ const HelpPanel = lazyWithReload(() => import('./HelpPanel').then((m) => ({ defa
 export function HelpCenter({ onShowShortcuts }: { onShowShortcuts?: () => void }): JSX.Element {
     const viewer = useHelpViewer();
     const lists = useLists();
-    const branding = useBrandingData();
+    const appName = useAppName();
     const isMobile = useMediaQuery('(max-width: 1023px)');
     const installMode = useInstallMode();
     const panel = useHelpPanel();
@@ -48,10 +48,10 @@ export function HelpCenter({ onShowShortcuts }: { onShowShortcuts?: () => void }
             isMobile,
             firstList: first ? { slug: first.slug, name: first.name } : null,
             listCount: lists.data?.length ?? 0,
-            appName: branding.data?.app_name?.trim() || __('la app'),
+            appName: appName?.trim() || __('la app'),
             canInstall: installMode !== null,
         };
-    }, [viewer, lists.data, isMobile, branding.data?.app_name, installMode]);
+    }, [viewer, lists.data, isMobile, appName, installMode]);
 
     const ctxRef = useRef(ctx);
     ctxRef.current = ctx;

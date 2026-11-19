@@ -357,6 +357,12 @@ export interface HelpConfigView {
     videos: Record<string, string>;
     hidden: string[];
     custom: CustomGuide[];
+    /**
+     * v0.1.450 (ADR-S108) — quién da el soporte cuando no es la plataforma:
+     * el nombre de la AGENCIA de la empresa. Ahí el contacto es el de la
+     * agencia y no viajan las guías ni los videos del operador.
+     */
+    support_name?: string | null;
 }
 
 /** Lectura tolerante del valor guardado. */

@@ -61,11 +61,20 @@ export const useSession = create<SessionState>()(
             setSession: (session) => {
                 const isMember = (id: number | null): boolean =>
                     id !== null && session.memberships.some((m) => m.tenant_id === id);
-                // Dominio white-label: si el usuario es miembro de ESA empresa,
-                // el workspace queda fijado a ella. Sin membership → flujo normal.
-                const domainId = get().domainTenant?.id ?? null;
-                const lockedId = isMember(domainId) ? domainId : null;
+                // Dominio white-label: el workspace queda dentro de lo que ese
+                // dominio permite — la empresa del dominio y, si es una AGENCIA,
+                // sus empresas cliente (v0.1.450). Sin membership → flujo normal.
+                const domain = get().domainTenant;
+                const scoped = session.memberships.filter((m) => inDomainScope(m, domain));
                 const prevId = get().activeTenantId;
+                const scopedActive =
+                    domain !== null && scoped.length > 0
+                        ? scoped.some((m) => m.tenant_id === prevId)
+                            ? prevId
+                            : scoped.some((m) => m.tenant_id === domain.id)
+                              ? domain.id
+                              : scoped[0]!.tenant_id
+                        : null;
                 set({
                     user: session.user,
                     memberships: session.memberships,
@@ -73,20 +82,17 @@ export const useSession = create<SessionState>()(
                     isSuperadmin: session.is_superadmin === true,
                     platformReauth: session.platform_reauth === true,
                     activeTenantId:
-                        lockedId ??
+                        scopedActive ??
                         (isMember(prevId) ? prevId : (session.memberships[0]?.tenant_id ?? null)),
                 });
             },
             setActiveTenant: (tenantId) => {
-                // Con dominio white-label + membership de esa empresa, el tenant
-                // activo está bloqueado: no se puede cambiar a otro workspace.
+                // Con dominio white-label, sólo empresas de ese dominio (la suya
+                // y, si es una agencia, sus clientes).
                 const { domainTenant, memberships } = get();
-                if (
-                    domainTenant !== null &&
-                    tenantId !== domainTenant.id &&
-                    memberships.some((m) => m.tenant_id === domainTenant.id)
-                ) {
-                    return;
+                if (domainTenant !== null && memberships.some((m) => inDomainScope(m, domainTenant))) {
+                    const target = memberships.find((m) => m.tenant_id === tenantId);
+                    if (!target || !inDomainScope(target, domainTenant)) return;
                 }
                 set({ activeTenantId: tenantId });
             },
@@ -94,16 +100,16 @@ export const useSession = create<SessionState>()(
                 // Puede llegar ANTES o DESPUÉS de `setSession` (corren en
                 // paralelo en el boot): si la sesión ya está hidratada y hay
                 // membership del tenant del dominio, fijamos el workspace aquí.
-                const { user, memberships } = get();
-                const member =
-                    tenant !== null &&
-                    user !== null &&
-                    memberships.some((m) => m.tenant_id === tenant.id);
-                set(
-                    member
-                        ? { domainTenant: tenant, activeTenantId: tenant.id }
-                        : { domainTenant: tenant },
-                );
+                const { user, memberships, activeTenantId } = get();
+                const scoped = tenant !== null && user !== null ? memberships.filter((m) => inDomainScope(m, tenant)) : [];
+                const keep = scoped.some((m) => m.tenant_id === activeTenantId);
+                const next =
+                    tenant === null || scoped.length === 0 || keep
+                        ? null
+                        : scoped.some((m) => m.tenant_id === tenant.id)
+                          ? tenant.id
+                          : scoped[0]!.tenant_id;
+                set(next !== null ? { domainTenant: tenant, activeTenantId: next } : { domainTenant: tenant });
             },
             setPlatformBrand: (brand) => set({ platformBrand: brand }),
             clear: () =>
@@ -133,4 +139,16 @@ export const api = new CloudClient({
 export function activeMembership(): MembershipSummary | null {
     const { memberships, activeTenantId } = useSession.getState();
     return memberships.find((m) => m.tenant_id === activeTenantId) ?? null;
+}
+
+/**
+ * v0.1.450 (ADR-S108) — ¿la empresa entra en lo que permite el dominio por el
+ * que se abrió la app? La del dominio y, si el dominio es de una AGENCIA,
+ * también sus empresas cliente. Sin dominio propio, todas.
+ */
+export function inDomainScope(
+    m: Pick<MembershipSummary, 'tenant_id' | 'agency'>,
+    domain: Pick<DomainTenant, 'id'> | null,
+): boolean {
+    return domain === null || m.tenant_id === domain.id || m.agency?.id === domain.id;
 }

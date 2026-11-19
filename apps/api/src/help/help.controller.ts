@@ -24,7 +24,7 @@ export class HelpController {
 
     @Get()
     get(@Req() req: FastifyRequest): Promise<HelpConfigView> {
-        return this.help.forMember(req.tenant!.role);
+        return this.help.forMember(req.tenant!.role, req.tenant!.tenantId);
     }
 }
 

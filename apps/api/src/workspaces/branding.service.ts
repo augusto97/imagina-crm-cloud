@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Optional } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Optional } from '@nestjs/common';
 import {
     brandingSchema,
     stylePresetsSchema,
@@ -11,6 +11,8 @@ import {
     type UpdateTenantFormatInput,
 } from '@imagina-base/shared';
 import { and, eq, sql } from 'drizzle-orm';
+import { agencyAppBrand, manifestBrandToken } from '../agency/agency-brand';
+import { DRIZZLE, type Db } from '../db/client';
 import { attachments, tenants } from '../db/schema';
 import { FilesService } from '../files/files.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
@@ -30,6 +32,8 @@ export class BrandingService {
         private readonly tenantDb: TenantDb,
         private readonly files: FilesService,
         @Optional() private readonly timeZones?: TenantTimeZones,
+        // v0.1.450 — conexión base para leer la marca de la agencia (cruza empresas).
+        @Optional() @Inject(DRIZZLE) private readonly db?: Db,
     ) {}
 
     async get(tenantId: number): Promise<BrandingResponse> {
@@ -37,7 +41,21 @@ export class BrandingService {
             tx.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId)).limit(1),
         );
         const branding = parseBranding(row?.settings);
-        return this.withLogoUrl(tenantId, branding, parseFormat(row?.settings));
+        return this.withInherited(tenantId, this.withLogoUrl(tenantId, branding, parseFormat(row?.settings)));
+    }
+
+    /**
+     * v0.1.450 (I3, ADR-S108) — Si la empresa es cliente de una agencia, la
+     * app se ve con la marca de la agencia (nunca con la de la plataforma).
+     */
+    private async withInherited(tenantId: number, res: BrandingResponse): Promise<BrandingResponse> {
+        if (!this.db) return res;
+        const inherited = await agencyAppBrand(this.db, this.files, tenantId);
+        return {
+            ...res,
+            inherited,
+            manifest_brand: inherited ? manifestBrandToken(this.files, tenantId) : null,
+        };
     }
 
     async update(tenantId: number, patch: UpdateBrandingInput): Promise<BrandingResponse> {
@@ -75,7 +93,7 @@ export class BrandingService {
                 .where(eq(tenants.id, tenantId));
             return { merged, format: parseFormat(settings) };
         });
-        return this.withLogoUrl(tenantId, next.merged, next.format);
+        return this.withInherited(tenantId, this.withLogoUrl(tenantId, next.merged, next.format));
     }
 
     /**
@@ -170,6 +188,8 @@ export class BrandingService {
                     ? this.files.signedUrl(tenantId, branding.logo_file_id, 86_400)
                     : null,
             format,
+            inherited: null,
+            manifest_brand: null,
         };
     }
 }

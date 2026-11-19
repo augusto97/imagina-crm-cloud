@@ -334,7 +334,7 @@ export function HelpPanel({
                                 </ul>
                             </Section>
 
-                            <SupportCard support={config.support} />
+                            <SupportCard support={config.support} supportName={config.support_name ?? null} />
                         </div>
                     )}
                 </div>
@@ -456,7 +456,7 @@ export function GuideList({
 }
 
 /** «¿Necesitas más ayuda?» — sólo lo que configuró el operador. */
-export function SupportCard({ support }: { support: HelpSupport }): JSX.Element | null {
+export function SupportCard({ support, supportName = null }: { support: HelpSupport; supportName?: string | null }): JSX.Element | null {
     const has = Boolean(support.email || support.whatsapp || support.url);
     if (!has) return null;
     const linkClass =
@@ -465,7 +465,7 @@ export function SupportCard({ support }: { support: HelpSupport }): JSX.Element 
         <section aria-label={__('¿Necesitas más ayuda?')} className="imcrm-rounded-lg imcrm-bg-muted/50 imcrm-p-4" data-testid="help-support">
             <h3 className="imcrm-text-[13px] imcrm-font-semibold">{__('¿Necesitas más ayuda?')}</h3>
             <p className="imcrm-mt-1 imcrm-text-xs imcrm-text-muted-foreground">
-                {support.note ?? __('Escríbenos y te ayudamos.')}
+                {support.note ?? (supportName ? sprintf(__('Escríbele a %s y te ayudan.'), supportName) : __('Escríbenos y te ayudamos.'))}
             </p>
             <div className="imcrm-mt-3 imcrm-flex imcrm-flex-col imcrm-gap-2">
                 {support.email && (

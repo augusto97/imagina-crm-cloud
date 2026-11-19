@@ -16227,6 +16227,52 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         (planes y cobro de la agencia a sus clientes) y v0.1.452 (cobro de la
         plataforma a la agencia).
 
+  - [x] **Modo agencia, segunda parte: la marca de la agencia en sus
+        clientes (v0.1.450, addendum ADR-S108)**. Decisión del usuario: «sólo
+        la de la agencia». Lo que ve el EQUIPO de una empresa cliente es la
+        app de la agencia, nunca la de la plataforma; lo que ven los clientes
+        de esa empresa sigue con la marca propia de la empresa. Sin migración:
+        todo vive en `tenants.settings`. (a) **Marca heredada**:
+        `GET /workspaces/current/branding` de un cliente trae `inherited`
+        (nombre de la app, color, barra lateral, barras del teléfono y logo
+        firmado de la agencia, `agency-brand.ts`) y `manifest_brand`;
+        `appBranding()` (shared) decide qué usa la app: el riel, el título del
+        panel y de la barra del celular, las iniciales, la pestaña, el favicon,
+        los colores, «Novedades» y la Ayuda (`workspaceTitleFor`,
+        `useAppName`). La marca propia del cliente (Ajustes → Marca) sigue
+        siendo la del portal, formularios, agenda, tienda, widget, firmas y
+        correos a sus clientes; esa pantalla lo explica y esconde lo que sólo
+        cambia la app (barra lateral, barras del teléfono). (b) **App
+        instalable**: el manifiesto acepta una llave firmada `?b=` (empresa +
+        HMAC `appbrand`) que lo arma con el nombre, color e ícono de la agencia
+        (`agencyManifestBrand`); una llave alterada o de una empresa que no es
+        cliente cae a la de siempre. (c) **Pantalla de entrar** por el
+        subdominio o el dominio del equipo de un cliente: la marca de la
+        agencia (`white_label`); el del portal sigue con la del cliente.
+        (d) **Dominio de la agencia**: una sesión abierta ahí sirve para sus
+        clientes (`membershipsOf`, `TenantGuard`, OAuth del MCP,
+        `tenantInBoundScope`) y los enlaces de la app de un cliente salen por
+        el dominio de la agencia si responde (`baseUrlFor`; el propio del
+        cliente gana, el del portal nunca). (e) **Correos de la cuenta**
+        (verificar, recuperar, invitaciones, avisos) con el nombre y el dominio
+        de la agencia (`registerAccountBrandResolver` desde DomainsService, sin
+        ciclo de DI); la marca de alguien de la agencia sale de SU empresa,
+        nunca de un cliente al que entró. (f) **Ayuda**: el contacto de
+        soporte de un cliente es el de su agencia, editable en la consola de la
+        agencia → **«Lo que ven tus clientes»** (`AgencyBrandCard`,
+        `GET/PUT /agency/support`, bitácora `agency.support`), con la marca y el
+        botón a Ajustes → Marca. **Atrapado en el E2E**: el panel y la barra
+        del celular mostraban el nombre de app PROPIO del cliente (el de sus
+        clientes), las iniciales del riel salían de la empresa y el error del
+        WhatsApp de soporte quedaba tras corregirlo. Ayuda: guía `agency` al
+        día (sin novedad: es de agencias). Tests: `agency-brand.spec` (7: marca
+        heredada y llave del manifiesto, pantalla de entrar por subdominio,
+        llave alterada, enlaces por el dominio de la agencia, correos de la
+        cuenta, sesión en el dominio de la agencia, soporte en la Ayuda),
+        `agency-brand.test` en shared (3), `pwa.test` +1 — suites relacionadas
+        211/211, shared 1040, front 951 — + E2E navegador 32/32 en escritorio y
+        celular oscuro.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

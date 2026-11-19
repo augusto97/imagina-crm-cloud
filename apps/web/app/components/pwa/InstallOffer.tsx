@@ -1,3 +1,4 @@
+import { useBrandingData } from '@/hooks/useBranding';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router';
@@ -50,7 +51,10 @@ function offsetAboveGettingStarted(): number | null {
 export function InstallOffer({ disabled = false }: { disabled?: boolean }): JSX.Element | null {
     const mode = useInstallMode();
     // v0.1.327 — el ícono con el que se instala aquí (el de la plataforma si lo subió).
-    const appIcon = useSession((s) => (s.domainTenant ? null : s.platformBrand.icons?.icon_96)) ?? '/pwa/icon-96.png';
+    // v0.1.450 — una empresa cliente de una agencia nunca ve el de la plataforma.
+    const agencyClient = useBrandingData().data?.inherited != null;
+    const platformIcon = useSession((s) => (s.domainTenant ? null : s.platformBrand.icons?.icon_96));
+    const appIcon = (agencyClient ? null : platformIcon) ?? '/pwa/icon-96.png';
     const { pathname } = useLocation();
     const narrow = useMediaQuery('(max-width: 639px)');
     const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
