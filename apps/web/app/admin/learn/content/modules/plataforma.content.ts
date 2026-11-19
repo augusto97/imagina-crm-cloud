@@ -442,6 +442,15 @@ export const articles: LearnArticle[] = [
                 t: 'p',
                 md: 'Antes de cobrar aparte un módulo o apagarlo en un plan, mira **Plataforma → Uso**: por cada módulo dice cuántas empresas lo usan («6 de 8 empresas»), cuántas tuvieron actividad en los últimos 30 días, cuánto tienen configurado (automatizaciones activas, formularios publicados, conexiones) y cuándo fue el último uso. Un módulo que **nadie usa** lleva la marca y, si un plan lo apaga, lo dice. Toca un módulo para ver qué empresas lo usan, de la que más a la que menos, y toca una empresa para abrir su ficha, donde también aparece **Qué usa**. Abajo, **Apps conectadas** cuenta cada integración. El cálculo se guarda unos minutos; **Actualizar** lo hace de nuevo.',
             },
+            { t: 'h', text: 'Lo que paga una agencia' },
+            {
+                t: 'p',
+                md: 'Una **agencia** paga su plan como cualquier empresa, más lo que suman las empresas cliente que maneja. En el formulario del plan, **Para agencias** dice cuántas **Empresas incluidas** trae el precio y cuánto suma cada una de más (**USD por extra** y **COP por extra**). No cuentan las archivadas ni las que la agencia pausó. Vacío en «Empresas incluidas» = todas sin costo extra; sin valor por extra en una moneda, una agencia que se pasa de las incluidas no puede pagar en esa moneda. La columna **Agencias** de la grilla lo resume.',
+            },
+            {
+                t: 'p',
+                md: 'Para un trato distinto con una agencia, abre su ficha en **Empresas → Agencia → Lo que paga a la plataforma**: lo que pongas ahí manda sobre su plan y debajo ves el total del mes. La agencia ve el mismo total arriba en **Agencia** y en **Ajustes → Suscripción**; si tiene la renovación automática, el monto de la renovación se ajusta solo cuando crea, pausa o reactiva una empresa.',
+            },
             { t: 'h', text: 'Prueba y vencimientos' },
             {
                 t: 'p',

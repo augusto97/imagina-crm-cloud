@@ -134,6 +134,8 @@ export interface PaymentGateway {
     createCheckout(req: CheckoutRequest): Promise<CheckoutSession>;
     createSubscription?(req: SubscriptionRequest): Promise<SubscriptionSession>;
     cancelSubscription?(externalId: string): Promise<void>;
+    /** v0.1.454 — Cambia el monto de una renovación viva (el próximo cobro sale con éste). */
+    updateSubscriptionAmount?(externalId: string, amount: number): Promise<void>;
     /** Verifica la firma y devuelve lo que pasó (vacío si no aplica o no es auténtico). */
     handleWebhook(
         headers: Record<string, string | undefined>,

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Building2, Loader2, Save, Unlink } from 'lucide-react';
-import type { PlatformTenant, UpdateTenantInput } from '@imagina-base/shared';
+import { agencyPlatformPricing, type PlatformTenant, type UpdateTenantInput } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { usePlatformPlans, usePlatformTenants } from '@/hooks/usePlatform';
 import { __ } from '@/lib/i18n';
+import { formatNumber } from '@/lib/tenantFormat';
 
 /**
  * v0.1.449 (I3, ADR-S108) — Modo agencia desde la ficha de una empresa:
@@ -34,18 +35,52 @@ export function TenantAgencySection({
     const [maxClients, setMaxClients] = useState<string>(t.agency_settings?.max_clients != null ? String(t.agency_settings.max_clients) : '');
     const [assignTo, setAssignTo] = useState<string>('');
     const [extraPlans, setExtraPlans] = useState<string[]>(t.agency_settings?.client_plans ?? []);
+    // v0.1.454 — un trato propio con la plataforma (vacío = lo del plan de la agencia).
+    const numStr = (v: number | null | undefined): string => (v != null ? String(v) : '');
+    const [incl, setIncl] = useState<string>(numStr(t.agency_settings?.included_clients));
+    const [extraUsd, setExtraUsd] = useState<string>(numStr(t.agency_settings?.extra_usd));
+    const [extraCop, setExtraCop] = useState<string>(numStr(t.agency_settings?.extra_cop));
 
     useEffect(() => {
         setClientPlan(t.agency_settings?.client_plan ?? '');
         setMaxClients(t.agency_settings?.max_clients != null ? String(t.agency_settings.max_clients) : '');
         setExtraPlans(t.agency_settings?.client_plans ?? []);
+        setIncl(numStr(t.agency_settings?.included_clients));
+        setExtraUsd(numStr(t.agency_settings?.extra_usd));
+        setExtraCop(numStr(t.agency_settings?.extra_cop));
     }, [t.agency_settings]);
 
-    const maxValid = maxClients.trim() === '' || /^\d+$/.test(maxClients.trim());
+    const isInt = (v: string): boolean => v.trim() === '' || /^\d+$/.test(v.trim());
+    const toNum = (v: string): number | null => (v.trim() === '' ? null : Number(v.trim()));
+    const maxValid = isInt(maxClients);
+    const dealValid = isInt(incl) && isInt(extraUsd) && isInt(extraCop);
     const settingsDirty =
         (clientPlan || null) !== (t.agency_settings?.client_plan ?? null) ||
         (maxClients.trim() === '' ? null : Number(maxClients)) !== (t.agency_settings?.max_clients ?? null) ||
-        [...extraPlans].sort().join(',') !== [...(t.agency_settings?.client_plans ?? [])].sort().join(',');
+        [...extraPlans].sort().join(',') !== [...(t.agency_settings?.client_plans ?? [])].sort().join(',') ||
+        toNum(incl) !== (t.agency_settings?.included_clients ?? null) ||
+        toNum(extraUsd) !== (t.agency_settings?.extra_usd ?? null) ||
+        toNum(extraCop) !== (t.agency_settings?.extra_cop ?? null);
+
+    // Lo que paga hoy a la plataforma con lo que hay en pantalla (el mismo cálculo del servidor).
+    const ownPlan = (plans.data ?? []).find((p) => p.slug === t.plan) ?? null;
+    const pricing = t.is_agency
+        ? agencyPlatformPricing(
+              ownPlan
+                  ? {
+                        price_usd: ownPlan.price_usd,
+                        price_cop: ownPlan.price_cop,
+                        agency_included_clients: ownPlan.agency_included_clients ?? null,
+                        agency_extra_usd: ownPlan.agency_extra_usd ?? null,
+                        agency_extra_cop: ownPlan.agency_extra_cop ?? null,
+                    }
+                  : null,
+              dealValid ? { included_clients: toNum(incl), extra_usd: toNum(extraUsd), extra_cop: toNum(extraCop) } : null,
+              t.agency_billed_clients ?? 0,
+          )
+        : null;
+    const usd = (v: number | null): string => (v === null ? '—' : `US$ ${formatNumber(v)}`);
+    const cop = (v: number | null): string => (v === null ? '—' : `$ ${formatNumber(v)} COP`);
 
     const toggleAgency = async (on: boolean): Promise<void> => {
         if (!on) {
@@ -183,18 +218,84 @@ export function TenantAgencySection({
                                 ))}
                         </div>
                     </div>
+                    {/* v0.1.454 — lo que la plataforma le cobra a esta agencia. */}
+                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-border-t imcrm-border-border imcrm-pt-3" data-testid="tenant-agency-pricing">
+                        <Label className="imcrm-text-xs">{__('Lo que paga a la plataforma')}</Label>
+                        <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                            {__('El precio de su plan incluye algunas empresas cliente y cada una de más suma al mes (sin contar las archivadas ni las pausadas por la agencia). Puedes ponerle un trato propio; vacío = lo de su plan.')}
+                        </p>
+                        <div className="imcrm-grid imcrm-grid-cols-3 imcrm-gap-2">
+                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                                <Label className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Empresas incluidas')}</Label>
+                                <Input
+                                    inputMode="numeric"
+                                    value={incl}
+                                    onChange={(e) => setIncl(e.target.value)}
+                                    placeholder={ownPlan?.agency_included_clients != null ? String(ownPlan.agency_included_clients) : __('Todas')}
+                                    className="imcrm-h-9"
+                                    data-testid="tenant-agency-included"
+                                />
+                            </div>
+                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                                <Label className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('USD por extra')}</Label>
+                                <Input
+                                    inputMode="numeric"
+                                    value={extraUsd}
+                                    onChange={(e) => setExtraUsd(e.target.value)}
+                                    placeholder={ownPlan?.agency_extra_usd != null ? String(ownPlan.agency_extra_usd) : '—'}
+                                    className="imcrm-h-9"
+                                    data-testid="tenant-agency-extra-usd"
+                                />
+                            </div>
+                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                                <Label className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('COP por extra')}</Label>
+                                <Input
+                                    inputMode="numeric"
+                                    value={extraCop}
+                                    onChange={(e) => setExtraCop(e.target.value)}
+                                    placeholder={ownPlan?.agency_extra_cop != null ? String(ownPlan.agency_extra_cop) : '—'}
+                                    className="imcrm-h-9"
+                                    data-testid="tenant-agency-extra-cop"
+                                />
+                            </div>
+                        </div>
+                        {!dealValid && <p className="imcrm-text-[12px] imcrm-text-destructive">{__('Usa números enteros, sin puntos ni comas.')}</p>}
+                        {pricing && (
+                            <p className="imcrm-rounded-md imcrm-bg-muted/50 imcrm-px-3 imcrm-py-2 imcrm-text-[12px]" data-testid="tenant-agency-total">
+                                {pricing.base_usd === null && pricing.base_cop === null ? (
+                                    __('Su plan no tiene precio: no paga nada a la plataforma.')
+                                ) : (
+                                    <>
+                                        {formatNumber(pricing.clients)} {pricing.clients === 1 ? __('empresa cliente') : __('empresas cliente')}
+                                        {pricing.included === null
+                                            ? ` · ${__('todas incluidas')}`
+                                            : ` · ${formatNumber(pricing.included)} ${__('incluidas')} · ${formatNumber(pricing.extras)} ${pricing.extras === 1 ? __('extra') : __('extras')}`}
+                                        {' → '}
+                                        <strong>
+                                            {usd(pricing.total_usd)} · {cop(pricing.total_cop)}
+                                        </strong>{' '}
+                                        {__('al mes')}
+                                        {pricing.custom && <span className="imcrm-text-muted-foreground"> · {__('trato propio')}</span>}
+                                    </>
+                                )}
+                            </p>
+                        )}
+                    </div>
                     <div className="imcrm-flex imcrm-justify-end">
                         <Button
                             size="sm"
                             variant="outline"
                             className="imcrm-gap-1.5"
-                            disabled={busy || !settingsDirty || !maxValid}
+                            disabled={busy || !settingsDirty || !maxValid || !dealValid}
                             onClick={() =>
                                 void onUpdate({
                                     agency_settings: {
                                         client_plan: clientPlan || null,
                                         max_clients: maxClients.trim() === '' ? null : Number(maxClients.trim()),
                                         client_plans: extraPlans.slice(0, 20),
+                                        included_clients: toNum(incl),
+                                        extra_usd: toNum(extraUsd),
+                                        extra_cop: toNum(extraCop),
                                     },
                                 })
                             }

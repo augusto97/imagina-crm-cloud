@@ -79,6 +79,7 @@ export * from './schemas/platform-usage';
 export * from './schemas/platform';
 export * from './schemas/agency';
 export * from './schemas/agency-billing';
+export * from './schemas/agency-platform';
 export * from './schemas/payment';
 export * from './schemas/update';
 export * from './schemas/backups';

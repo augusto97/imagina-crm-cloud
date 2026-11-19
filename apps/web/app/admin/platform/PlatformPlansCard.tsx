@@ -119,6 +119,7 @@ export function PlatformPlansCard(): JSX.Element {
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium imcrm-text-right">{__('IA/mes')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium imcrm-text-right">{__('USD/mes')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium imcrm-text-right">{__('COP/mes')}</th>
+                                    <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium" title={__('Empresas cliente incluidas y valor por cada extra')}>{__('Agencias')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium">{__('Incluye')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium" />
                                 </tr>
@@ -160,6 +161,18 @@ export function PlatformPlansCard(): JSX.Element {
                                         </td>
                                         <td className="imcrm-px-2 imcrm-py-2.5 imcrm-text-right imcrm-tabular-nums">
                                             {p.price_cop === null ? <span className="imcrm-text-muted-foreground">—</span> : COP.format(p.price_cop)}
+                                        </td>
+                                        {/* v0.1.454 — para agencias: incluidas + valor por extra. */}
+                                        <td className="imcrm-px-2 imcrm-py-2.5 imcrm-whitespace-nowrap imcrm-text-xs" data-testid="plan-agency-summary">
+                                            {p.agency_included_clients === null || p.agency_included_clients === undefined ? (
+                                                <span className="imcrm-text-muted-foreground">—</span>
+                                            ) : (
+                                                <span>
+                                                    {formatNumber(p.agency_included_clients)} {__('incl.')}
+                                                    {p.agency_extra_usd !== null && p.agency_extra_usd !== undefined && ` · +${USD.format(p.agency_extra_usd)}`}
+                                                    {p.agency_extra_cop !== null && p.agency_extra_cop !== undefined && ` · +${COP.format(p.agency_extra_cop)}`}
+                                                </span>
+                                            )}
                                         </td>
                                         {/* v0.1.338 — módulos que el plan incluye. */}
                                         <td className="imcrm-px-2 imcrm-py-2.5 imcrm-whitespace-nowrap" data-testid="plan-modules-summary">
@@ -224,6 +237,10 @@ function PlanSheet({ open, plan, onClose }: { open: boolean; plan: PlatformPlan 
     const [ai, setAi] = useState('');
     const [usd, setUsd] = useState('');
     const [cop, setCop] = useState('');
+    // v0.1.454 — para agencias: empresas cliente incluidas y valor por cada extra.
+    const [agInc, setAgInc] = useState('');
+    const [agUsd, setAgUsd] = useState('');
+    const [agCop, setAgCop] = useState('');
     const [active, setActive] = useState(true);
     const [modulesOff, setModulesOff] = useState<PlanModule[]>([]);
     const [error, setError] = useState<string | null>(null);
@@ -240,6 +257,9 @@ function PlanSheet({ open, plan, onClose }: { open: boolean; plan: PlatformPlan 
         setAi(limitStr(plan?.max_ai_requests_month ?? null));
         setUsd(limitStr(plan?.price_usd ?? null));
         setCop(limitStr(plan?.price_cop ?? null));
+        setAgInc(limitStr(plan?.agency_included_clients ?? null));
+        setAgUsd(limitStr(plan?.agency_extra_usd ?? null));
+        setAgCop(limitStr(plan?.agency_extra_cop ?? null));
         setActive(plan?.is_active ?? true);
         setModulesOff(readDisabledModules(plan?.disabled_modules ?? []));
         setError(null);
@@ -260,6 +280,9 @@ function PlanSheet({ open, plan, onClose }: { open: boolean; plan: PlatformPlan 
             max_ai_requests_month: toLimit(ai),
             price_usd: toLimit(usd),
             price_cop: toLimit(cop),
+            agency_included_clients: toLimit(agInc),
+            agency_extra_usd: toLimit(agUsd),
+            agency_extra_cop: toLimit(agCop),
             is_active: active,
             disabled_modules: modulesOff,
         };
@@ -359,6 +382,37 @@ function PlanSheet({ open, plan, onClose }: { open: boolean; plan: PlatformPlan 
                                 <Input id="ps-cop" type="number" min={0} value={cop} onChange={(e) => setCop(e.target.value)} placeholder="—" />
                             </div>
                         </div>
+                    </fieldset>
+
+                    {/* v0.1.454 (ADR-S108) — lo que paga una AGENCIA con este plan: el
+                        precio de arriba incluye N empresas cliente y cada una de más
+                        suma su valor al mes. Para el resto de las empresas no cambia nada. */}
+                    <fieldset className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-tour="platform-plan-agency">
+                        <legend className="imcrm-mb-1 imcrm-text-xs imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
+                            {__('Para agencias')}
+                        </legend>
+                        <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                            {__('Si una agencia tiene este plan, el precio de arriba incluye estas empresas cliente y cada una de más suma su valor al mes. No cuentan las archivadas ni las que la agencia pausó. Vacío en «Incluidas» = todas sin costo extra.')}
+                        </p>
+                        <div className="imcrm-grid imcrm-grid-cols-3 imcrm-gap-3">
+                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                                <Label htmlFor="ps-ag-inc" className="imcrm-text-xs">{__('Empresas incluidas')}</Label>
+                                <Input id="ps-ag-inc" type="number" min={0} value={agInc} onChange={(e) => setAgInc(e.target.value)} placeholder="∞" />
+                            </div>
+                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                                <Label htmlFor="ps-ag-usd" className="imcrm-text-xs">{__('USD por extra')}</Label>
+                                <Input id="ps-ag-usd" type="number" min={0} value={agUsd} onChange={(e) => setAgUsd(e.target.value)} placeholder="—" />
+                            </div>
+                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                                <Label htmlFor="ps-ag-cop" className="imcrm-text-xs">{__('COP por extra')}</Label>
+                                <Input id="ps-ag-cop" type="number" min={0} value={agCop} onChange={(e) => setAgCop(e.target.value)} placeholder="—" />
+                            </div>
+                        </div>
+                        {agInc.trim() !== '' && (agUsd.trim() === '' || agCop.trim() === '') && (
+                            <p className="imcrm-text-[11px] imcrm-text-amber-700 dark:imcrm-text-amber-400">
+                                {__('Sin valor por extra en una moneda, una agencia con más empresas de las incluidas no puede pagar en esa moneda.')}
+                            </p>
+                        )}
                     </fieldset>
 
                     <fieldset className="imcrm-flex imcrm-flex-col imcrm-gap-2">

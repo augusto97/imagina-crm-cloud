@@ -430,7 +430,18 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.453**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.454**
+(**la plataforma le cobra a la agencia** — decisión del usuario «las dos»: el
+plan de la plataforma dice en «Para agencias» cuántas empresas cliente incluye
+y cuánto vale cada una de más (USD y COP); el operador puede ponerle a una
+agencia un trato propio en su ficha → Agencia → «Lo que paga a la plataforma».
+Cuentan las empresas sin archivar ni pausar. La agencia ve el total en su
+consola y lo paga en Ajustes → Suscripción con el desglose; con la renovación
+automática de Mercado Pago el monto se ajusta solo al crear, pausar o
+reactivar un cliente (y la revisión de cada hora recoge lo que falló). Sin
+valor por extra en una moneda, el plan no se vende en esa moneda. Migración
+0138. ADR-S108 addendum. **Con esto I3 (modo agencia) queda completo**; G8 DIAN
+espera proveedor y credenciales de prueba). Antes **v0.1.453**
 (**débito automático para los clientes de la agencia** — con Mercado Pago o
 PayPal, la agencia marca «Ofrecer débito automático» en Cobro en línea; desde
 «Plan y pagos» arma el débito (o el cliente lo activa en Ajustes →
@@ -441,9 +452,7 @@ deshace; mientras cobra, los avisos no mandan «por vencer» ni links y «Pagar
 ahora» se oculta. Cambiar el período o la moneda del plan, quitarlo o que la
 empresa salga de la agencia lo cancela; cambiar el valor lo actualiza en el
 proveedor. Límite: un reembolso no descuenta el período solo. Migración 0137.
-ADR-S108 addendum. **Sigue** v0.1.454: el cobro de la plataforma a la agencia
-(«las dos»: plan base con N empresas + valor por empresa extra); G8 DIAN
-espera proveedor y credenciales de prueba). Antes **v0.1.452**
+ADR-S108 addendum). Antes **v0.1.452**
 (**la agencia cobra en línea a sus clientes** — la agencia conecta su cuenta
 de Mercado Pago, Wompi o PayPal y la elige en «Planes para tus clientes →
 Cobro en línea»: se arma en la agencia la lista «Empresas cliente» (un
@@ -2300,6 +2309,38 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-19 · v0.1.454** — **La plataforma le cobra a la agencia** (I3,
+  ADR-S108 addendum; decisión del usuario «las dos»). Migración 0138:
+  `plans.agency_included_clients/agency_extra_usd/agency_extra_cop` (NULL en
+  incluidas = todas sin extra), editables en Plataforma → Planes → «Para
+  agencias» (columna «Agencias»); trato propio por agencia en su ficha →
+  Agencia → «Lo que paga a la plataforma»
+  (`tenants.settings.agency.included_clients/extra_usd/extra_cop`; el PATCH
+  de la plataforma ahora MEZCLA `agency_settings` con lo guardado). Cuentan
+  las empresas sin archivar ni pausar. Reglas puras en
+  `shared/schemas/agency-platform.ts`; `PaymentsService.config(tenantId)` y el
+  checkout cobran base + extras × valor (sin valor por extra en una moneda →
+  `plan_not_sellable` con el motivo). La renovación de Mercado Pago se ajusta
+  sola (`syncAgencyRenewal` → `PUT /preapproval/{id}`) al crear, pausar o
+  reactivar un cliente y al cambiar el plan o el trato, más la revisión de cada
+  hora (`registerBillingTick`, en `payments/billing-ticks.ts` para cortar un
+  import circular). Front: «Para agencias» y la columna en Planes, el trato y
+  el total en vivo en la ficha, el desglose en Ajustes → Suscripción
+  (`AgencyPlanBreakdown`), la tarjeta «Tu plan» con «Ver y pagar» en la consola
+  de la agencia y el aviso de extra al crear un cliente. Ayuda: guía `agency` y
+  Aprende → consola («Lo que paga una agencia»); sin novedad (es de agencias y
+  del operador). **Con esto I3 queda completo** y sale de `docs/ideas.md`.
+  Tests: `agency-platform-billing.spec` (6: precio sin pausadas ni archivadas,
+  pago por período con las extras, no vendible sin valor por extra, trato
+  propio que se mezcla, renovación ajustada al cambiar las empresas y el PUT de
+  Mercado Pago) + `agency-platform.test` en shared, suites relacionadas
+  139/139 — E2E navegador 25/25 en escritorio y 25/25 en celular oscuro contra
+  el Mercado Pago simulado (plan con 2 incluidas, la tercera empresa que suma
+  la extra con aviso al crearla, Suscripción con el desglose, checkout de 3
+  meses por 714.000 con la referencia del monto, trato propio que en vivo
+  vuelve a la base y la agencia lo ve). **Sigue**: G8 DIAN (espera proveedor y
+  credenciales); de §0 de `docs/ideas.md` quedan además Make y Zapier (G2) y el
+  resto de E1/E2.
 - **2026-11-19 · v0.1.453** — **Débito automático para los clientes de la
   agencia** (I3, ADR-S108 addendum). `agency_billing.online.debit` (sólo con
   Mercado Pago o PayPal: `agency_debit_provider`). `AgencyDebitService`: un

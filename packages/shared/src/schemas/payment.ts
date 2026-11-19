@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { tenantAccessSchema } from './plan-access';
 import { planSchema } from './billing';
+import { agencyPlatformPricingSchema } from './agency-platform';
 
 /**
  * Pagos (ADR-S12). Stripe no opera en Colombia, así que el cobro va por
@@ -35,6 +36,11 @@ export const planPriceSchema = z.object({
     /** Límites del plan, para compararlos al elegir. `null` = ilimitado. */
     max_users: z.number().nullable().optional(),
     max_records: z.number().nullable().optional(),
+    /**
+     * v0.1.454 — Si quien mira es una agencia: `usd`/`cop` ya son el total al
+     * mes (base + empresas cliente extra) y esto es el desglose.
+     */
+    agency: agencyPlatformPricingSchema.nullable().optional(),
 });
 export type PlanPrice = z.infer<typeof planPriceSchema>;
 

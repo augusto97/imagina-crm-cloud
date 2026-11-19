@@ -32,13 +32,10 @@ de eventos en v0.1.442 y la app de n8n en v0.1.443; quedan Make y Zapier),
 (firma electrónica: salió completa en v0.1.446, v0.1.447 —automatizaciones,
 portal, verificar con el archivo y asistente/MCP— y v0.1.448 —el código por SMS
 o WhatsApp—) y **G8** (facturación DIAN: falta elegir proveedor y tener
-credenciales de prueba) e **I3** (modo agencia: decisiones tomadas el
-2026-11-18, ver §2; la base salió en v0.1.449 —consola de la agencia, entrar
-con rastro, pausar, plan gestionado—, la marca de la agencia en v0.1.450 y
-sus planes con pagos registrados a mano en v0.1.451 y el cobro en línea con
-la cuenta de la agencia en v0.1.452 y el débito automático para los clientes
-de la agencia en v0.1.453; sigue el cobro de la plataforma a la agencia en
-v0.1.454).
+credenciales de prueba) e **I3** (modo agencia: salió completo entre
+v0.1.449 y v0.1.454 —consola de la agencia y acceso con rastro, su marca en
+sus clientes, sus planes con pagos a mano, en línea y con débito automático, y
+el cobro de la plataforma a la agencia por las empresas que maneja—).
 
 ---
 
@@ -74,23 +71,6 @@ aquí, pospuestos:
   por empresa. Costo que queda: cada texto nuevo en tres idiomas. Decisión
   pendiente: quién revisa las traducciones (conviene un nativo para el
   portugués).
-- **I3 · Modo agencia / revendedor** (estilo GoHighLevel). Un socio administra
-  varias empresas cliente con su marca, plantillas, planes y precios. Encaja
-  con el negocio del usuario. Base: consola de plataforma, white-label,
-  dominios propios, planes editables e impersonación. **Decidido por el
-  usuario (2026-11-18)**: la agencia le cobra a su cliente con su propia
-  pasarela; la plataforma le cobra a la agencia un plan base con N empresas
-  incluidas más un valor por cada empresa extra; la agencia entra a los datos
-  de sus clientes como administradora, con rastro en la bitácora que el
-  cliente puede ver; y los clientes de una agencia sólo ven la marca de la
-  agencia (white-label completo, sin la marca de la plataforma). **Hecho en
-  v0.1.449**: el modelo, la consola de la agencia y el acceso con rastro;
-  **en v0.1.450** la marca de la agencia en sus clientes; **en v0.1.451** los
-  planes de la agencia, el «pagado hasta» de cada cliente y los pagos
-  registrados a mano; **en v0.1.452** el cobro en línea con la cuenta de la
-  agencia (Mercado Pago, Wompi o PayPal: link por cliente, «Pagar ahora» y el
-  pago que se registra solo). **Queda**: el débito automático de los clientes
-  de la agencia (v0.1.453) y el cobro de la plataforma a la agencia (v0.1.454).
 - **G5 · Importadores**, Airtable primero (base completa con vínculos y
   adjuntos, por token de la persona); después Notion, ClickUp, Trello y monday.
 - **G3 · Google Sheets sincronizado en los dos sentidos.** La integración de
@@ -191,7 +171,6 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 |---|---|---|
 | I1 · Interfaz en inglés y portugués | alto · L | Pospuesto por el usuario al armar la fase 6. `lib/i18n.ts` ya existe. |
 | I2 · SSO corporativo (Google Workspace, Entra, SAML, OIDC) y SCIM | medio · M | |
-| I3 · Modo agencia / revendedor | alto · L | Pospuesto por el usuario al armar la fase 6. Ver §2. |
 | I4 · Cobro por usuario y complementos (más IA, correos, almacenamiento) | medio · M | |
 | I5 · Cupones, pruebas gratis y referidos | medio · M | |
 | I6 · Copia automática de cada empresa a SU Drive o S3 | medio · S-M | Hoy existen el almacenamiento propio y la exportación de una empresa. |

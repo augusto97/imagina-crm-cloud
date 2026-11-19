@@ -158,6 +158,16 @@ export class MercadoPagoGateway implements PaymentGateway {
         if (!res.ok) throw new Error(`Mercado Pago no canceló la renovación (${res.status}): ${await safeText(res)}`);
     }
 
+    async updateSubscriptionAmount(externalId: string, amount: number): Promise<void> {
+        const { accessToken } = await this.creds();
+        const res = await this.fetchImpl(`${this.apiBase}/preapproval/${encodeURIComponent(externalId)}`, {
+            method: 'PUT',
+            headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
+            body: JSON.stringify({ auto_recurring: { transaction_amount: amount } }),
+        });
+        if (!res.ok) throw new Error(`Mercado Pago no cambió el monto de la renovación (${res.status}): ${await safeText(res)}`);
+    }
+
     async handleWebhook(
         headers: Record<string, string | undefined>,
         rawBody: string,

@@ -52,6 +52,9 @@ export class PlansService {
             max_guests: r.maxGuests,
             price_usd: r.priceUsd,
             price_cop: r.priceCop,
+            agency_included_clients: r.agencyIncludedClients,
+            agency_extra_usd: r.agencyExtraUsd,
+            agency_extra_cop: r.agencyExtraCop,
             is_active: r.isActive,
             position: r.position,
             disabled_modules: readDisabledModules(r.disabledModules),
@@ -122,6 +125,11 @@ export class PlansService {
             }));
     }
 
+    /** v0.1.454 — Un plan por su slug (o null si no existe). */
+    async find(slug: string): Promise<PlatformPlan | null> {
+        return (await this.load()).list.find((p) => p.slug === slug) ?? null;
+    }
+
     /** Precio de un plan en una moneda, o `null` si no es vendible con ella. */
     async priceFor(slug: string, currency: Currency): Promise<number | null> {
         const plan = (await this.load()).list.find((p) => p.slug === slug);
@@ -147,6 +155,9 @@ export class PlansService {
             maxGuests: input.max_guests,
             priceUsd: input.price_usd,
             priceCop: input.price_cop,
+            agencyIncludedClients: input.agency_included_clients,
+            agencyExtraUsd: input.agency_extra_usd,
+            agencyExtraCop: input.agency_extra_cop,
             isActive: input.is_active,
             disabledModules: readDisabledModules(input.disabled_modules ?? []),
             position: (posRows[0]?.n ?? -1) + 1,
@@ -167,6 +178,9 @@ export class PlansService {
         if (input.max_guests !== undefined) changes.maxGuests = input.max_guests;
         if (input.price_usd !== undefined) changes.priceUsd = input.price_usd;
         if (input.price_cop !== undefined) changes.priceCop = input.price_cop;
+        if (input.agency_included_clients !== undefined) changes.agencyIncludedClients = input.agency_included_clients;
+        if (input.agency_extra_usd !== undefined) changes.agencyExtraUsd = input.agency_extra_usd;
+        if (input.agency_extra_cop !== undefined) changes.agencyExtraCop = input.agency_extra_cop;
         if (input.is_active !== undefined) changes.isActive = input.is_active;
         if (input.disabled_modules !== undefined) changes.disabledModules = readDisabledModules(input.disabled_modules);
         const res = await this.db.update(plans).set(changes).where(eq(plans.slug, slug)).returning();
@@ -182,7 +196,7 @@ export class PlansService {
         const useRows = await this.db.select({ n: sql<number>`count(*)::int` }).from(tenants).where(eq(tenants.plan, slug));
         const inUse = useRows[0]?.n ?? 0;
         if (inUse > 0) {
-            throw new ConflictException({ code: 'plan_in_use', message: `El plan '${slug}' lo usan ${inUse} empresas; reasignálas antes de borrarlo`, data: { status: 409 } });
+            throw new ConflictException({ code: 'plan_in_use', message: `El plan '${slug}' lo usan ${inUse} empresas; reasígnalas antes de borrarlo`, data: { status: 409 } });
         }
         const res = await this.db.delete(plans).where(eq(plans.slug, slug)).returning();
         if (res.length === 0) {

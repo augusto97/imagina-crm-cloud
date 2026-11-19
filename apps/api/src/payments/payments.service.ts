@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, Logger, Optional, type OnModuleInit } from '@nestjs/common';
 import { accessOf, currentBillingPolicy, agencyAccessSql } from '../billing/tenant-access';
 import {
     addMonthsClamped,
@@ -17,8 +17,11 @@ import {
     type Plan,
     type PlatformPaymentRow,
     type SubscriptionInfo,
+    agencyPlatformPricing,
+    readAgencySettings,
+    type AgencyPlatformPricing,
 } from '@imagina-base/shared';
-import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { PlansService } from '../billing/plans.service';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
@@ -26,6 +29,7 @@ import { billingPayments, billingSubscriptions, tenants } from '../db/schema';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { encodeReference, PAYMENT_GATEWAYS, type PaymentGateway, type PaymentNotice } from './payment.types';
 import { OpenCheckouts } from './reconcile-state';
+import { registerBillingTick } from './billing-ticks';
 
 type PaymentRow = typeof billingPayments.$inferSelect;
 type SubscriptionRow = typeof billingSubscriptions.$inferSelect;
@@ -49,7 +53,7 @@ const LIVE_SUBSCRIPTION: AutoRenewStatus[] = ['pending', 'authorized', 'paused']
  * pendiente la dejaba "en mora" aunque tuviera meses pagados).
  */
 @Injectable()
-export class PaymentsService {
+export class PaymentsService implements OnModuleInit {
     private readonly logger = new Logger(PaymentsService.name);
     private readonly byProvider: Map<PaymentProvider, PaymentGateway>;
 
@@ -63,6 +67,12 @@ export class PaymentsService {
         @Optional() private readonly openCheckouts?: OpenCheckouts,
     ) {
         this.byProvider = new Map(gateways.map((g) => [g.provider, g]));
+    }
+
+    onModuleInit(): void {
+        // v0.1.454 — el monto de la renovación de cada agencia se revisa con el
+        // reloj de cobros (cada hora): lo que no se ajustó en el momento.
+        registerBillingTick(() => this.syncAgencyRenewals());
     }
 
     /** Las pasarelas registradas (la revisión de respaldo las recorre). */
@@ -81,13 +91,124 @@ export class PaymentsService {
     }
 
     /** Proveedores habilitados (con credenciales) + planes vendibles — para la UI. */
-    async config(): Promise<PaymentConfig> {
+    async config(tenantId?: number): Promise<PaymentConfig> {
         const enabled = await this.enabledGateways();
+        let plans = await this.plans.sellablePlans();
+        // v0.1.454 — a una agencia se le muestra el total al mes de cada plan
+        // (base + empresas cliente extra) con su desglose.
+        const agency = tenantId ? await this.agencyContext(tenantId) : null;
+        if (agency) {
+            plans = [];
+            for (const p of await this.plans.sellablePlans()) {
+                const plan = await this.plans.find(p.slug);
+                const pricing = agencyPlatformPricing(plan, agency.override, agency.clients);
+                if (pricing.total_usd === null && pricing.total_cop === null) continue;
+                plans.push({ ...p, usd: pricing.total_usd, cop: pricing.total_cop, agency: pricing });
+            }
+        }
         return {
             providers: enabled.map((g) => g.provider),
-            plans: await this.plans.sellablePlans(),
+            plans,
             subscription_providers: enabled.filter((g) => g.supportsSubscription).map((g) => g.provider),
         };
+    }
+
+    // ── v0.1.454 (I3, ADR-S108) — lo que la plataforma le cobra a una agencia ──
+
+    /**
+     * Si la empresa es agencia: sus empresas cliente que cuentan (sin archivadas
+     * ni pausadas) y el trato propio que le puso el operador. Conexión base: se
+     * cuentan OTRAS empresas.
+     */
+    private async agencyContext(tenantId: number): Promise<{ clients: number; override: ReturnType<typeof readAgencySettings> } | null> {
+        const [t] = await this.db
+            .select({ isAgency: tenants.isAgency, settings: tenants.settings })
+            .from(tenants)
+            .where(eq(tenants.id, tenantId))
+            .limit(1);
+        if (!t?.isAgency) return null;
+        const [row] = await this.db
+            .select({ n: sql<number>`count(*)::int` })
+            .from(tenants)
+            .where(and(eq(tenants.agencyId, tenantId), isNull(tenants.archivedAt), isNull(tenants.agencyPausedAt)));
+        return {
+            clients: Number(row?.n ?? 0),
+            override: readAgencySettings((t.settings as Record<string, unknown> | null)?.agency),
+        };
+    }
+
+    /** Lo que la plataforma le cobra a una agencia por un plan (null si no es agencia o el plan no existe). */
+    async agencyPricing(tenantId: number, planSlug?: string): Promise<(AgencyPlatformPricing & { plan: string; plan_name: string }) | null> {
+        const ctx = await this.agencyContext(tenantId);
+        if (!ctx) return null;
+        let slug = planSlug;
+        if (!slug) {
+            const [t] = await this.db.select({ plan: tenants.plan }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+            slug = t?.plan;
+        }
+        const plan = slug ? await this.plans.find(slug) : null;
+        if (!plan) return null;
+        return { ...agencyPlatformPricing(plan, ctx.override, ctx.clients), plan: plan.slug, plan_name: plan.name };
+    }
+
+    /** El precio al mes de un plan para esta empresa en una moneda (con extras si es agencia). */
+    private async priceForTenant(tenantId: number, slug: string, currency: 'USD' | 'COP'): Promise<{ price: number | null; agency: AgencyPlatformPricing | null }> {
+        const agency = await this.agencyPricing(tenantId, slug);
+        if (!agency) return { price: await this.plans.priceFor(slug, currency), agency: null };
+        const active = (await this.plans.find(slug))?.is_active ?? false;
+        return { price: active ? (currency === 'USD' ? agency.total_usd : agency.total_cop) : null, agency };
+    }
+
+    /**
+     * Con la renovación automática el proveedor cobra un monto fijo: si la
+     * agencia sumó, pausó o reactivó empresas (o el operador cambió el plan o su
+     * trato), el monto se ajusta en el proveedor para el próximo cobro.
+     * Best-effort: si el proveedor no responde, la revisión de cada hora lo
+     * vuelve a intentar.
+     */
+    async syncAgencyRenewal(agencyId: number): Promise<boolean> {
+        const live = await this.tenantDb.withTenant(agencyId, (tx) =>
+            tx
+                .select()
+                .from(billingSubscriptions)
+                .where(and(eq(billingSubscriptions.tenantId, agencyId), inArray(billingSubscriptions.status, LIVE_SUBSCRIPTION))),
+        );
+        let changed = false;
+        for (const sub of live) {
+            const gateway = this.byProvider.get(sub.provider as PaymentProvider);
+            if (!gateway?.updateSubscriptionAmount) continue;
+            const pricing = await this.agencyPricing(agencyId, sub.plan);
+            if (!pricing) continue;
+            const expected = sub.currency === 'USD' ? pricing.total_usd : pricing.total_cop;
+            if (expected === null || Math.abs(expected - Number(sub.amount)) < 0.5) continue;
+            try {
+                await gateway.updateSubscriptionAmount(sub.externalId, expected);
+            } catch (err) {
+                this.logger.warn(`no se pudo ajustar la renovación ${sub.externalId} de la agencia ${agencyId}: ${String(err)}`);
+                continue;
+            }
+            await this.tenantDb.withTenant(agencyId, (tx) =>
+                tx
+                    .update(billingSubscriptions)
+                    .set({ amount: expected, updatedAt: new Date() })
+                    .where(eq(billingSubscriptions.id, sub.id)),
+            );
+            this.logger.log(`renovación ${sub.externalId}: agencia ${agencyId} → ${expected} ${sub.currency} (${pricing.clients} empresas cliente)`);
+            changed = true;
+        }
+        return changed;
+    }
+
+    /** Todas las agencias con renovación viva (la revisión de cada hora). */
+    async syncAgencyRenewals(): Promise<number> {
+        const rows = await this.db
+            .selectDistinct({ id: billingSubscriptions.tenantId })
+            .from(billingSubscriptions)
+            .innerJoin(tenants, eq(tenants.id, billingSubscriptions.tenantId))
+            .where(and(eq(tenants.isAgency, true), inArray(billingSubscriptions.status, LIVE_SUBSCRIPTION)));
+        let n = 0;
+        for (const r of rows) if (await this.syncAgencyRenewal(r.id).catch(() => false)) n++;
+        return n;
     }
 
     async createCheckout(tenantId: number, payerEmail: string, input: CreateCheckoutInput): Promise<CheckoutResult> {
@@ -102,19 +223,24 @@ export class PaymentsService {
         // El precio sale de la tabla `plans` (editable) → un plan custom se vende
         // apenas tiene precio en la moneda del proveedor. Sin precio → no vendible.
         const currency = PROVIDER_CURRENCY[input.provider];
-        const price = await this.plans.priceFor(input.plan, currency);
+        // v0.1.454 — a una agencia se le cobra la base más sus empresas cliente extra.
+        const { price, agency } = await this.priceForTenant(tenantId, input.plan, currency);
         if (price === null) {
+            const extrasWithoutPrice = agency && agency.extras > 0 && (currency === 'USD' ? agency.base_usd : agency.base_cop) !== null;
             throw new BadRequestException({
                 code: 'plan_not_sellable',
-                message: `El plan ${input.plan} no tiene precio en ${currency}.`,
+                message: extrasWithoutPrice
+                    ? `Tu agencia tiene ${agency.extras} empresas cliente más de las que incluye el plan y el plan no tiene valor por empresa extra en ${currency}: escríbele a la plataforma.`
+                    : `El plan ${input.plan} no tiene precio en ${currency}.`,
                 data: { status: 400, errors: { plan: 'sin precio' } },
             });
         }
         const planName = (await this.plans.sellablePlans()).find((p) => p.slug === input.plan)?.name ?? input.plan;
         const back = `${this.base()}/#/settings?s=suscripcion`;
+        const extraNote = agency && agency.extras > 0 ? ` · ${agency.clients} empresas cliente` : '';
 
         if (input.mode === 'subscription') {
-            return this.createSubscription(tenantId, gateway, input.plan, planName, price, currency, payerEmail, back);
+            return this.createSubscription(tenantId, gateway, input.plan, planName + extraNote, price, currency, payerEmail, back);
         }
 
         const amount = Math.round(price * input.months * 100) / 100;
@@ -126,7 +252,7 @@ export class PaymentsService {
             amount,
             currency,
             reference,
-            title: `${this.appName()} — plan ${planName} · ${input.months} ${input.months === 1 ? 'mes' : 'meses'}`,
+            title: `${this.appName()} — plan ${planName}${extraNote} · ${input.months} ${input.months === 1 ? 'mes' : 'meses'}`,
             returnUrl: `${back}&checkout=success`,
             cancelUrl: `${back}&checkout=cancel`,
         });

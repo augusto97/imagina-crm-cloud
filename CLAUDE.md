@@ -16449,6 +16449,55 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         registrada, avisos repetidos sin sumar, cancelar desde el cliente,
         activarlo él con otro correo, volver sin autorizar).
 
+  - [x] **Modo agencia, sexta parte: la plataforma le cobra a la agencia
+        (v0.1.454, addendum ADR-S108)**. Decisión del usuario: «las dos» —
+        un plan base que incluye N empresas cliente más un valor al mes por
+        cada empresa de más. (a) **El plan lo dice** (migración 0138:
+        `plans.agency_included_clients`, `agency_extra_usd`,
+        `agency_extra_cop`; vacío en «incluidas» = todas sin costo extra):
+        Plataforma → Planes → **Para agencias** (`data-tour="platform-plan-agency"`)
+        y columna «Agencias» en la grilla (incluidas y el valor por extra).
+        (b) **Trato propio por agencia** en su ficha → Agencia → **Lo que paga
+        a la plataforma** (`tenants.settings.agency.included_clients/extra_usd/
+        extra_cop`, sin migración; vacío = lo del plan) con el total del mes en
+        vivo; el PATCH de la plataforma ahora MEZCLA `agency_settings` con lo
+        guardado (un cambio parcial ya no borra el plan de los clientes ni el
+        tope). (c) **Cuentan** las empresas de la agencia sin archivar ni
+        pausar (pausar es la forma de dejar de pagar por un cliente que se
+        fue). Reglas puras en `packages/shared/src/schemas/agency-platform.ts`
+        (`effectiveAgencyPricing`, `agencyExtraClients`, `agencyMonthlyTotal`,
+        `agencyPlatformPricing`): total = base + extras × valor por extra; si
+        hay extras y el plan no tiene valor por extra en una moneda, no se vende
+        en esa moneda (`plan_not_sellable` con el motivo: cobrar sólo la base
+        regalaría las extras). (d) **El cobro es el de siempre** (ADR-S30):
+        `GET /billing/payments/config` y el checkout usan el total de ESA agencia
+        (`priceForTenant`); la referencia lleva el monto y el título del pago
+        dice cuántas empresas. Ajustes → Suscripción muestra el desglose
+        (`AgencyPlanBreakdown`: «Incluye 2 empresas cliente · tienes 3 · 1
+        extra a $ 39.000 c/u»), la consola de la agencia la tarjeta **Tu plan**
+        con el total y «Ver y pagar» (`data-tour="agency-platform-plan"`) y el
+        alta de un cliente avisa cuando suma una extra y el total nuevo.
+        (e) **La renovación automática se ajusta sola**: Mercado Pago cobra un
+        monto fijo, así que crear, pausar o reactivar un cliente, o que el
+        operador cambie el plan o el trato, actualiza el monto de la renovación
+        (`syncAgencyRenewal` → `PUT /preapproval/{id}` con
+        `auto_recurring.transaction_amount`; best-effort) y la revisión de cada
+        hora (`syncAgencyRenewals`, registrada con `registerBillingTick` en
+        `payments/billing-ticks.ts`, que corta un import circular) recoge lo que
+        no se pudo. Ayuda: guía `agency` («Lo que pagas a la plataforma») y
+        Aprende → Consola de la plataforma («Lo que paga una agencia»); sin
+        novedad (es de agencias y del operador). **Con esto I3 (modo agencia)
+        queda completo** y sale de `docs/ideas.md`. Tests:
+        `agency-platform-billing.spec` (6: precio sin pausadas ni archivadas,
+        pago por período con las extras, no vendible sin valor por extra, trato
+        propio que se mezcla, renovación ajustada al cambiar las empresas y el
+        PUT de Mercado Pago), `agency-platform.test` en shared, suites
+        relacionadas 139/139 — E2E navegador 25/25 en escritorio y 25/25 en
+        celular oscuro contra el Mercado Pago simulado (plan con 2 incluidas,
+        la tercera empresa que suma la extra con aviso al crearla, Suscripción
+        con el desglose, checkout de 3 meses por 714.000 con la referencia del
+        monto, trato propio que en vivo vuelve a la base y la agencia lo ve).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
