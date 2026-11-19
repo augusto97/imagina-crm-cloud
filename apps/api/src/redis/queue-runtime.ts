@@ -2,6 +2,8 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { Injectable, Logger, type BeforeApplicationShutdown, type OnApplicationBootstrap } from '@nestjs/common';
 import { poolMax } from '../db/pool-size';
 import { Worker, type JobsOptions, type Processor, type Queue, type RepeatOptions, type WorkerOptions } from 'bullmq';
+import { rtJobOrigin } from '@imagina-base/shared';
+import { withRtOrigin } from '../realtime/rt-origin';
 
 /**
  * Piezas comunes a TODAS las colas de BullMQ del API. Viven en un solo lugar
@@ -59,7 +61,11 @@ export function isShuttingDown(): boolean {
  */
 export function createWorker<T = unknown, R = unknown>(queue: string, processor: Processor<T, R>, opts: WorkerOptions): Worker<T, R> | null {
     if (!workersEnabled()) return null;
-    const worker = new Worker<T, R>(queue, processor, opts);
+    // v0.1.461 — lo que escribe un trabajo avisa por el realtime como
+    // `job:<cola>`: ninguna pestaña lo confunde con el eco de su propia edición.
+    const origin = rtJobOrigin(queue);
+    const wrapped: Processor<T, R> = (...args) => withRtOrigin(origin, () => processor(...args));
+    const worker = new Worker<T, R>(queue, wrapped, opts);
     const entry: Tracked = { worker: worker as unknown as Worker, queue, concurrency: opts.concurrency ?? 1 };
     tracked.add(entry);
     worker.on('closed', () => tracked.delete(entry));

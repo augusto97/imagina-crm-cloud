@@ -3792,4 +3792,19 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists', tour: 'automation-basics' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.461-automatizacion-al-instante',
+        version: '0.1.461',
+        date: '2026-11-19',
+        kind: 'fix',
+        title: 'Lo que hace una automatización se ve al momento',
+        summary:
+            'Si tu cambio dispara una automatización (marcar el último ítem de un checklist pide una aprobación o cambia el estado), la ficha abierta, la tabla y Mi trabajo lo muestran solos, sin recargar.',
+        media: { illustration: 'ficha-checklist' },
+        body: [
+            '- Antes, lo que la automatización cambiaba justo después de tu edición quedaba oculto hasta recargar la página.',
+            '- Tus propias ediciones siguen sin recargar la tabla entera: sólo se refresca lo que cambió otra persona o una automatización.',
+            '- Y al crear una subtarea desde el menú de una fila (clic derecho), lo que escribes va directo al nombre: ya no se pierden las primeras letras.',
+        ].join('\n'),
+    },
 ];

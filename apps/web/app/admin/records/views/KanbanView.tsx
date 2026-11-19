@@ -827,6 +827,14 @@ interface ColumnHeaderProps {
 }
 
 function ColumnHeader({ column, field, valueField, metric, lanesOn, canEditView, onToggleCollapse, onHide, onSettings, onAdd }: ColumnHeaderProps): JSX.Element {
+    // v0.1.461 — «Agregar tarjeta» y «Límite…» abren un diálogo: se abre cuando
+    // el menú ya soltó el foco y el foco no vuelve al «…» (le robaba el cursor
+    // al título del alta, como en «Nuevo registro ▾»).
+    const opensDialog = useRef(false);
+    const thenOpen = (open: () => void): void => {
+        opensDialog.current = true;
+        window.setTimeout(open, 0);
+    };
     // Sin carriles la cabecera y el cuerpo forman UN recuadro; con carriles,
     // la cabecera es su propia tarjeta (las celdas van debajo, por carril).
     const shape = lanesOn ? 'imcrm-rounded-xl imcrm-border' : 'imcrm-rounded-t-xl imcrm-border imcrm-border-b-0';
@@ -897,9 +905,16 @@ function ColumnHeader({ column, field, valueField, metric, lanesOn, canEditView,
                             <MoreHorizontal className="imcrm-h-4 imcrm-w-4" />
                         </button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
+                    <DropdownMenuContent
+                        align="end"
+                        onCloseAutoFocus={(e) => {
+                            if (!opensDialog.current) return;
+                            opensDialog.current = false;
+                            e.preventDefault();
+                        }}
+                    >
                         {onAdd && (
-                            <DropdownMenuItem onSelect={onAdd}>
+                            <DropdownMenuItem onSelect={() => thenOpen(onAdd)} data-testid="imcrm-kanban-column-add-item">
                                 <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
                                 {__('Agregar tarjeta')}
                             </DropdownMenuItem>
@@ -915,7 +930,7 @@ function ColumnHeader({ column, field, valueField, metric, lanesOn, canEditView,
                         {canEditView && (
                             <>
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem onSelect={onSettings} data-testid="imcrm-kanban-column-settings-item">
+                                <DropdownMenuItem onSelect={() => thenOpen(onSettings)} data-testid="imcrm-kanban-column-settings-item">
                                     <Gauge className="imcrm-h-3.5 imcrm-w-3.5" />
                                     {__('Límite y campos a pedir…')}
                                 </DropdownMenuItem>

@@ -8,7 +8,7 @@ import {
 } from '@imagina-base/shared';
 import { io, type Socket } from 'socket.io-client';
 import { useSession } from '@/cloud/session';
-import { createRealtimeInvalidator } from '@/cloud/realtimeInvalidate';
+import { createRealtimeInvalidator, mergeRtEvents } from '@/cloud/realtimeInvalidate';
 
 /**
  * Realtime por invalidación push (STANDALONE §7). Conecta el socket (auth por
@@ -60,7 +60,10 @@ export function useRealtime(): void {
             const parsed = rtInvalidateSchema.safeParse(raw);
             if (!parsed.success) return;
             const ev = parsed.data;
-            pending.set(`${ev.topic}:${ev.listId ?? '*'}`, ev);
+            // v0.1.461 — si en la ráfaga vienen el eco propio y el cambio de una
+            // automatización, el aviso juntado no es eco (no se pierde ninguno).
+            const key = `${ev.topic}:${ev.listId ?? '*'}`;
+            pending.set(key, mergeRtEvents(pending.get(key), ev));
             if (flushTimer === null) flushTimer = window.setTimeout(flush, 150);
         });
 

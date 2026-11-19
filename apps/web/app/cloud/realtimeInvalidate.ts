@@ -10,6 +10,7 @@ import { invalidateDashboardsForList } from '@/hooks/useDashboards';
 import { fieldsKeys } from '@/hooks/useFields';
 import { isRecentLocalListsChange, listsKeys } from '@/hooks/useLists';
 import { notificationKeys } from '@/hooks/useNotifications';
+import { ownRtOrigin } from '@/lib/rtOrigin';
 import { descriptionKeys } from '@/hooks/useRecordDescription';
 import {
     AGGREGATES_NS,
@@ -47,6 +48,42 @@ export const DERIVED_WINDOW_MS = 5_000;
 export interface RealtimeInvalidatorOptions {
     /** `document.hidden` (inyectable en las pruebas). */
     isHidden?: () => boolean;
+    /** El origen de ESTA pestaña (`tab:<id>`, inyectable en las pruebas). */
+    ownOrigin?: string;
+    /** ¿Esta pestaña acaba de cambiar (y refrescar) esa lista? */
+    isLocalRecordsChange?: (listId: number) => boolean;
+    /** ¿Esta pestaña acaba de cambiar (y refrescar) el índice de listas? */
+    isLocalListsChange?: () => boolean;
+}
+
+/**
+ * v0.1.461 — ¿El aviso es el ECO de un cambio hecho en esta pestaña que su
+ * propia mutación ya refrescó? Las dos cosas a la vez:
+ *
+ *  - lo escribió ESTA pestaña (`origin` = la suya, lo marca el servidor), y
+ *  - la pestaña acaba de cambiar y refrescar ESA lista (`localChange`).
+ *
+ * Antes alcanzaba con la segunda (v0.1.253) y el realtime se comía lo que una
+ * automatización disparada por la edición cambiaba un instante después: llega
+ * como `job:automations`, no como la pestaña. Lo que la pestaña escribió en
+ * OTRA lista de rebote (un vínculo, una dependencia) tampoco es eco: su
+ * mutación no la refrescó. Un aviso sin `origin` junta varios orígenes: nunca
+ * es eco.
+ */
+export function isOwnEcho(ev: Pick<RtInvalidate, 'origin'>, ownOrigin: string, localChange: boolean): boolean {
+    return localChange && ev.origin !== undefined && ev.origin === ownOrigin;
+}
+
+/**
+ * Junta dos avisos del mismo tema y lista en uno (ráfagas, pestaña oculta).
+ * Si vienen de orígenes distintos, el resultado no tiene origen: ninguna
+ * pestaña lo toma por su eco (si no, el último pisaba al otro y el cambio de la
+ * automatización podía perderse detrás del eco propio).
+ */
+export function mergeRtEvents(prev: RtInvalidate | undefined, next: RtInvalidate): RtInvalidate {
+    if (!prev || prev.origin === next.origin) return next;
+    const { origin: _origin, ...rest } = next;
+    return rest;
 }
 
 export interface RealtimeInvalidator {
@@ -86,6 +123,9 @@ export function layoutDataTouchesList(queryKey: readonly unknown[], data: unknow
 
 export function createRealtimeInvalidator(qc: QueryClient, options: RealtimeInvalidatorOptions = {}): RealtimeInvalidator {
     const isHidden = options.isHidden ?? (() => typeof document !== 'undefined' && document.hidden);
+    const ownOrigin = options.ownOrigin ?? ownRtOrigin();
+    const isLocalRecordsChange = options.isLocalRecordsChange ?? isRecentLocalRecordsChange;
+    const isLocalListsChange = options.isLocalListsChange ?? isRecentLocalListsChange;
     /** Avisos de registros recibidos con la pestaña oculta (uno por lista). */
     const deferred = new Map<string, RtInvalidate>();
     const throttles = new Map<string, Throttle>();
@@ -152,15 +192,24 @@ export function createRealtimeInvalidator(qc: QueryClient, options: RealtimeInva
 
     function records(ev: RtInvalidate): void {
         if (isHidden()) {
-            deferred.set(String(ev.listId ?? '*'), ev);
+            const key = String(ev.listId ?? '*');
+            deferred.set(key, mergeRtEvents(deferred.get(key), ev));
             return;
         }
         if (ev.listId !== undefined) {
             const listId = ev.listId;
             // El eco de una edición hecha en ESTA pestaña: la mutación ya
-            // refrescó la lista (v0.1.253).
-            if (!isRecentLocalRecordsChange(listId)) {
+            // refrescó la lista (v0.1.253). Sólo si lo escribió ESTA pestaña
+            // (v0.1.461): lo que hizo una automatización, otra pestaña u otra
+            // persona entra siempre.
+            const own = isOwnEcho(ev, ownOrigin, isLocalRecordsChange(listId));
+            if (!own) {
                 throttled(`list:${listId}`, RECORDS_WINDOW_MS, () => refreshList(listId));
+                // «Mi trabajo» (si está abierto): una automatización pudo
+                // cambiar la fecha o el responsable de algo que se ve ahí.
+                throttled('work', DERIVED_WINDOW_MS, () => {
+                    void qc.invalidateQueries({ queryKey: notificationKeys.work });
+                });
             }
         } else {
             throttled('list:*', RECORDS_WINDOW_MS, () => {
@@ -176,9 +225,10 @@ export function createRealtimeInvalidator(qc: QueryClient, options: RealtimeInva
         switch (ev.topic) {
             case 'lists':
                 // El eco de un cambio hecho en ESTA pestaña: la mutación ya
-                // refrescó las listas (v0.1.286). `cancelRefetch: false`: si
-                // ya se están trayendo, no se corta para pedirlas otra vez.
-                if (!isRecentLocalListsChange()) {
+                // refrescó las listas (v0.1.286); sólo si lo escribió ella
+                // (v0.1.461). `cancelRefetch: false`: si ya se están
+                // trayendo, no se corta para pedirlas otra vez.
+                if (!isOwnEcho(ev, ownOrigin, isLocalListsChange())) {
                     void qc.invalidateQueries({ queryKey: listsKeys.all }, { cancelRefetch: false });
                 }
                 break;

@@ -499,6 +499,19 @@ hasta que exista el problema que la justifique.
 WebSocket que invalida caches del cliente. CRDT/replicación local fuera de
 alcance salvo demanda real del producto.
 
+**ADR-S06 — addendum (v0.1.461): cada aviso dice quién lo originó.**
+`RtInvalidate.origin` deja de ser decorativo. El servidor lo completa solo
+desde un `AsyncLocalStorage`: `tab:<id>` si el pedido trae `X-Rt-Origin` (un id
+por pestaña que manda el front en cada pedido), `request` si no (API con token,
+MCP, n8n, formularios públicos), `job:<cola>` en cada trabajo de BullMQ y
+`system` fuera de todo eso (temporizadores, lo que sigue después de responder).
+La ventana que junta los avisos de registros por lista da un aviso SIN origen si
+mezcla orígenes. Regla del front: un aviso es «eco» —y no refresca— sólo si lo
+escribió ESTA pestaña y la pestaña acaba de cambiar esa lista (su mutación ya la
+refrescó). Lo demás refresca siempre, en particular lo que una automatización
+cambió por una edición de la misma pestaña. No se usa una ventana de tiempo para
+decidir el eco: una ventana se come cambios legítimos que llegan dentro de ella.
+
 **ADR-S07 — El contrato REST hereda los shapes del plugin.**
 Mismos JSON shapes donde aplique → el frontend se migra módulo a módulo con
 cambios mínimos.

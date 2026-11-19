@@ -5,6 +5,7 @@ import {
     type RtTopic,
 } from '@imagina-base/shared';
 import type { Server } from 'socket.io';
+import { currentRtOrigin } from './rt-origin';
 
 export function tenantRoom(tenantId: number): string {
     return `tenant:${tenantId}`;
@@ -53,17 +54,22 @@ export class RealtimeService {
         this.server?.to(tenantRoom(tenantId)).emit(RT_EVENT_INVALIDATE, payload);
     }
 
-    invalidate(tenantId: number, topic: RtTopic, listId?: number, origin?: string): void {
+    /**
+     * `origin` (v0.1.461): quién originó el cambio. Sin pasarlo se toma del
+     * contexto (`rt-origin.ts`): la pestaña del pedido, el trabajo de la cola o
+     * `system`. La pestaña que hizo el cambio ignora SÓLO su propio eco.
+     */
+    invalidate(tenantId: number, topic: RtTopic, listId?: number, origin: string = currentRtOrigin()): void {
         this.emit(tenantId, { topic, listId, origin });
     }
 
-    lists(tenantId: number, origin?: string): void {
+    lists(tenantId: number, origin: string = currentRtOrigin()): void {
         this.invalidate(tenantId, 'lists', undefined, origin);
     }
-    fields(tenantId: number, listId: number, origin?: string): void {
+    fields(tenantId: number, listId: number, origin: string = currentRtOrigin()): void {
         this.invalidate(tenantId, 'fields', listId, origin);
     }
-    records(tenantId: number, listId: number, origin?: string): void {
+    records(tenantId: number, listId: number, origin: string = currentRtOrigin()): void {
         if (!this.server) return;
         const key = `${tenantId}:${listId}`;
         const now = Date.now();
@@ -80,13 +86,17 @@ export class RealtimeService {
             st.timer = setTimeout(() => {
                 const cur = this.pendingRecords.get(key);
                 if (!cur) return;
-                this.invalidate(tenantId, 'records', listId, cur.origin ?? undefined);
+                // Directo a `emit`: sin origen (varios juntados) NO se toma el
+                // del contexto — el temporizador corre fuera del pedido.
+                this.emit(tenantId, { topic: 'records', listId, ...(cur.origin ? { origin: cur.origin } : {}) });
                 cur.lastAt = Date.now();
                 cur.timer = null;
                 cur.origin = undefined;
             }, Math.max(0, RECORDS_EMIT_WINDOW_MS - (now - st.lastAt)));
             st.timer.unref?.();
         } else if (st.origin !== origin) {
+            // Orígenes distintos en la misma ventana (p. ej. la edición de una
+            // pestaña y la automatización que disparó): nadie lo ignora.
             st.origin = null;
         }
     }
@@ -96,7 +106,7 @@ export class RealtimeService {
         if (this.pendingRecords.size < 5000) return;
         for (const [k, v] of this.pendingRecords) if (v.timer === null && now - v.lastAt > 60_000) this.pendingRecords.delete(k);
     }
-    views(tenantId: number, listId: number, origin?: string): void {
+    views(tenantId: number, listId: number, origin: string = currentRtOrigin()): void {
         this.invalidate(tenantId, 'views', listId, origin);
     }
     /** v0.1.276 — la bandeja de avisos de una persona cambió (sólo a ella). */

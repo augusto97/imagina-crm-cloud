@@ -2,6 +2,7 @@ import { parsePlatformBrand, type AuthSession, type MembershipSummary, type Plat
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { CloudClient } from '@/lib/cloud/client';
+import { rtOriginHeaders } from '@/lib/rtOrigin';
 
 /**
  * Estado de sesión del shell cloud: usuario, workspaces (memberships) y el
@@ -134,6 +135,8 @@ export const useSession = create<SessionState>()(
 /** Cliente API que toma el tenant activo del store en cada request. */
 export const api = new CloudClient({
     getTenantId: () => useSession.getState().activeTenantId,
+    // v0.1.461 — qué pestaña hizo el pedido: el realtime ignora SÓLO su eco.
+    getExtraHeaders: rtOriginHeaders,
 });
 
 export function activeMembership(): MembershipSummary | null {

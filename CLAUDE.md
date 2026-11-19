@@ -17003,6 +17003,74 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         la carga inicial. Los nombres de los agentes pasaron a
         `automations/agentNames.ts` y la app bajó a 810/820 KB gz.
 
+  - [x] **Lo que hace una automatización se ve al momento + foco al crear una
+        subtarea desde el menú (v0.1.461, addendum ADR-S06, pulido)**.
+        (a) **El eco propio, por origen y no por tiempo**: desde v0.1.253 el
+        realtime ignoraba durante 2,5 s CUALQUIER aviso de registros de una
+        lista que la pestaña acababa de cambiar (para no recargar la tabla dos
+        veces). Esa ventana también se comía el aviso de la automatización que
+        disparaba la misma edición: completar el último ítem de un checklist
+        pedía una aprobación y ponía «Terminado», y la ficha abierta, la fila
+        de la tabla y la página del registro no lo mostraban hasta recargar.
+        Ahora el servidor marca QUIÉN originó cada aviso y la pestaña ignora
+        SÓLO su propio eco. `packages/shared/src/schemas/realtime.ts`:
+        `RT_ORIGIN_HEADER` (`X-Rt-Origin`), `RT_TAB_ID_RE`, `rtTabOrigin`,
+        `rtJobOrigin`. **Servidor** (`apps/api/src/realtime/rt-origin.ts`): un
+        `AsyncLocalStorage` por pedido —`RtOriginInterceptor`, global por
+        `APP_INTERCEPTOR` en `RealtimeModule`— da `tab:<id>` si el pedido trae
+        el encabezado con un id válido, o `request` si no (tokens de la API, MCP,
+        n8n, formularios públicos); el alcance se CIERRA al terminar el handler
+        (`finalize`), así lo que sigue después de la respuesta sale como
+        `system`. Cada trabajo de BullMQ corre como `job:<cola>`
+        (`createWorker` envuelve el procesador con `withRtOrigin`): lo que
+        cambia una automatización llega como `job:automations` aunque la haya
+        encolado un pedido de la pestaña. `RealtimeService.invalidate/lists/
+        fields/records/views` toman el origen del contexto por defecto; en la
+        ventana de 1 s que junta los avisos de registros, orígenes distintos
+        dan un aviso SIN origen (nadie lo ignora). **Front**: cada pestaña tiene
+        un id propio (`lib/rtOrigin.ts`, 24 hex) que `lib/api.ts` y el
+        `CloudClient` mandan en cada pedido; `isOwnEcho(ev, ownOrigin,
+        localChange)` = la pestaña acaba de cambiar ESA lista Y el aviso dice
+        que lo escribió ella. Lo que viene de una automatización, otra pestaña,
+        otra persona, la API o varios orígenes juntos refresca siempre (con
+        `invalidateForList`, id + slug), y además refresca «Mi trabajo».
+        `mergeRtEvents` junta avisos de una ráfaga o de la pestaña oculta sin
+        dejar que el eco propio tape el de la automatización. El índice de
+        listas usa la misma regla. **Bug de paso**: el temporizador que junta
+        los avisos de registros reemitía con el origen del CONTEXTO del
+        temporizador (`system`) en vez del juntado.
+        (b) **Foco al crear una subtarea desde el menú**: «Crear subtarea» del
+        click derecho de una fila (tabla plana y agrupada) abría el alta en el
+        mismo tick en que el menú devolvía el foco a la celda; la trampa de
+        foco del diálogo se lo llevaba al botón «Cerrar» y el primer espacio
+        cerraba el alta (se perdía lo escrito). Mismo patrón que «Nuevo
+        registro ▾»: el menú abre el diálogo en el tick siguiente y no devuelve
+        el foco (`RecordRowMenu`: abrir, código QR, crear subtarea, agregar
+        columna y eliminar; menú de la columna del kanban: «Agregar tarjeta» y
+        «Límite…»; menú de la tarjeta: «Abrir», y moverla se difiere pero
+        devuelve el foco al «…» si no hay diálogo). Además el alta
+        (`RecordCreateDialog`) pone el foco en el TÍTULO al abrirse
+        (`onOpenAutoFocus` + `data-imcrm-title-input`), venga de donde venga.
+        Novedad en el catálogo (corrección, ilustración `ficha-checklist`).
+        Tests: `realtime-origin.spec` (6: encabezado, contexto del pedido —
+        también tras un `await`— y fuera de él, pedidos simultáneos aislados,
+        ventana que junta orígenes, trabajo de BullMQ con Redis real, y
+        Postgres real: tildar el checklist avisa como la pestaña y lo que cambia
+        la automatización como `job:automations`) y 8 nuevos en
+        `realtimeInvalidate.test` (16/16: eco propio ignorado, automatización en
+        el mismo instante refrescada, otros orígenes, otra lista, «Mi trabajo»,
+        pestaña oculta, índice de listas) — shared 1066, front 972, specs del
+        realtime/automatizaciones/checklists/aprobaciones/colas 96/96 — + E2E
+        navegador 14/14 en escritorio claro y 14/14 en celular 390×844 oscuro
+        (modal, fila de la tabla, página del registro, kanban, «Mi trabajo» y
+        ficha diseñada muestran lo de la automatización sin recargar; editar
+        una celda hace UN solo GET del listado —el de la mutación— y un cambio
+        de afuera lo refresca) y 10/10 + 10/10 del foco (tabla, agrupada,
+        «Agregar registro» del grupo, «Agregar tarjeta» del kanban, «Agregar
+        subtarea» de la ficha). Controles: con la ventana vieja la misma prueba
+        da 10/14 (modal, fila y página sin el cambio); sin el filtro, 2 GET por
+        edición; con el código viejo del menú, el foco termina fuera del alta.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
