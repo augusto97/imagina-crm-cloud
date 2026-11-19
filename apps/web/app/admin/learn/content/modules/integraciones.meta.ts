@@ -12,6 +12,7 @@ export const meta: LearnModuleMeta = {
     highlights: [
         'Conectar una app con un clic o con su clave, y probarla antes de guardar',
         'Acciones listas: mandar un WhatsApp, avisar en Slack, crear un evento, sumar una fila a una planilla',
+        'Mantener una lista y una pestaña de Google Sheets iguales, en los dos sentidos',
         'Guardar tus archivos en tu propio Google Drive o en un bucket S3',
         'Conectar cualquier otro sistema con una API personalizada y acciones con nombre',
         'Recibir datos de tu sitio web u otra plataforma con un webhook entrante',
@@ -39,10 +40,10 @@ export const meta: LearnModuleMeta = {
         {
             id: 'integraciones-google-microsoft',
             title: 'Gmail, Outlook, Google Calendar y Google Sheets',
-            summary: 'Conecta tu cuenta de Google o Microsoft con «Conectar», sin claves: manda correos desde tu dirección, crea reuniones de Teams o Meet y las reprograma o cancela, y suma filas a una planilla. Y qué hacer si Microsoft pide la aprobación del administrador.',
-            minutes: 13,
+            summary: 'Conecta tu cuenta de Google o Microsoft con «Conectar», sin claves: manda correos desde tu dirección, crea reuniones de Teams o Meet y las reprograma o cancela, suma filas a una planilla o mantén una lista y una pestaña de Google Sheets al día en los dos sentidos. Y qué hacer si Microsoft pide la aprobación del administrador.',
+            minutes: 16,
             level: 'basic',
-            keywords: 'gmail outlook microsoft 365 google calendar evento sheets planilla hoja de calculo autorizar aprobacion administrador consentimiento teams ti reunion demo meet reprogramar cancelar enlace id del evento invitados',
+            keywords: 'gmail outlook microsoft 365 google calendar evento sheets planilla hoja de calculo sincronizar sincronizacion dos sentidos autorizar aprobacion administrador consentimiento teams ti reunion demo meet reprogramar cancelar enlace id del evento invitados',
             needs: 'manage_automations',
         },
         {

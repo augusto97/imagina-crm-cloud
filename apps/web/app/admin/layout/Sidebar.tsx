@@ -330,7 +330,7 @@ export function Sidebar(): JSX.Element {
                 <SettingsPanelNav
                     isAdmin={isAdmin}
                     // La página de una tienda sincronizada vive bajo Integraciones.
-                    requested={pathname.startsWith('/settings/stores/') || pathname.startsWith('/settings/sites/') || pathname.startsWith('/settings/sql/') || pathname.startsWith('/settings/whatsapp/') || pathname.startsWith('/settings/sms/') || pathname.startsWith('/settings/collections/') ? 'conectores' : pathname.startsWith('/settings/widgets/') ? 'widgets' : params.get('s')}
+                    requested={pathname.startsWith('/settings/stores/') || pathname.startsWith('/settings/sites/') || pathname.startsWith('/settings/sql/') || pathname.startsWith('/settings/sheets/') || pathname.startsWith('/settings/whatsapp/') || pathname.startsWith('/settings/sms/') || pathname.startsWith('/settings/collections/') ? 'conectores' : pathname.startsWith('/settings/widgets/') ? 'widgets' : params.get('s')}
                 />
             )}
 

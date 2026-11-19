@@ -108,6 +108,8 @@ import {
     templates,
     connectionSyncs,
     sqlSyncs,
+    sheetSyncRows,
+    sheetSyncs,
     helpdeskMailboxes,
     helpdeskMessages,
     helpdeskTickets,
@@ -651,6 +653,9 @@ export class PlatformService {
             await tx.delete(syncLinks).where(eq(syncLinks.tenantId, id));
             await tx.delete(connectionSyncs).where(eq(connectionSyncs.tenantId, id));
             await tx.delete(sqlSyncs).where(eq(sqlSyncs.tenantId, id));
+            // v0.1.459 — sincronizaciones con Google Sheets (vínculos antes que registros).
+            await tx.delete(sheetSyncRows).where(eq(sheetSyncRows.tenantId, id));
+            await tx.delete(sheetSyncs).where(eq(sheetSyncs.tenantId, id));
             // D2/E5 — mesa de ayuda (antes que comentarios, registros y listas).
             await tx.delete(helpdeskMessages).where(eq(helpdeskMessages.tenantId, id));
             await tx.delete(helpdeskTickets).where(eq(helpdeskTickets.tenantId, id));

@@ -78,9 +78,6 @@ aquí, pospuestos:
   en v0.1.458 (base completa con vínculos, opciones y adjuntos, por token de
   la persona): estos pueden reusar su forma (leer → revisar → importar en
   segundo plano) y el mapeo de tipos.
-- **G3 · Google Sheets sincronizado en los dos sentidos.** La integración de
-  Sheets ya tiene el permiso `spreadsheets` (lectura y escritura): no hace falta
-  pedir uno nuevo a Google.
 
 **Oleada 7 · el usuario eligió el 2026-10-26 sólo «Empezar fácil»**, ampliado
 con guías y recorridos interactivos, centro de ayuda y novedades (F7 + I7 +
@@ -148,7 +145,6 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 | Idea | Valor · esfuerzo | Nota |
 |---|---|---|
 | G2, G8 | — | Ver §1 (pospuestos). |
-| G3 · Google Sheets sincronizado en los dos sentidos | alto · M-L | Pospuesto por el usuario al armar la fase 6 (2026-10-26). El permiso `spreadsheets` ya está. |
 | G4 · Google Calendar / Outlook sincronizado en los dos sentidos | medio-alto · M | **En parte hecho en v0.1.350**: en la agenda de citas, mover o borrar el evento en el calendario de quien atiende mueve o cancela la cita. Falta para la vista Calendario de cualquier lista. |
 | G5 · Importadores (Notion, ClickUp, Trello, monday) | alto · M c/u | **Airtable salió en v0.1.458**; quedan estos cuatro. Excel con varias hojas ya existe (v0.1.299). |
 | G7 · Sincronizar PostgreSQL y MySQL | medio · M | Como la de SQL Server. |

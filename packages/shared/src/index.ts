@@ -131,6 +131,7 @@ export * from './schemas/site-sync';
 export * from './schemas/site-rules';
 export * from './schemas/mirror-list';
 export * from './schemas/sql-sync';
+export * from './schemas/sheet-sync';
 export * from './schemas/tenant-transfer';
 export * from './schemas/incidents';
 export * from './templates/automation-recipes';

@@ -36,6 +36,12 @@ import {
     startWordpressConnectResultSchema,
     type StoreSyncStatus,
     type CreateSqlSyncInput,
+    type CreateSheetSyncInput,
+    type SheetPreviewInput,
+    type SheetPreviewResult,
+    type SheetSync,
+    type SheetSyncDryRun,
+    type UpdateSheetSyncInput,
     type CollectionConnection,
     type UpdateWhatsappConfigInput,
     type SmsBatchStatus,
@@ -1210,6 +1216,32 @@ export class CloudClient {
     }
     async sqlSyncRemove(syncId: number): Promise<void> {
         await this.request('DELETE', `/sql-syncs/${syncId}`, {});
+    }
+    // ── Sincronizar una lista con Google Sheets (v0.1.459) ──────────────
+    async sheetSyncs(connectionId: number): Promise<SheetSync[]> {
+        return (await this.request('GET', `/connections/${connectionId}/sheet-syncs`, { schema: z.object({ data: z.array(z.custom<SheetSync>()) }) })).data;
+    }
+    async sheetSyncCreate(connectionId: number, input: CreateSheetSyncInput): Promise<SheetSync> {
+        return (
+            await this.request('POST', `/connections/${connectionId}/sheet-syncs`, { body: input, schema: z.object({ data: z.custom<SheetSync>() }) })
+        ).data;
+    }
+    async sheetPreview(connectionId: number, input: SheetPreviewInput): Promise<SheetPreviewResult> {
+        return (
+            await this.request('POST', `/connections/${connectionId}/sheet-preview`, { body: input, schema: z.object({ data: z.custom<SheetPreviewResult>() }) })
+        ).data;
+    }
+    async sheetSyncUpdate(syncId: number, input: UpdateSheetSyncInput): Promise<SheetSync> {
+        return (await this.request('PATCH', `/sheet-syncs/${syncId}`, { body: input, schema: z.object({ data: z.custom<SheetSync>() }) })).data;
+    }
+    async sheetSyncRun(syncId: number): Promise<SheetSync> {
+        return (await this.request('POST', `/sheet-syncs/${syncId}/run`, { body: {}, schema: z.object({ data: z.custom<SheetSync>() }) })).data;
+    }
+    async sheetSyncDryRun(syncId: number): Promise<SheetSyncDryRun> {
+        return (await this.request('POST', `/sheet-syncs/${syncId}/dry-run`, { body: {}, schema: z.object({ data: z.custom<SheetSyncDryRun>() }) })).data;
+    }
+    async sheetSyncRemove(syncId: number): Promise<void> {
+        await this.request('DELETE', `/sheet-syncs/${syncId}`, {});
     }
     // ── Cobros de la empresa: Mercado Pago / Wompi (v0.1.251) ───────────
     async collectionConnections(): Promise<CollectionConnection[]> {

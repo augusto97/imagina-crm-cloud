@@ -75,6 +75,7 @@ const DashboardPage = lazyWithReload(() => import('@/admin/dashboards/DashboardP
 const PlatformPage = lazyWithReload(() => import('@/admin/platform/PlatformPage').then(m => ({ default: m.PlatformPage })));
 const StoreSyncPage = lazyWithReload(() => import('@/cloud/pages/StoreSyncPage').then(m => ({ default: m.StoreSyncPage })));
 const SqlSyncPage = lazyWithReload(() => import('@/cloud/pages/SqlSyncPage').then(m => ({ default: m.SqlSyncPage })));
+const SheetSyncPage = lazyWithReload(() => import('@/cloud/pages/SheetSyncPage').then(m => ({ default: m.SheetSyncPage })));
 const SiteSyncPage = lazyWithReload(() => import('@/cloud/pages/SiteSyncPage').then(m => ({ default: m.SiteSyncPage })));
 const CollectionsPage = lazyWithReload(() => import('@/cloud/pages/CollectionsPage').then(m => ({ default: m.CollectionsPage })));
 const WhatsappPage = lazyWithReload(() => import('@/cloud/pages/WhatsappPage').then(m => ({ default: m.WhatsappPage })));
@@ -243,6 +244,9 @@ export function App(): JSX.Element {
                 } />
                 <Route path="settings/sql/:connectionId" element={
                     <RouteModuleGate module="sql"><Suspense fallback={<RouteFallback />}><SqlSyncPage /></Suspense></RouteModuleGate>
+                } />
+                <Route path="settings/sheets/:connectionId" element={
+                    <RouteModuleGate module="integrations"><Suspense fallback={<RouteFallback />}><SheetSyncPage /></Suspense></RouteModuleGate>
                 } />
                 <Route path="settings/collections/:connectionId" element={
                     <RouteModuleGate module="integrations"><Suspense fallback={<RouteFallback />}><CollectionsPage /></Suspense></RouteModuleGate>

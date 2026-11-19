@@ -10466,3 +10466,72 @@ misma base crea listas nuevas (no actualiza). Si las bases grandes se vuelven
 habituales, la importación conviene moverla a una cola de BullMQ para que un
 reinicio no la corte. Los próximos importadores (Notion, ClickUp, Trello,
 monday) pueden reusar la forma: leer → revisar → importar en segundo plano.
+
+### ADR-S112 — Una lista y una pestaña de Google Sheets sincronizadas (v0.1.459)
+
+**Contexto.** La integración de Google Sheets (ADR-S22) sólo sabía agregar filas
+desde una automatización. Mucha gente vive en una planilla y quiere la lista en
+la app sin dejarla: que lo que cambia en un lado llegue al otro sin duplicar.
+
+**Decisión.**
+
+1. **Una sincronización une UNA pestaña con UNA lista** (`sheet_syncs`, RLS,
+   varias por conexión) y usa la conexión de Google Sheets que ya existe: el
+   permiso `spreadsheets` alcanza para leer y escribir, pero **no para listar
+   las planillas** — el enlace se pega (el `#gid=` elige la pestaña).
+   `drive.readonly` para un buscador sería un permiso restringido (auditoría
+   CASA): no se pide.
+2. **La clave**: la columna «ID» que escribe la app (recomendada: sobrevive a
+   que la persona edite cualquier dato) o un campo «Sin repetidos» de la lista
+   (email, NIT). El vínculo fila ↔ registro vive en `sheet_sync_rows` (fuera de
+   `records.data`, regla de oro nº 1) con la huella de la fila y un
+   **instantáneo por celda** `{s, a}` por id de campo. Un alta cuyo ID todavía
+   no se escribió en la hoja queda marcada (`p:1`) y la próxima corrida la
+   re-adopta por su huella en vez de duplicarla.
+3. **Tres sentidos** (`sheet_to_app`, `app_to_sheet`, `both`). En `both` cada
+   celda se compara contra el instantáneo: cambió un lado → gana ese lado;
+   cambiaron los dos → **gana la app** y queda un conflicto con dónde, qué
+   campo, qué quedó y qué se reemplazó. La app es la fuente con historial,
+   permisos y automatizaciones; la persona puede reescribir el valor.
+4. **Lectura**: `values` con `UNFORMATTED_VALUE` + `SERIAL_NUMBER`, en tandas,
+   tope de 10.000 filas y 100 columnas. Cada celda por el validador compartido
+   (el mismo del import): inválida en un alta → campo vacío + aviso; en una
+   actualización → el campo conserva su valor.
+5. **Escritura**: `values:batchUpdate` con **`RAW`** (un texto que empieza con
+   «=» queda como texto: un registro nunca mete una fórmula en la planilla),
+   sólo las celdas que cambiaron; registros nuevos con `values:append` (con su
+   ID); filas borradas con `deleteDimension` (de abajo hacia arriba); columnas
+   que faltan con `appendDimension`. Antes de escribir se relee la columna
+   clave: si alguien movió filas, la escritura va a la fila correcta.
+6. **Cuándo corre**: un reloj cada minuto toma las que les toca (intervalo de 5
+   min a 1 día), «Sincronizar ahora», y lo que cambia en la app (por el
+   `RecordChangeHub` y el `record.deleted` de los eventos) dispara una corrida
+   corta con espera de 10 s (una por sincronización y ventana). Candado en
+   Redis por sincronización.
+7. **Las escrituras en la lista** van directo a `records` como el conector SQL
+   (ADR-S27): sin pasar por el hub de cambios (sin bucles), con actividad y
+   automatizaciones salvo en la primera carga. Límite de registros del plan
+   (`assertCanCreateRecords`), solo-lectura (ADR-S09) y módulo `integrations`
+   respetados.
+8. **Permisos**: se guarda con una conexión editable por quien la configura
+   (del equipo o propia) y corre con el acceso VIGENTE de quien la guardó por
+   última vez: un campo oculto para esa persona no se acepta en el mapeo ni
+   viaja a la hoja. Una lista espejo (tienda, sitio) sólo «de la app a la
+   hoja».
+9. **Fallas**: autorización vencida, permiso faltante, planilla o pestaña que
+   ya no existe → la corrida falla con el motivo en palabras y abre un Problema
+   (fuente `sheet_sync`, ADR-S44) que se cierra solo con la próxima corrida
+   buena. Una corrida que no termina todo (límite del plan) queda «con avisos»
+   y también abre uno.
+10. **No viaja** al migrar una empresa (la conexión llega sin tokens: se avisa);
+    borrar la empresa la borra; `sheet_sync_rows.record_id` queda con el
+    registro que se va al fusionar duplicados (historia).
+
+**Consecuencias.** Una planilla compartida y una lista quedan iguales sin
+copiar a mano. Lo que no se cubre: fórmulas de la planilla se leen por su valor
+(nunca se escriben), los tipos que no viajan (archivos, relaciones, calculados)
+quedan fuera, y la planilla no avisa cuando cambia (no hay webhook de Sheets
+con este permiso): lo de la hoja llega con el intervalo o con «Sincronizar
+ahora». Las reglas de validación propias de un campo (mínimos, formatos,
+«Sin repetidos» de campos que no son la clave) no se exigen a lo que llega de
+la hoja, igual que en el conector SQL.

@@ -37,6 +37,8 @@ export const INCIDENT_SOURCES = [
     'shop',
     // v0.1.442 (ADR-S105) — un webhook de eventos que se pausó por fallas.
     'webhook',
+    // v0.1.459 (G3) — una hoja de Google Sheets sincronizada con una lista.
+    'sheet_sync',
 ] as const;
 export type IncidentSource = (typeof INCIDENT_SOURCES)[number];
 
@@ -57,6 +59,7 @@ export const INCIDENT_SOURCE_LABELS: Record<IncidentSource, string> = {
     ai_agent: 'Agente de IA',
     shop: 'Tienda online',
     webhook: 'Webhook',
+    sheet_sync: 'Google Sheets',
 };
 
 export interface IncidentDto {
@@ -64,7 +67,7 @@ export interface IncidentDto {
     source: IncidentSource;
     /**
      * Id de lo que falla, para el enlace: automatización, conexión (también en
-     * sql_sync, store_sync y cobros: la página es por conexión), campo o formulario.
+     * sql_sync, sheet_sync, store_sync y cobros: la página es por conexión), campo o formulario.
      */
     source_id: number | null;
     list_id: number | null;
@@ -112,6 +115,8 @@ export function incidentLink(i: Pick<IncidentDto, 'source' | 'source_id' | 'list
             return '/settings?s=conectores';
         case 'sql_sync':
             return i.source_id ? `/settings/sql/${i.source_id}` : '/settings?s=conectores';
+        case 'sheet_sync':
+            return i.source_id ? `/settings/sheets/${i.source_id}` : '/settings?s=conectores';
         case 'store_sync':
             return i.source_id ? `/settings/stores/${i.source_id}` : '/settings?s=conectores';
         case 'site_sync':

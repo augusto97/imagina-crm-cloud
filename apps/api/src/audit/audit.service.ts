@@ -162,6 +162,9 @@ export type AuditAction =
     | 'sql_sync.create'
     | 'sql_sync.update'
     | 'sql_sync.delete'
+    | 'sheet_sync.create'
+    | 'sheet_sync.update'
+    | 'sheet_sync.delete'
     | 'bulk_edit.revert'
     // v0.1.251 — cobros de la empresa (Mercado Pago / Wompi).
     | 'collections.setup'

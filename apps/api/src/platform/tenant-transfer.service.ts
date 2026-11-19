@@ -60,6 +60,7 @@ import {
     dataConsentVersions,
     connectionSyncs,
     sqlSyncs,
+    sheetSyncs,
     whatsappContacts,
     whatsappTemplates,
     helpdeskMailboxes,
@@ -399,6 +400,12 @@ export class TenantTransferService {
             await dump('sync_links', await this.byTenant(syncLinks, tenantId, liveRecord(syncLinks.recordId)));
             // v0.1.243 — sincronizaciones desde SQL Server.
             await dump('sql_syncs', await this.byTenant(sqlSyncs, tenantId, liveList(sqlSyncs.listId)));
+            // v0.1.459 — las sincronizaciones con Google Sheets NO viajan (sólo
+            // se cuentan para avisarlo): en la hoja quedaron los números de
+            // registro de ESTE servidor y la conexión OAuth hay que autorizarla
+            // de nuevo; con los números viejos, emparejaría filas con registros
+            // ajenos. La lista llega con sus datos; la hoja no se toca.
+            await dump('sheet_syncs', (await this.byTenant(sheetSyncs, tenantId)).map((r) => ({ id: (r as { id: number }).id, name: (r as { name: string }).name })));
             // D3 — WhatsApp oficial: la copia de las plantillas y, por contacto,
             // la ventana de 24 h y el último envío (sin texto). La URL de avisos
             // (`whatsapp_hooks`) NO viaja: es de ESTE servidor.
@@ -2254,6 +2261,12 @@ export class TenantTransferService {
         if (publicTokens.size > 0) {
             warnings.push(
                 `${publicTokens.size} lista(s) pública(s) tienen un enlace NUEVO: hay que volver a repartirlo.`,
+            );
+        }
+        const sheetSyncRowsIn = await this.readAll(rows('sheet_syncs'));
+        if (sheetSyncRowsIn.length > 0) {
+            warnings.push(
+                `${sheetSyncRowsIn.length} sincronización(es) con Google Sheets no viajaron: las listas llegaron con sus datos, pero hay que volver a conectar Google Sheets en Integraciones y armar la sincronización de nuevo (con una hoja nueva o borrando la columna «ID» de la anterior).`,
             );
         }
         const shopRows = await this.readAll(rows('shops'));

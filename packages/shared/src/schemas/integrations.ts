@@ -1222,9 +1222,9 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
     {
         key: 'google_sheets',
         name: 'Google Sheets',
-        tagline: 'Agrega filas a una hoja de cálculo.',
+        tagline: 'Sincroniza una lista con una hoja y agrega filas.',
         description:
-            'Cada vez que pase algo en una lista, suma una fila a tu planilla: un registro de ventas, un respaldo, un reporte.',
+            'Mantén una lista y una pestaña de tu planilla al día en los dos sentidos, o suma una fila cada vez que pase algo en una lista: un registro de ventas, un respaldo, un reporte.',
         category: 'datos',
         color: '#34A853',
         auth: {

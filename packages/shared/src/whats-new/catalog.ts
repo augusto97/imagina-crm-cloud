@@ -3722,4 +3722,39 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Importar de Airtable', href: '/lists/new/airtable' },
         audience: { roles: ['admin'] },
     },
+    {
+        key: 'v0.1.459-google-sheets-sincronizar',
+        version: '0.1.459',
+        date: '2026-11-19',
+        kind: 'feature',
+        title: 'Una lista y una hoja de Google Sheets, siempre iguales',
+        summary:
+            'Une una pestaña de tu planilla con una lista: lo que cambia en la hoja llega a la lista y lo que cambia en la lista llega a la hoja, sin duplicar registros.',
+        media: {
+            slides: [
+                {
+                    title: 'Pega el enlace de la planilla',
+                    text: 'En Integraciones, en Google Sheets, toca «Sincronizar con una lista», pega el enlace y elige la pestaña y la lista.',
+                    illustration: 'integ-hero',
+                },
+                {
+                    title: 'Cada columna, a su campo',
+                    text: 'A un campo que ya existe, a uno nuevo con el tipo que sugieren sus valores, o a ninguno. Las filas se emparejan por una columna «ID» que escribe la app o por un email o un NIT.',
+                    illustration: 'ie-importar',
+                },
+                {
+                    title: 'En uno o en los dos sentidos',
+                    text: 'La primera carga no dispara automatizaciones; las siguientes sí, con el valor anterior y el nuevo. Si la misma celda cambió en los dos lados, gana la app y queda anotado.',
+                    illustration: 'sql-schedule',
+                },
+            ],
+        },
+        body: [
+            '- Elige **en qué sentido**: de la hoja a la lista, de la lista a la hoja o en los dos.',
+            '- Decide qué pasa cuando se borra una fila (mandar el registro a la papelera o dejarlo) y cuando se borra un registro (borrar la fila o dejarla).',
+            '- **Probar** muestra lo que haría la próxima sincronización sin escribir nada; las celdas que el campo no acepta aparecen en **Ver filas con error**.',
+        ].join('\n'),
+        action: { label: 'Ir a Integraciones', href: '/settings?s=conectores' },
+        audience: { roles: ['admin'] },
+    },
 ];

@@ -97,6 +97,7 @@ export function RouteTracker(): null {
         if (pathname.startsWith('/settings/stores/')) return `${__('Tienda')} · ${__('Ajustes')}`;
         if (pathname.startsWith('/settings/sites/')) return `${__('Sitio WordPress')} · ${__('Ajustes')}`;
         if (pathname.startsWith('/settings/sql/')) return `${__('Sincronización SQL')} · ${__('Ajustes')}`;
+        if (pathname.startsWith('/settings/sheets/')) return `${__('Google Sheets')} · ${__('Ajustes')}`;
         if (pathname.startsWith('/settings/collections/')) return `${__('Cobros')} · ${__('Ajustes')}`;
         if (pathname.startsWith('/settings/whatsapp/')) return `${__('WhatsApp')} · ${__('Ajustes')}`;
         if (pathname.startsWith('/settings/sms/')) return `${__('SMS')} · ${__('Ajustes')}`;

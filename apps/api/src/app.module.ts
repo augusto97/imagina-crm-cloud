@@ -52,6 +52,7 @@ import { ConnectorsModule } from './connectors/connectors.module';
 import { StoreSyncModule } from './sync/store-sync.module';
 import { SiteSyncModule } from './site-sync/site-sync.module';
 import { SqlSyncModule } from './sql-sync/sql-sync.module';
+import { SheetSyncModule } from './sheet-sync/sheet-sync.module';
 import { CollectionsModule } from './collections/collections.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { SmsModule } from './sms/sms.module';
@@ -125,6 +126,7 @@ import { WhatsNewModule } from './whats-new/whats-new.module';
         // v0.1.333 (ADR-S83) — sitios WordPress.
         SiteSyncModule,
         SqlSyncModule,
+        SheetSyncModule,
         CollectionsModule,
         // D3 — WhatsApp oficial (Meta Cloud API).
         WhatsappModule,
