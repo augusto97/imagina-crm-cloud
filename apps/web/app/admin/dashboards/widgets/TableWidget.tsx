@@ -11,6 +11,9 @@ import type { FieldEntity } from '@/types/field';
 import type { WidgetSpec } from '@/types/dashboard';
 
 import { WidgetError } from './WidgetError';
+import { CompareBadge, RowDelta } from './CompareParts';
+import { compareTooltip, deltaView, diffText, isReadyCompare, widgetCompareOf } from './compareView';
+import { formatMetricValue } from './widgetFormat';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
 interface TableWidgetProps {
@@ -41,7 +44,7 @@ export function TableWidget({ dashboardId, widget }: TableWidgetProps): JSX.Elem
 
     return (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-gap-3">
-            <WidgetHeader title={widget.title || __('Top registros')} subtitle={subtitle} />
+            <WidgetHeader title={widget.title || __('Top registros')} subtitle={subtitle} right={<CompareBadge compare={widgetCompareOf(data.data)} />} />
 
             <div className="imcrm-flex imcrm-flex-1 imcrm-min-h-0 imcrm-flex-col imcrm-overflow-auto imcrm-rounded-lg imcrm-border imcrm-border-border">
                 {data.isLoading ? (
@@ -58,6 +61,8 @@ export function TableWidget({ dashboardId, widget }: TableWidgetProps): JSX.Elem
                     />
                 ) : null}
             </div>
+            {/* v0.1.462 — los totales del período contra los de antes. */}
+            <TableCompareTotals compare={widgetCompareOf(data.data)} fields={fields.data ?? []} />
         </div>
     );
 }
@@ -186,4 +191,36 @@ function cell(col: Column, value: unknown, field: FieldEntity | undefined, title
         return <span className="imcrm-text-muted-foreground">—</span>;
     }
     return Array.isArray(value) ? value.join(', ') : String(value);
+}
+
+/**
+ * v0.1.462 — Pie de la tabla con «Comparar con…»: cuántos registros y la suma
+ * de cada columna numérica del período, contra el período de antes.
+ */
+function TableCompareTotals({ compare, fields }: { compare: ReturnType<typeof widgetCompareOf>; fields: FieldEntity[] }): JSX.Element | null {
+    if (!isReadyCompare(compare) || !Array.isArray(compare.totals)) return null;
+    const totals = compare.totals as Array<{ key: string; label: string; field_id: number | null; value: number; previous: number }>;
+    if (totals.length === 0) return null;
+    const byId = new Map(fields.map((f) => [f.id, f]));
+    return (
+        <div className="imcrm-flex imcrm-shrink-0 imcrm-flex-wrap imcrm-gap-x-4 imcrm-gap-y-1 imcrm-text-[11px]" data-testid="imcrm-table-compare">
+            {totals.map((t) => {
+                const field = t.field_id !== null ? byId.get(t.field_id) : undefined;
+                const fmt = (n: number): string => formatMetricValue(n, t.field_id === null ? 'count' : 'sum', field);
+                const d = deltaView(t.value, t.previous, compare.invert === true);
+                return (
+                    <span
+                        key={t.key}
+                        className="imcrm-inline-flex imcrm-items-baseline imcrm-gap-1"
+                        title={compareTooltip({ compare, name: t.label, nowText: fmt(t.value), beforeText: fmt(t.previous), diff: d ? diffText(d.diff, fmt) : null, delta: d?.text ?? null })}
+                    >
+                        <span className="imcrm-text-muted-foreground">{t.label}:</span>
+                        <span className="imcrm-font-semibold imcrm-tabular-nums imcrm-text-foreground">{fmt(t.value)}</span>
+                        <span className="imcrm-text-muted-foreground">{__('antes')} {fmt(t.previous)}</span>
+                        <RowDelta current={t.value} previous={t.previous} invert={compare.invert === true} />
+                    </span>
+                );
+            })}
+        </div>
+    );
 }

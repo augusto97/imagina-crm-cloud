@@ -13,6 +13,21 @@ import {
     timeBucketSchema,
     zonedToday,
     addDaysYmd,
+    alignComparedSeries,
+    bucketKeyOf,
+    bucketKeysInRange,
+    compareLabels,
+    comparisonWindows,
+    effectiveCompare,
+    MAX_COMPARE_POINTS,
+    parseCompareOverride,
+    resolveStageProbabilities,
+    stageOptionsOf,
+    weightForecast,
+    type CompareSpec,
+    type CompareWindows,
+    type ForecastCell,
+    type YmdRange,
     type AggregateMetric,
     type AggregateRequest,
     type CreateDashboardInput,
@@ -457,7 +472,7 @@ export class DashboardsService {
                 const w = queue.shift()!;
                 try {
                     out[w.id] = await this.computeWidget(
-                        { tx, tenantId, viewer, ctx, periodOverride: opts.periodOverride, filters: opts.filters, rootsDefault: true },
+                        { tx, tenantId, viewer, ctx, periodOverride: opts.periodOverride, compareOverride: opts.compareOverride, filters: opts.filters, rootsDefault: true },
                         w,
                     );
                 } catch (err) {
@@ -516,9 +531,35 @@ export class DashboardsService {
             : baseTree;
         const metricField = metricFieldId !== undefined ? ctx.byId.get(metricFieldId) : undefined;
 
+        // v0.1.462 — «Comparar con…» (J2): el mismo widget sobre el período
+        // anterior, el mismo del año pasado o un rango elegido. Mismo filtro,
+        // mismo ACL, mismo reloj; en la MISMA evaluación del bundle.
+        const breakdown = numOrUndef(cfg.sub_group_by_field_id) !== undefined
+            && numOrUndef(cfg.sub_group_by_field_id) !== (numOrUndef(cfg.group_by_field_id) ?? numOrUndef(cfg.date_field_id))
+            && BREAKDOWN_WIDGET_TYPES.includes(widget.type);
+        const compareSpec = COMPARABLE_TYPES.has(widget.type) ? effectiveCompare(cfg, env.compareOverride) : null;
+        const cmp: CompareCtx | null = compareSpec
+            ? breakdown
+                ? { unavailable: 'La comparación no está disponible con «Desglosar por».' }
+                : prepareCompare(compareSpec, period, ctx, baseTree, cfg.compare_invert === true)
+            : null;
+
+        if (widget.type === 'forecast') {
+            return this.computeForecast(env, cfg, { periodTree, period, cmp, runOpts });
+        }
+
         if (widget.type === 'kpi' || widget.type === 'gauge') {
             const r = await this.aggregate.runIn(tx, tenantId, ctx, { metric, field_id: metricFieldId, filter_tree: periodTree }, runOpts);
             const value = displayValue(r.value ?? 0, metric, metricField);
+            const compare = cmp === null
+                ? undefined
+                : 'unavailable' in cmp
+                    ? { unavailable: cmp.unavailable }
+                    : await this.safeCompare(tx, async (stx) => {
+                        const p = await this.aggregate.runIn(stx, tenantId, ctx, { metric, field_id: metricFieldId, filter_tree: cmp.tree(cmp.totalsRange) }, runOpts);
+                        return { ...cmp.meta, value: displayValue(p.value ?? 0, metric, metricField) };
+                    });
+            const withCompare = <T extends object>(o: T): T => (compare ? { ...o, compare } : o);
             // v0.1.99 — mini-tendencia del KPI: si el widget configura
             // `spark_field_id` (campo fecha), se agrega la MISMA métrica
             // agrupada por día sobre los últimos 30 días → spark[].
@@ -548,14 +589,14 @@ export class DashboardsService {
                         const today = zonedToday(ctx.clock.timeZone, ctx.clock.now);
                         points = fillTimeBuckets(points, 'day', { from: addDaysYmd(today, -29), to: today }) as typeof points;
                     }
-                    return { value, metric, spark: points.map((p) => (typeof p.value === 'number' ? p.value : 0)) };
+                    return withCompare({ value, metric, spark: points.map((p) => (typeof p.value === 'number' ? p.value : 0)) });
                 } catch {
                     // Un spark inválido (campo borrado / tipo cambiado) no
                     // rompe el KPI — se devuelve sin tendencia.
-                    return { value, metric };
+                    return withCompare({ value, metric });
                 }
             }
-            return { value, metric };
+            return withCompare({ value, metric });
         }
 
         if (widget.type === 'stat_delta') {
@@ -597,11 +638,30 @@ export class DashboardsService {
         if (widget.type === 'table') {
             // v0.1.97 — tabla REAL: reusa RecordsService.list (ACL del viewer:
             // scope por rol + campos ocultos ya stripped).
-            return this.computeTable(env, widget, periodTree, rootsOnly);
+            const table = await this.computeTable(env, widget, periodTree, rootsOnly);
+            if (cmp === null) return table;
+            if ('unavailable' in cmp) return { ...table, compare: { unavailable: cmp.unavailable } };
+            // v0.1.462 — el pie compara los TOTALES del período (cuántos
+            // registros y la suma de cada columna numérica), no fila por fila.
+            const summable = table.columns.filter((c) => !NON_SUMMABLE.has(c.type)).map((c) => c.id);
+            const compare = await this.safeCompare(tx, async (stx) => {
+                const now = await this.aggregate.totalsIn(stx, tenantId, ctx, summable, periodTree, runOpts);
+                const before = await this.aggregate.totalsIn(stx, tenantId, ctx, summable, cmp.tree(cmp.totalsRange), runOpts);
+                return {
+                    ...cmp.meta,
+                    totals: [
+                        { key: '__count', label: 'Registros', field_id: null, value: now.count, previous: before.count },
+                        ...table.columns
+                            .filter((c) => now.sums.has(c.id))
+                            .map((c) => ({ key: c.slug, label: c.label, field_id: c.id, value: now.sums.get(c.id) ?? 0, previous: before.sums.get(c.id) ?? 0 })),
+                    ],
+                };
+            });
+            return { ...table, compare };
         }
 
         if (widget.type === 'pivot') {
-            return this.computePivot(env, cfg, { metric, metricFieldId, metricField, filterTree: periodTree, runOpts });
+            return this.computePivot(env, cfg, { metric, metricFieldId, metricField, filterTree: periodTree, runOpts, cmp, periodFieldId: period?.fieldId });
         }
 
         // charts (bar/pie/line/area/funnel): agrupado. Si el campo agrupado es
@@ -654,6 +714,7 @@ export class DashboardsService {
                     ...(st.others !== undefined ? { others: st.others } : {}),
                 })),
                 ...(rr.hidden_sub_groups ? { hidden_pairs: rr.hidden_sub_groups } : {}),
+                ...(cmp && 'unavailable' in cmp ? { compare: { unavailable: cmp.unavailable } } : {}),
             };
         }
 
@@ -672,7 +733,61 @@ export class DashboardsService {
         // v0.1.286 — los buckets vacíos valen 0 entre el primero y el último
         // (antes la línea unía meses no contiguos y la pendiente mentía).
         if (bucketed && zeroFillable(metric)) data = fillTimeBuckets(data, bucketed);
-        return { data };
+        if (cmp === null) return { data };
+        if ('unavailable' in cmp) return { data, compare: { unavailable: cmp.unavailable } };
+
+        if (bucketed && groupBy === period?.fieldId) {
+            // Serie de tiempo sobre el campo del período: se alinea por
+            // POSICIÓN (el día 1 con el día 1) y el anterior va completo.
+            const currentKeys = bucketKeysInRange(cmp.windows.current, bucketed);
+            const previousKeys = bucketKeysInRange(cmp.windows.previous, bucketed);
+            if (currentKeys.length > MAX_COMPARE_POINTS || previousKeys.length > MAX_COMPARE_POINTS) {
+                return { data, compare: { unavailable: 'Hay demasiados puntos para comparar: agrupa por semana o por mes.' } };
+            }
+            const compare = await this.safeCompare(tx, async (stx) => {
+                const p = await this.aggregate.runIn(stx, tenantId, ctx, {
+                    metric,
+                    field_id: metricFieldId,
+                    group_by_field_id: groupBy,
+                    filter_tree: cmp.tree(cmp.windows.previous),
+                    time_bucket: timeBucket,
+                }, { ...runOpts, top: { limit: MAX_GROUPS, byValue: false } });
+                const today = zonedToday(ctx.clock.timeZone, ctx.clock.now);
+                const inWindow = cmp.windows.current.from <= today && today <= cmp.windows.current.to;
+                const points = alignComparedSeries({
+                    current: numericGroups(r.groups ?? []),
+                    previous: numericGroups(p.groups ?? []),
+                    currentKeys,
+                    previousKeys,
+                    todayKey: inWindow ? bucketKeyOf(today, bucketed) : null,
+                    zeroFill: zeroFillable(metric),
+                });
+                return { ...cmp.seriesMeta, points };
+            });
+            return { data, compare };
+        }
+
+        // Por categoría: los MISMOS grupos (y el mismo "Otros") en el período anterior.
+        const keep = (r.groups ?? []).filter((g) => g.group !== AGGREGATE_OTHERS_KEY).map((g) => g.group);
+        const compare = await this.safeCompare(tx, async (stx) => {
+            const p = await this.aggregate.runIn(stx, tenantId, ctx, {
+                metric,
+                field_id: metricFieldId,
+                group_by_field_id: groupBy,
+                filter_tree: cmp.tree(cmp.totalsRange),
+                time_bucket: timeBucket,
+            }, { ...runOpts, keepKeys: keep });
+            const byKey = new Map((p.groups ?? []).map((g) => [g.group ?? '(sin valor)', displayValue(g.value ?? 0, metric, metricField)]));
+            const empty = zeroFillable(metric) ? 0 : null;
+            // El total de antes de TODOS sus grupos (también los que este
+            // período no tiene, que caen en "Otros"): la variación del total
+            // del gráfico coincide con la de un indicador con los mismos filtros.
+            const total = zeroFillable(metric)
+                ? Math.round((p.groups ?? []).reduce((s, g) => s + (typeof g.value === 'number' ? g.value : Number(g.value) || 0), 0) * 100) / 100
+                : null;
+            return { ...cmp.meta, values: data.map((row) => ({ label: row.label, value: byKey.get(row.label) ?? empty })), total };
+        });
+        return { data, compare };
     }
 
     /**
@@ -692,6 +807,8 @@ export class DashboardsService {
             metricField: Field | undefined;
             filterTree: AggregateRequest['filter_tree'];
             runOpts: { rootsOnly: boolean; related?: RelatedScope };
+            cmp?: CompareCtx | null;
+            periodFieldId?: number;
         },
     ): Promise<unknown> {
         const { tx, tenantId, ctx } = env;
@@ -730,7 +847,52 @@ export class DashboardsService {
         for (const g of r.groups ?? []) {
             for (const sg of g.sub_groups ?? []) cells.push({ row: label(g.group), col: label(sg.group), value: show(sg.value) });
         }
+        // v0.1.462 — «Antes» y «Variación» por fila: el total de cada fila y
+        // el general en el período con el que se compara.
+        let compare: unknown;
+        const cmp = m.cmp;
+        if (cmp && 'unavailable' in cmp) compare = { unavailable: cmp.unavailable };
+        else if (cmp) {
+            const series = rowBucket !== undefined && rowId === m.periodFieldId;
+            const range = series ? cmp.windows.previous : cmp.totalsRange;
+            const empty = zeroFillable(m.metric) ? 0 : null;
+            compare = await this.safeCompare(tx, async (stx) => {
+                const tree = cmp.tree(range);
+                const total = await this.aggregate.runIn(stx, tenantId, ctx, { metric: m.metric, field_id: m.metricFieldId, filter_tree: tree }, m.runOpts);
+                const rowsBefore: Array<{ key: string; value: number | string | null }> = [];
+                if (series) {
+                    const curKeys = bucketKeysInRange(cmp.windows.current, rowBucket);
+                    const prevKeys = bucketKeysInRange(cmp.windows.previous, rowBucket);
+                    const p = await this.aggregate.runIn(stx, tenantId, ctx, {
+                        metric: m.metric,
+                        field_id: m.metricFieldId,
+                        group_by_field_id: rowId,
+                        filter_tree: tree,
+                        time_bucket: rowBucket,
+                    }, { ...m.runOpts, top: { limit: MAX_GROUPS, byValue: false } });
+                    const pm = new Map((p.groups ?? []).map((g) => [g.group, g.value]));
+                    for (const g of r.groups ?? []) {
+                        const i = g.group === null ? -1 : curKeys.indexOf(g.group);
+                        const pk = i >= 0 ? prevKeys[i] : undefined;
+                        rowsBefore.push({ key: label(g.group), value: pk === undefined ? null : show(pm.get(pk) ?? empty) });
+                    }
+                } else {
+                    const keep = (r.groups ?? []).filter((g) => g.group !== AGGREGATE_OTHERS_KEY).map((g) => g.group);
+                    const p = await this.aggregate.runIn(stx, tenantId, ctx, {
+                        metric: m.metric,
+                        field_id: m.metricFieldId,
+                        group_by_field_id: rowId,
+                        filter_tree: tree,
+                        time_bucket: rowBucket,
+                    }, { ...m.runOpts, keepKeys: keep });
+                    const pm = new Map((p.groups ?? []).map((g) => [label(g.group), g.value]));
+                    for (const g of r.groups ?? []) rowsBefore.push({ key: label(g.group), value: show(pm.get(label(g.group)) ?? empty) });
+                }
+                return { ...(series ? cmp.seriesMeta : cmp.meta), rows: rowsBefore, total: show(total.value) };
+            });
+        }
         return {
+            ...(compare ? { compare } : {}),
             pivot: {
                 rows: (r.groups ?? []).map((g) => ({ key: label(g.group), value: show(g.value), ...(g.others !== undefined ? { others: g.others } : {}) })),
                 cols: (r.sub_totals ?? []).map((st) => ({ key: label(st.group), value: show(st.value), ...(st.others !== undefined ? { others: st.others } : {}) })),
@@ -739,6 +901,108 @@ export class DashboardsService {
                 ...(r.hidden_sub_groups ? { hidden_cells: r.hidden_sub_groups } : {}),
             },
         };
+    }
+
+    /**
+     * v0.1.462 — Pronóstico de ventas (J3): el monto de los negocios por
+     * período de la fecha de cierre y por etapa en UNA consulta; la
+     * ponderación (monto × probabilidad de la etapa) es pura y compartida.
+     * Sin fecha de cierre, un solo total por etapa.
+     */
+    private async computeForecast(
+        env: WidgetEnv,
+        cfg: Record<string, unknown>,
+        m: {
+            periodTree: AggregateRequest['filter_tree'];
+            period: { fieldId: number; value: string | { from: string; to: string } } | undefined;
+            cmp: CompareCtx | null;
+            runOpts: { rootsOnly: boolean; related?: RelatedScope };
+        },
+    ): Promise<unknown> {
+        const { tx, tenantId, ctx } = env;
+        const amountId = numOrUndef(cfg.metric_field_id);
+        const stageId = numOrUndef(cfg.stage_field_id);
+        const stageField = stageId !== undefined ? ctx.byId.get(stageId) : undefined;
+        if (amountId === undefined || !ctx.byId.has(amountId) || stageField?.type !== 'select') {
+            throw new BadRequestException({
+                code: 'invalid_forecast',
+                message: 'El pronóstico necesita un campo de monto y un campo de etapa (selección).',
+                data: { status: 400 },
+            });
+        }
+        const closeId = numOrUndef(cfg.date_field_id);
+        const closeField = closeId !== undefined ? ctx.byId.get(closeId) : undefined;
+        const byDate = closeField?.type === 'date' || closeField?.type === 'datetime';
+        const parsed = timeBucketSchema.safeParse(cfg.time_bucket);
+        const bucket: TimeBucket = parsed.success && (parsed.data === 'week' || parsed.data === 'quarter') ? parsed.data : 'month';
+        const options = stageOptionsOf(stageField.config as Record<string, unknown>);
+        const probabilities = resolveStageProbabilities(options, cfg.stage_probabilities);
+
+        const cellsFor = async (t: Tx, tree: AggregateRequest['filter_tree']): Promise<ForecastCell[]> => {
+            if (byDate) {
+                const r = await this.aggregate.runIn(t, tenantId, ctx, {
+                    metric: 'sum',
+                    field_id: amountId,
+                    group_by_field_id: closeId,
+                    sub_group_by_field_id: stageId,
+                    filter_tree: tree,
+                    time_bucket: bucket,
+                }, m.runOpts);
+                return (r.groups ?? []).flatMap((g) => (g.sub_groups ?? []).map((sg) => ({ bucket: g.group, stage: sg.group, amount: toNum(sg.value) })));
+            }
+            const r = await this.aggregate.runIn(t, tenantId, ctx, { metric: 'sum', field_id: amountId, group_by_field_id: stageId, filter_tree: tree }, m.runOpts);
+            return (r.groups ?? []).map((g) => ({ bucket: null, stage: g.group, amount: toNum(g.value) }));
+        };
+
+        const cells = await cellsFor(tx, m.periodTree);
+        const result = weightForecast(cells, probabilities);
+        let buckets = result.buckets;
+        // Los períodos sin negocios también se ven (con el período elegido).
+        const window = byDate && m.period ? relativeDateRange(m.period.value, ctx.clock) : null;
+        if (window && daysSpan(window) <= 3660) {
+            const keys = bucketKeysInRange(window, bucket, FORECAST_MAX_BUCKETS + 1);
+            if (keys.length <= FORECAST_MAX_BUCKETS) {
+                const byKey = new Map(buckets.map((b) => [b.key, b]));
+                const zero = { won: 0, weighted: 0, open: 0, lost: 0, forecast: 0, unassigned: 0 };
+                buckets = [...keys.map((k) => byKey.get(k) ?? { key: k, ...zero }), ...buckets.filter((b) => !keys.includes(b.key))];
+            }
+        }
+        const byStage = new Map<string, number>();
+        for (const c of cells) if (c.stage !== null) byStage.set(c.stage, (byStage.get(c.stage) ?? 0) + c.amount);
+        const stages = options.map((o) => ({
+            key: o.value,
+            label: o.label,
+            probability: probabilities[o.value] ?? 0,
+            amount: Math.round((byStage.get(o.value) ?? 0) * 100) / 100,
+        }));
+
+        let compare: unknown;
+        if (m.cmp && 'unavailable' in m.cmp) compare = { unavailable: m.cmp.unavailable };
+        else if (m.cmp) {
+            const cmp = m.cmp;
+            // El pronóstico compara con el período anterior COMPLETO.
+            compare = await this.safeCompare(tx, async (stx) => {
+                const before = weightForecast(await cellsFor(stx, cmp.tree(cmp.windows.previous)), probabilities);
+                return { ...cmp.seriesMeta, totals: before.totals };
+            });
+        }
+        return {
+            forecast: { buckets, totals: result.totals, stages, bucket: byDate ? bucket : null },
+            ...(compare ? { compare } : {}),
+        };
+    }
+
+    /**
+     * v0.1.462 — La comparación en un savepoint: si falla (un campo que cambió
+     * de tipo), el widget se dibuja igual y la comparación dice por qué no.
+     */
+    private async safeCompare<T>(tx: Tx, fn: (stx: Tx) => Promise<T>): Promise<T | { unavailable: string }> {
+        try {
+            return await tx.transaction((stx) => fn(stx as unknown as Tx));
+        } catch (err) {
+            const message = widgetErrorMessage(err);
+            return { unavailable: err instanceof HttpException ? message : 'No se pudo calcular la comparación.' };
+        }
     }
 
     /** Widget de tabla: Top N registros con columnas visibles y orden. */
@@ -802,6 +1066,8 @@ const FIELD_METRICS = new Set(['count_unique', 'count_empty', 'sum', 'avg', 'min
 
 interface BundleOptions {
     periodOverride?: string;
+    /** v0.1.462 — la comparación del tablero (pisa la de cada widget). */
+    compareOverride?: CompareSpec | 'none' | null;
     filters?: DashboardFilterValue[];
     /** Tiempo total de la evaluación (por defecto `DASHBOARD_EVAL_DEADLINE_MS`). */
     deadlineMs?: number;
@@ -821,6 +1087,7 @@ interface WidgetEnv {
     viewer: DashboardViewer;
     ctx: AggregateListContext;
     periodOverride?: string;
+    compareOverride?: CompareSpec | 'none' | null;
     filters?: DashboardFilterValue[];
     related?: RelatedScope;
     /** Bundle de un tablero: el primer nivel por defecto (ver `rootsOnly`). */
@@ -847,7 +1114,91 @@ function bundleOptions(req: DashboardBundleRequest): BundleOptions {
     const preset = typeof req.period_preset === 'string' && parsePeriodOverride(req.period_preset) !== undefined
         ? req.period_preset
         : undefined;
-    return { periodOverride: preset, filters: Array.isArray(req.filters) ? req.filters : undefined };
+    const compare = parseCompareOverride(req.compare);
+    return {
+        periodOverride: preset,
+        compareOverride: compare === undefined ? null : compare,
+        filters: Array.isArray(req.filters) ? req.filters : undefined,
+    };
+}
+
+/** v0.1.462 — La comparación que llega por la dirección de un tablero público (o nada). */
+export function normalizeDashboardCompare(raw: string | undefined): string {
+    if (typeof raw !== 'string' || raw === '' || raw.length > 64) return '';
+    const parsed = parseCompareOverride(raw);
+    return parsed === undefined || parsed === null ? '' : raw;
+}
+
+/** Widgets que comparan períodos (`config.compare`). */
+const COMPARABLE_TYPES = new Set<string>(['kpi', 'gauge', 'chart_bar', 'chart_pie', 'chart_line', 'chart_area', 'funnel', 'table', 'pivot', 'forecast']);
+/** Columnas de una tabla que no se suman en el pie (un porcentaje o una calificación sumados no dicen nada). */
+const NON_SUMMABLE = new Set(['percent', 'rating']);
+/** Tope de períodos que se completan con ceros en un pronóstico. */
+const FORECAST_MAX_BUCKETS = 60;
+
+interface CompareMeta {
+    mode: CompareSpec['mode'];
+    label: string;
+    short: string;
+    detail: string;
+    current: YmdRange;
+    previous: YmdRange;
+    /** «Menos es mejor»: una baja se pinta verde. */
+    invert: boolean;
+}
+
+type CompareCtx =
+    | { unavailable: string }
+    | {
+          windows: CompareWindows;
+          /** Para totales (KPI, categorías, tabla): con «hasta el mismo día». */
+          meta: CompareMeta;
+          /** Para series de tiempo: los dos períodos completos. */
+          seriesMeta: CompareMeta;
+          totalsRange: YmdRange;
+          tree: (r: YmdRange) => AggregateRequest['filter_tree'];
+      };
+
+/** Las ventanas, las etiquetas y el filtro del período con el que se compara. */
+function prepareCompare(
+    spec: CompareSpec,
+    period: { fieldId: number; value: string | { from: string; to: string } } | undefined,
+    ctx: AggregateListContext,
+    baseTree: AggregateRequest['filter_tree'] | FilterNode | undefined,
+    invert: boolean,
+): CompareCtx {
+    if (!period) return { unavailable: 'Elige un período para comparar.' };
+    const window = relativeDateRange(period.value, ctx.clock);
+    if (!window) return { unavailable: 'Este período no se puede comparar.' };
+    const today = zonedToday(ctx.clock.timeZone, ctx.clock.now);
+    const preset = typeof period.value === 'string' ? period.value : undefined;
+    const windows = comparisonWindows(window, spec, { today, preset });
+    if (!windows) return { unavailable: 'Este período no tiene un anterior con el que comparar: elige uno con inicio y fin.' };
+    const totalsRange = windows.previousToDate ?? windows.previous;
+    const l = compareLabels(spec, windows, preset);
+    const sl = compareLabels(spec, { ...windows, previousToDate: null, currentToDate: null }, preset);
+    const fieldId = period.fieldId;
+    return {
+        windows,
+        meta: { mode: spec.mode, ...l, current: windows.currentToDate ?? windows.current, previous: totalsRange, invert },
+        seriesMeta: { mode: spec.mode, ...sl, current: windows.current, previous: windows.previous, invert },
+        totalsRange,
+        tree: (r) => combineTrees(baseTree as FilterNode | undefined, [
+            { type: 'condition', field_id: fieldId, op: 'between_relative', value: { from: r.from, to: r.to } },
+        ]),
+    };
+}
+
+/** Los grupos con clave y valor numérico (una serie de tiempo). */
+function numericGroups(groups: ReadonlyArray<{ group: string | null; value: number | string | null }>): Array<{ label: string; value: number }> {
+    const out: Array<{ label: string; value: number }> = [];
+    for (const g of groups) if (g.group !== null && typeof g.value === 'number') out.push({ label: g.group, value: g.value });
+    return out;
+}
+
+function toNum(v: unknown): number {
+    const n = typeof v === 'number' ? v : Number(v);
+    return Number.isFinite(n) ? n : 0;
 }
 
 /** Columnas por defecto de la tabla: el título y los 7 siguientes (sin relaciones). */

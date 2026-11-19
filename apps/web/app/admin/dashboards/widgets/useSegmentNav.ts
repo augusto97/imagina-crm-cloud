@@ -114,6 +114,35 @@ export function segmentFilterTree(args: {
     if (label === OTHERS_GROUP_KEY) return null;
     if (args.sub !== undefined && args.sub.label === OTHERS_GROUP_KEY) return null;
     const cfg = widget.config as Record<string, unknown>;
+    const children = segmentScopeChildren(args);
+
+    // 4. La condición del segmento.
+    const seg = segmentCondition(field, label, typeof cfg.time_bucket === 'string');
+    if (seg === null) return null;
+    children.push(seg);
+    // 5. v0.1.292 — y la de la serie (o la columna). Un segundo campo de
+    // fecha siempre va por bucket (sin elegir, por mes).
+    if (args.sub !== undefined) {
+        const subSeg = segmentCondition(args.sub.field, args.sub.label, true);
+        if (subSeg === null) return null;
+        children.push(subSeg);
+    }
+    return { type: 'group', logic: 'and', children };
+}
+
+/**
+ * v0.1.462 — Lo que contó el widget ANTES de elegir un segmento: su filtro
+ * propio, el período (el global del tablero pisa el del widget) y los
+ * filtros del tablero. Lo comparten los gráficos y el pronóstico.
+ */
+export function segmentScopeChildren(args: {
+    widget: WidgetSpec;
+    listFields: ReadonlyArray<Pick<FieldEntity, 'id' | 'type'>>;
+    period: string;
+    filters: DashboardFilterValue[];
+    userId: number;
+}): FilterNode[] {
+    const cfg = args.widget.config as Record<string, unknown>;
     const children: FilterNode[] = [];
 
     // 1. El filtro propio del widget (una plantilla vieja lo guardaba suelto).
@@ -149,19 +178,7 @@ export function segmentFilterTree(args: {
         const node = dashboardFilterNode(f, flt.value, args.userId);
         if (node) children.push(node);
     }
-
-    // 4. La condición del segmento.
-    const seg = segmentCondition(field, label, typeof cfg.time_bucket === 'string');
-    if (seg === null) return null;
-    children.push(seg);
-    // 5. v0.1.292 — y la de la serie (o la columna). Un segundo campo de
-    // fecha siempre va por bucket (sin elegir, por mes).
-    if (args.sub !== undefined) {
-        const subSeg = segmentCondition(args.sub.field, args.sub.label, true);
-        if (subSeg === null) return null;
-        children.push(subSeg);
-    }
-    return { type: 'group', logic: 'and', children };
+    return children;
 }
 
 /** Lo mismo que el servidor hace con un filtro del tablero (`dashboardFilterNodes`). */

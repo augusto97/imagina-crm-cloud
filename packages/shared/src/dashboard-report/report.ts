@@ -3,6 +3,7 @@ import { formatEmailFieldValue, formatYmd, groupNumber } from '../schemas/email-
 import { AGGREGATE_OTHERS_KEY } from '../schemas/aggregate';
 import type { TenantFormat } from '../schemas/tenant';
 import { valueBaseType, type FieldType } from '../schemas/field';
+import { compareDelta, formatDeltaPct } from './compare';
 
 /** v0.1.300 — columnas de sistema → fecha y hora / persona; ID automático → texto. */
 function base(type: string | undefined): string | undefined {
@@ -88,6 +89,54 @@ export interface ReportRow {
     /** El valor como se lee (moneda, duración, fecha…). */
     text: string;
     color: string;
+    /** v0.1.462 — con «Comparar con…»: el valor en el período anterior. */
+    previous?: number | null;
+    previousText?: string;
+    deltaText?: string;
+    pct?: number | null;
+    tone?: ReportTone;
+}
+
+/** v0.1.462 — Bueno (verde), malo (rojo) o neutro, según «menos es mejor». */
+export type ReportTone = 'good' | 'bad' | 'neutral';
+
+/** v0.1.462 — Qué se compara con qué («Este mes vs. mes anterior»). */
+export interface ReportCompare {
+    label: string;
+    short: string;
+    detail: string;
+}
+
+/** v0.1.462 — Un valor comparado: antes, la variación y su tono. */
+export interface ReportDelta {
+    previousText: string;
+    deltaText: string;
+    pct: number | null;
+    tone: ReportTone;
+}
+
+/** v0.1.462 — Un punto de una serie comparada (alineada por posición). */
+export interface ReportTrendPoint {
+    label: string;
+    prevLabel: string;
+    value: number | null;
+    previous: number | null;
+    text: string;
+    previousText: string;
+}
+
+/** v0.1.462 — Un período del pronóstico. */
+export interface ReportForecastBucket {
+    key: string;
+    label: string;
+    won: number;
+    weighted: number;
+    open: number;
+    forecast: number;
+    wonText: string;
+    weightedText: string;
+    openText: string;
+    forecastText: string;
 }
 
 export interface ReportSeries {
@@ -114,6 +163,8 @@ export interface ReportPivotRow {
     total: number | null;
     totalText: string;
     cells: Array<{ value: number | null; text: string }>;
+    /** v0.1.462 — «Antes» y «Variación» del total de la fila. */
+    delta?: ReportDelta | null;
 }
 
 interface ReportBase {
@@ -134,6 +185,8 @@ export type WidgetReport = ReportBase &
               /** Delta vs período anterior. */
               delta: { pct: number | null; previous: number | string | null; previousText: string; periodDays: number } | null;
               gauge: boolean;
+              /** v0.1.462 — «Comparar con…». */
+              compare: (ReportCompare & ReportDelta & { previous: number | string | null }) | null;
           }
         | {
               kind: 'categories';
@@ -144,6 +197,10 @@ export type WidgetReport = ReportBase &
               /** Nombre de la dimensión (columna del CSV): el campo agrupado. */
               dimension: string;
               metricName: string;
+              /** v0.1.462 — «Comparar con…»: qué con qué (los valores van en cada fila). */
+              compare: ReportCompare | null;
+              /** v0.1.462 — serie de tiempo comparada, alineada por posición. */
+              trend: ReportTrendPoint[] | null;
           }
         | {
               kind: 'stacked';
@@ -156,7 +213,15 @@ export type WidgetReport = ReportBase &
               dimension: string;
               metricName: string;
           }
-        | { kind: 'table'; columns: string[]; rows: string[][]; rawRows: Array<Array<string | number | null>> }
+        | {
+              kind: 'table';
+              columns: string[];
+              rows: string[][];
+              rawRows: Array<Array<string | number | null>>;
+              /** v0.1.462 — totales del período comparados (registros y sumas). */
+              totals: Array<ReportDelta & { label: string; value: number; previous: number; valueText: string }> | null;
+              compare: ReportCompare | null;
+          }
         | {
               kind: 'pivot';
               rowHeader: string;
@@ -169,6 +234,18 @@ export type WidgetReport = ReportBase &
               min: number;
               max: number;
               metricName: string;
+              compare: (ReportCompare & ReportDelta) | null;
+          }
+        | {
+              /** v0.1.462 — pronóstico de ventas (embudo ponderado). */
+              kind: 'forecast';
+              buckets: ReportForecastBucket[];
+              totals: ReportForecastBucket;
+              goal: { value: number; text: string; pct: number } | null;
+              compare: (ReportCompare & ReportDelta) | null;
+              stages: Array<{ label: string; probability: number; amountText: string }>;
+              /** Monto de los negocios sin etapa (no cuentan). */
+              unassignedText: string | null;
           }
     );
 
@@ -442,6 +519,40 @@ const num = (v: unknown): number => {
     return 0;
 };
 
+interface RawCompare {
+    unavailable?: string;
+    label?: string;
+    short?: string;
+    detail?: string;
+    invert?: boolean;
+    value?: number | string | null;
+    values?: Array<{ label: string; value: number | string | null }>;
+    points?: Array<{ label: string | null; prev_label: string | null; value: number | null; previous: number | null }>;
+    totals?: unknown;
+    rows?: Array<{ key: string; value: number | string | null }>;
+    total?: number | string | null;
+}
+
+/** v0.1.462 — La comparación que devolvió el bundle (null si no hay o no se pudo). */
+function readRawCompare(raw: unknown): (RawCompare & ReportCompare) | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const c = raw as RawCompare;
+    if (typeof c.unavailable === 'string' || typeof c.label !== 'string') return null;
+    return { ...c, label: c.label, short: typeof c.short === 'string' ? c.short : '', detail: typeof c.detail === 'string' ? c.detail : '' };
+}
+
+/** v0.1.462 — Antes, variación y tono de un valor comparado. */
+export function reportDelta(
+    current: number | string | null | undefined,
+    previous: number | string | null | undefined,
+    previousText: string,
+    invert: boolean,
+    format: ReportFormat,
+): ReportDelta {
+    const d = compareDelta(typeof current === 'number' ? current : null, typeof previous === 'number' ? previous : null, invert);
+    return { previousText, deltaText: d === null ? '—' : formatDeltaPct(d, format.number_format), pct: d?.pct ?? null, tone: d?.tone ?? 'neutral' };
+}
+
 /**
  * El reporte de UN widget a partir de lo que devolvió el bundle del tablero.
  * `null` para los bloques de contenido o un widget sin datos legibles.
@@ -476,7 +587,56 @@ export function buildWidgetReport(widget: ReportWidget, data: unknown, ctx: Repo
                   periodDays: typeof d.period_days === 'number' ? d.period_days : 0,
               }
             : null;
-        return { ...base, kind: 'kpi', value, valueText: `${prefix}${text(value)}${suffix}`, goal, delta, gauge: widget.type === 'gauge' };
+        const cmp = widget.type === 'stat_delta' ? null : readRawCompare(d.compare);
+        const compare = cmp
+            ? {
+                  label: cmp.label,
+                  short: cmp.short,
+                  detail: cmp.detail,
+                  previous: cmp.value ?? null,
+                  ...reportDelta(value, cmp.value, `${prefix}${text(cmp.value ?? null)}${suffix}`, cmp.invert === true, ctx.format),
+              }
+            : null;
+        return { ...base, kind: 'kpi', value, valueText: `${prefix}${text(value)}${suffix}`, goal, delta, gauge: widget.type === 'gauge', compare };
+    }
+
+    if (widget.type === 'forecast') {
+        const f = d.forecast as {
+            buckets: Array<{ key: string; won: number; weighted: number; open: number; forecast: number }>;
+            totals: { won: number; weighted: number; open: number; forecast: number; unassigned?: number };
+            stages?: Array<{ key: string; label: string; probability: number; amount: number }>;
+        } | undefined;
+        if (!f) return null;
+        const money = (v: number): string => reportMetricText(v, 'sum', metricField, ctx.format);
+        const bucketOf = (b: { key: string; won: number; weighted: number; open: number; forecast: number }, label: string): ReportForecastBucket => ({
+            key: b.key,
+            label,
+            won: b.won,
+            weighted: b.weighted,
+            open: b.open,
+            forecast: b.forecast,
+            wonText: money(b.won),
+            weightedText: money(b.weighted),
+            openText: money(b.open),
+            forecastText: money(b.forecast),
+        });
+        const totals = bucketOf({ key: 'total', ...f.totals }, 'Total');
+        const goalRaw = typeof cfg.goal === 'number' && cfg.goal > 0 ? cfg.goal : null;
+        const cmp = readRawCompare(d.compare);
+        const before = cmp && cmp.totals && typeof cmp.totals === 'object' ? (cmp.totals as { forecast?: number }).forecast : undefined;
+        return {
+            ...base,
+            subtitle: [metricField?.label ?? null, listName].filter(Boolean).join(' · ') || null,
+            kind: 'forecast',
+            buckets: f.buckets.map((b) => bucketOf(b, b.key === '' ? 'Sin fecha' : reportBucketLabel(b.key, ctx.format))),
+            totals,
+            goal: goalRaw !== null ? { value: goalRaw, text: money(goalRaw), pct: (totals.forecast / goalRaw) * 100 } : null,
+            compare: cmp && typeof before === 'number'
+                ? { label: cmp.label, short: cmp.short, detail: cmp.detail, ...reportDelta(totals.forecast, before, money(before), cmp.invert === true, ctx.format) }
+                : null,
+            stages: (f.stages ?? []).map((st) => ({ label: st.label, probability: st.probability, amountText: money(st.amount) })),
+            unassignedText: typeof f.totals.unassigned === 'number' && f.totals.unassigned > 0 ? money(f.totals.unassigned) : null,
+        };
     }
 
     if (widget.type === 'table') {
@@ -494,9 +654,20 @@ export function buildWidgetReport(widget: ReportWidget, data: unknown, ctx: Repo
             const field = ctx.field(col.id);
             return formatEmailFieldValue(field ?? { type: col.type }, v, ctx.format, ctx.userName, ctx.teamName);
         };
+        const tcmp = readRawCompare(d.compare);
+        const totals = tcmp && Array.isArray(tcmp.totals)
+            ? (tcmp.totals as Array<{ key: string; label: string; field_id: number | null; value: number; previous: number }>).map((t) => {
+                  const f = t.field_id !== null ? ctx.field(t.field_id) : undefined;
+                  const m = t.field_id === null ? 'count' : 'sum';
+                  const fmt = (v: number): string => reportMetricText(v, m, f, ctx.format);
+                  return { label: t.label, value: t.value, previous: t.previous, valueText: fmt(t.value), ...reportDelta(t.value, t.previous, fmt(t.previous), tcmp.invert === true, ctx.format) };
+              })
+            : null;
         return {
             ...base,
             kind: 'table',
+            totals,
+            compare: tcmp ? { label: tcmp.label, short: tcmp.short, detail: tcmp.detail } : null,
             columns: cols.map((c) => c.label),
             rows: rows.map((r) => cols.map((c) => cellText(c, r.fields?.[c.slug]))),
             rawRows: rows.map((r) =>
@@ -528,6 +699,9 @@ export function buildWidgetReport(widget: ReportWidget, data: unknown, ctx: Repo
         const rows = sortReportKeys(p.rows.map(label(rowField)), cfg.sort, rowField);
         const cols = sortReportKeys(p.cols.map(label(colField)), cfg.col_sort, colField);
         const cells = new Map(p.cells.map((c) => [`${c.row}\u0000${c.col}`, c.value]));
+        const pcmp = readRawCompare(d.compare);
+        const beforeRows = new Map((pcmp?.rows ?? []).map((r) => [r.key, r.value]));
+        const pInvert = pcmp?.invert === true;
         let min = Infinity;
         let max = -Infinity;
         for (const c of p.cells) {
@@ -544,11 +718,15 @@ export function buildWidgetReport(widget: ReportWidget, data: unknown, ctx: Repo
             colHeader: colField?.label ?? '',
             heatmap: cfg.heatmap === true,
             cols: cols.map((c) => ({ key: c.key, label: c.label, total: typeof c.raw === 'number' ? c.raw : null, totalText: text(c.raw) })),
+            compare: pcmp
+                ? { label: pcmp.label, short: pcmp.short, detail: pcmp.detail, ...reportDelta(p.total, pcmp.total, text(pcmp.total ?? null), pInvert, ctx.format) }
+                : null,
             rows: rows.map((r) => ({
                 key: r.key,
                 label: r.label,
                 total: typeof r.raw === 'number' ? r.raw : null,
                 totalText: text(r.raw),
+                delta: pcmp ? reportDelta(r.raw, beforeRows.get(r.key) ?? null, text(beforeRows.get(r.key) ?? null), pInvert, ctx.format) : null,
                 cells: cols.map((c) => {
                     const v = cells.get(`${r.key}\u0000${c.key}`) ?? null;
                     return { value: typeof v === 'number' ? v : null, text: v === null ? '' : text(v) };
@@ -630,20 +808,43 @@ export function buildWidgetReport(widget: ReportWidget, data: unknown, ctx: Repo
     }));
     if (!timeline) rows = sortReportKeys(rows, cfg.sort ?? (chart === 'pie' ? 'value_desc' : undefined), groupField);
     const total = rows.reduce((s, r) => s + r.value, 0);
+    // v0.1.462 — «Comparar con…»: por categoría, el valor de antes de cada
+    // grupo; en una serie de tiempo, la serie anterior alineada por posición.
+    const ccmp = readRawCompare(d.compare);
+    const beforeByKey = new Map((ccmp?.values ?? []).map((v) => [v.label, v.value]));
+    const cInvert = ccmp?.invert === true;
+    const trend: ReportTrendPoint[] | null = ccmp && Array.isArray(ccmp.points)
+        ? ccmp.points.map((pt) => ({
+              label: pt.label !== null ? reportBucketLabel(pt.label, ctx.format) : '',
+              prevLabel: pt.prev_label !== null ? reportBucketLabel(pt.prev_label, ctx.format) : '',
+              value: pt.value,
+              previous: pt.previous,
+              text: pt.value === null ? '' : text(pt.value),
+              previousText: pt.previous === null ? '' : text(pt.previous),
+          }))
+        : null;
     return {
         ...base,
         kind: 'categories',
         chart,
         dimension,
         metricName,
-        rows: rows.map((r, i) => ({
-            key: r.key,
-            label: r.label,
-            value: r.value,
-            raw: typeof r.raw === 'number' || typeof r.raw === 'string' ? r.raw : null,
-            text: text(r.raw),
-            color: timeline ? (ctx.palette ?? REPORT_PALETTE)[0]! : reportGroupColor(r.key, groupField, i, ctx),
-        })),
+        compare: ccmp ? { label: ccmp.label, short: ccmp.short, detail: ccmp.detail } : null,
+        trend,
+        rows: rows.map((r, i) => {
+            const before = ccmp && !trend ? (beforeByKey.has(r.key) ? beforeByKey.get(r.key)! : null) : undefined;
+            return {
+                key: r.key,
+                label: r.label,
+                value: r.value,
+                raw: typeof r.raw === 'number' || typeof r.raw === 'string' ? r.raw : null,
+                text: text(r.raw),
+                color: timeline ? (ctx.palette ?? REPORT_PALETTE)[0]! : reportGroupColor(r.key, groupField, i, ctx),
+                ...(before !== undefined
+                    ? { previous: typeof before === 'number' ? before : null, ...reportDelta(r.raw, before, before === null ? '—' : text(before), cInvert, ctx.format) }
+                    : {}),
+            };
+        }),
         total,
         totalText: text(total),
     };
@@ -703,6 +904,8 @@ function defaultTitle(type: string): string {
             return 'Top registros';
         case 'pivot':
             return 'Tabla dinámica';
+        case 'forecast':
+            return 'Pronóstico';
         case 'chart_line':
         case 'chart_area':
             return 'Tendencia';

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { readCompareConfig, resolveStageProbabilities, stageOptionsOf } from '@imagina-base/shared';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 
@@ -159,6 +160,14 @@ export function WidgetFormDialog({
     const [colSort, setColSort] = useState<string>('');
     const [heatmap, setHeatmap] = useState(false);
     const [showTotals, setShowTotals] = useState(true);
+    // v0.1.462 — «Comparar con…» (J2) y pronóstico de ventas (J3).
+    const [compareMode, setCompareMode] = useState<CompareModeChoice>('');
+    const [compareToDate, setCompareToDate] = useState(true);
+    const [compareFrom, setCompareFrom] = useState('');
+    const [compareTo, setCompareTo] = useState('');
+    const [compareInvert, setCompareInvert] = useState(false);
+    const [stageFieldId, setStageFieldId] = useState<number>(0);
+    const [stageProbabilities, setStageProbabilities] = useState<Record<string, number>>({});
     const [filterTree, setFilterTree] = useState<FilterTree>({
         type: 'group',
         logic: 'and',
@@ -263,6 +272,16 @@ export function WidgetFormDialog({
             setColSort(typeof initial.config.col_sort === 'string' ? initial.config.col_sort : '');
             setHeatmap(initial.config.heatmap === true);
             setShowTotals(initial.config.show_totals !== false);
+            {
+                const cmp = readCompareConfig(initial.config.compare);
+                setCompareMode(cmp ? cmp.mode : '');
+                setCompareToDate(cmp ? cmp.to_date : true);
+                setCompareFrom(cmp?.from ?? '');
+                setCompareTo(cmp?.to ?? '');
+                setCompareInvert(initial.config.compare_invert === true);
+            }
+            setStageFieldId(typeof initial.config.stage_field_id === 'number' ? initial.config.stage_field_id : 0);
+            setStageProbabilities(readProbabilities(initial.config.stage_probabilities));
             setTimeBucket(
                 isTimeBucket(initial.config.time_bucket)
                     ? initial.config.time_bucket
@@ -323,6 +342,13 @@ export function WidgetFormDialog({
             setColSort('');
             setHeatmap(false);
             setShowTotals(true);
+            setCompareMode('');
+            setCompareToDate(true);
+            setCompareFrom('');
+            setCompareTo('');
+            setCompareInvert(false);
+            setStageFieldId(0);
+            setStageProbabilities({});
             setTimeBucket('month');
             setPeriodFieldId(0);
             setPeriodPreset('');
@@ -437,6 +463,33 @@ export function WidgetFormDialog({
             if (heatmap) config.heatmap = true;
             if (!showTotals) config.show_totals = false;
         }
+        // v0.1.462 — pronóstico de ventas (J3): monto, etapa, fecha de cierre.
+        if (type === 'forecast') {
+            config.metric = 'sum';
+            if (metricFieldId > 0) config.metric_field_id = metricFieldId;
+            delete config.group_by_field_id;
+            if (stageFieldId > 0) config.stage_field_id = stageFieldId;
+            if (dateFieldId > 0) config.date_field_id = dateFieldId;
+            else delete config.date_field_id;
+            config.time_bucket = timeBucket === 'week' || timeBucket === 'quarter' ? timeBucket : 'month';
+            const stageField = (fields.data ?? []).find((f) => f.id === stageFieldId);
+            if (stageField) {
+                config.stage_probabilities = resolveStageProbabilities(stageOptionsOf(stageField.config as Record<string, unknown>), stageProbabilities);
+            }
+            const g = Number(kpiGoal);
+            if (kpiGoal.trim() !== '' && Number.isFinite(g) && g > 0) config.goal = g;
+        }
+        // v0.1.462 — «Comparar con…» (J2).
+        delete config.compare;
+        delete config.compare_invert;
+        if (isComparableType(type) && compareMode !== '') {
+            if (compareMode === 'custom') {
+                if (compareFrom !== '' && compareTo !== '') config.compare = { mode: 'custom', from: compareFrom, to: compareTo };
+            } else {
+                config.compare = { mode: compareMode, to_date: compareToDate };
+            }
+            if (config.compare && compareInvert) config.compare_invert = true;
+        }
         return {
             id: initial?.id ?? draftId.current,
             type,
@@ -488,8 +541,9 @@ export function WidgetFormDialog({
             if (groupByFieldId <= 0 || subGroupByFieldId <= 0 || groupByFieldId === subGroupByFieldId) return false;
             return metricNeedsField;
         }
+        if (type === 'forecast') return metricFieldId > 0 && stageFieldId > 0;
         return false;
-    }, [type, listId, metricNeedsField, groupByFieldId, dateFieldId, subGroupByFieldId]);
+    }, [type, listId, metricNeedsField, metricFieldId, groupByFieldId, dateFieldId, subGroupByFieldId, stageFieldId]);
 
     return (
         <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -547,6 +601,7 @@ export function WidgetFormDialog({
                                     <option value="chart_area">{__('Área (tendencia mensual)')}</option>
                                     <option value="table">{__('Tabla · Top N')}</option>
                                     <option value="pivot">{__('Tabla dinámica · Filas × columnas')}</option>
+                                    <option value="forecast">{__('Pronóstico de ventas · Embudo ponderado')}</option>
                                     <option value="heading">{__('Contenido · Título de sección')}</option>
                                     <option value="text">{__('Contenido · Texto')}</option>
                                     <option value="image">{__('Contenido · Imagen')}</option>
@@ -568,6 +623,8 @@ export function WidgetFormDialog({
                                         setSortFieldId(0);
                                         setVisibleFieldIds([]);
                                         setSubGroupByFieldId(0);
+                                        setStageFieldId(0);
+                                        setStageProbabilities({});
                                     }}
                                 >
                                     <option value={0}>{__('Elige…')}</option>
@@ -739,6 +796,28 @@ export function WidgetFormDialog({
                             />
                         )}
 
+                        {type === 'forecast' && (
+                            <ForecastConfig
+                                fields={fields.data ?? []}
+                                amountFields={aggregatableFields.filter((f) => FORECAST_AMOUNT_TYPES.has(f.type))}
+                                amountFieldId={metricFieldId}
+                                stageFieldId={stageFieldId}
+                                closeFieldId={dateFieldId}
+                                bucket={timeBucket}
+                                probabilities={stageProbabilities}
+                                goal={kpiGoal}
+                                onAmountChange={setMetricFieldId}
+                                onStageChange={(id) => {
+                                    setStageFieldId(id);
+                                    setStageProbabilities({});
+                                }}
+                                onCloseChange={setDateFieldId}
+                                onBucketChange={setTimeBucket}
+                                onProbabilitiesChange={setStageProbabilities}
+                                onGoalChange={setKpiGoal}
+                            />
+                        )}
+
                         {(type === 'chart_line' || type === 'chart_area') && (
                             <>
                                 <ChartMetricConfig
@@ -903,6 +982,25 @@ export function WidgetFormDialog({
                                 onPresetChange={setPeriodPreset}
                                 onFromChange={setPeriodFrom}
                                 onToChange={setPeriodTo}
+                            />
+                        )}
+
+                        {isComparableType(type) && listId > 0 && (
+                            <CompareConfig
+                                mode={compareMode}
+                                toDate={compareToDate}
+                                from={compareFrom}
+                                to={compareTo}
+                                invert={compareInvert}
+                                hasPeriod={periodFieldId > 0 && periodPreset !== ''}
+                                globalPeriod={(scope?.period ?? '') !== ''}
+                                breakdown={isBreakdownType(type) && subGroupByFieldId > 0}
+                                series={type === 'chart_line' || type === 'chart_area' || type === 'forecast'}
+                                onModeChange={setCompareMode}
+                                onToDateChange={setCompareToDate}
+                                onFromChange={setCompareFrom}
+                                onToChange={setCompareTo}
+                                onInvertChange={setCompareInvert}
                             />
                         )}
 
@@ -1840,7 +1938,233 @@ export function widgetPreviewHint(widget: Pick<WidgetSpec, 'type' | 'config'>): 
             ? null
             : __('Elige el campo de las filas y el de las columnas para ver la tabla.');
     }
+    if (widget.type === 'forecast') {
+        return id(widget.config.metric_field_id) > 0 && id(widget.config.stage_field_id) > 0
+            ? null
+            : __('Elige el campo del monto y el de la etapa para ver el pronóstico.');
+    }
     return null;
+}
+
+/** v0.1.462 — Widgets que aceptan «Comparar con…» (espejo de `COMPARABLE_TYPES` del servidor). */
+export function isComparableType(type: WidgetType): boolean {
+    return type === 'kpi' || type === 'gauge' || type === 'chart_bar' || type === 'chart_pie' || type === 'chart_line'
+        || type === 'chart_area' || type === 'funnel' || type === 'table' || type === 'pivot' || type === 'forecast';
+}
+
+type CompareModeChoice = '' | 'previous' | 'last_year' | 'custom';
+
+/** Las probabilidades guardadas de un pronóstico (0-100), leídas con tolerancia. */
+function readProbabilities(raw: unknown): Record<string, number> {
+    const out: Record<string, number> = {};
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+        for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+            const n = typeof v === 'number' ? v : Number(v);
+            if (Number.isFinite(n)) out[k] = Math.max(0, Math.min(100, Math.round(n)));
+        }
+    }
+    return out;
+}
+
+/** Tipos de campo que sirven de monto del pronóstico. */
+const FORECAST_AMOUNT_TYPES: ReadonlySet<string> = new Set(['currency', 'number', 'rollup', 'percent']);
+
+/**
+ * v0.1.462 — «Comparar con…» (J2): el período anterior, el mismo del año
+ * pasado o un rango elegido. Lo calcula el servidor con los mismos filtros.
+ */
+function CompareConfig(p: {
+    mode: CompareModeChoice;
+    toDate: boolean;
+    from: string;
+    to: string;
+    invert: boolean;
+    hasPeriod: boolean;
+    globalPeriod: boolean;
+    breakdown: boolean;
+    series: boolean;
+    onModeChange: (m: CompareModeChoice) => void;
+    onToDateChange: (v: boolean) => void;
+    onFromChange: (v: string) => void;
+    onToChange: (v: string) => void;
+    onInvertChange: (v: boolean) => void;
+}): JSX.Element {
+    return (
+        <div
+            className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-muted/20 imcrm-p-3"
+            data-tour="widget-compare"
+        >
+            <Label htmlFor="w-compare" className="imcrm-text-xs imcrm-text-muted-foreground">{__('Comparar con…')}</Label>
+            <Select id="w-compare" value={p.mode} onChange={(e) => p.onModeChange(e.target.value as CompareModeChoice)}>
+                <option value="">{__('No comparar')}</option>
+                <option value="previous">{__('El período anterior (misma duración)')}</option>
+                <option value="last_year">{__('El mismo período del año pasado')}</option>
+                <option value="custom">{__('Un rango que elijas')}</option>
+            </Select>
+            {p.mode === 'custom' && (
+                <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                    <input
+                        type="date"
+                        value={p.from}
+                        onChange={(e) => p.onFromChange(e.target.value)}
+                        aria-label={__('Comparar desde')}
+                        className="imcrm-h-8 imcrm-min-w-0 imcrm-flex-1 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-2 imcrm-text-sm"
+                    />
+                    <span className="imcrm-text-xs imcrm-text-muted-foreground">→</span>
+                    <input
+                        type="date"
+                        value={p.to}
+                        onChange={(e) => p.onToChange(e.target.value)}
+                        aria-label={__('Comparar hasta')}
+                        className="imcrm-h-8 imcrm-min-w-0 imcrm-flex-1 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-2 imcrm-text-sm"
+                    />
+                </div>
+            )}
+            {p.mode !== '' && (
+                <>
+                    {p.mode !== 'custom' && !p.series && (
+                        <ToggleRow
+                            label={__('Hasta el mismo día (si el período no terminó, el anterior se corta en el mismo punto)')}
+                            checked={p.toDate}
+                            onChange={p.onToDateChange}
+                        />
+                    )}
+                    <ToggleRow label={__('Menos es mejor (una baja se pinta en verde: costos, tickets abiertos)')} checked={p.invert} onChange={p.onInvertChange} />
+                    {p.breakdown ? (
+                        <p className="imcrm-text-[11px] imcrm-text-amber-700 dark:imcrm-text-amber-400">{__('Con «Desglosar por» no se compara: quítalo para ver la variación.')}</p>
+                    ) : !p.hasPeriod && !p.globalPeriod ? (
+                        <p className="imcrm-text-[11px] imcrm-text-amber-700 dark:imcrm-text-amber-400">
+                            {__('Para comparar hace falta un período: elígelo arriba (o en el selector de período del tablero).')}
+                        </p>
+                    ) : null}
+                </>
+            )}
+            <p className="imcrm-text-[10px] imcrm-text-muted-foreground">
+                {p.series
+                    ? __('El período anterior se dibuja punteado, alineado día con día (el 1 con el 1).')
+                    : __('Muestra la variación junto al valor: «+12 % vs. mes anterior». Usa los mismos filtros del widget.')}
+            </p>
+        </div>
+    );
+}
+
+/** v0.1.462 — Configuración del pronóstico de ventas (J3). */
+function ForecastConfig(p: {
+    fields: ReadonlyArray<{ id: number; label: string; type: string; config?: unknown }>;
+    amountFields: FieldOpt[];
+    amountFieldId: number;
+    stageFieldId: number;
+    closeFieldId: number;
+    bucket: ChartTimeBucket;
+    probabilities: Record<string, number>;
+    goal: string;
+    onAmountChange: (id: number) => void;
+    onStageChange: (id: number) => void;
+    onCloseChange: (id: number) => void;
+    onBucketChange: (b: ChartTimeBucket) => void;
+    onProbabilitiesChange: (p: Record<string, number>) => void;
+    onGoalChange: (v: string) => void;
+}): JSX.Element {
+    const stageFields = p.fields.filter((f) => f.type === 'select');
+    const closeFields = p.fields.filter((f) => f.type === 'date' || f.type === 'datetime');
+    const stageField = p.fields.find((f) => f.id === p.stageFieldId);
+    const options = stageField ? stageOptionsOf(stageField.config as Record<string, unknown>) : [];
+    const resolved = resolveStageProbabilities(options, p.probabilities);
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-tour="widget-forecast">
+            <div className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-3 sm:imcrm-grid-cols-2">
+                <FieldPicker
+                    label={__('Monto del negocio')}
+                    value={p.amountFieldId}
+                    fields={p.amountFields}
+                    onChange={p.onAmountChange}
+                    emptyHint={__('La lista no tiene un campo de moneda o número.')}
+                />
+                <FieldPicker
+                    label={__('Etapa (campo de selección)')}
+                    value={p.stageFieldId}
+                    fields={stageFields}
+                    onChange={p.onStageChange}
+                    emptyHint={__('La lista no tiene un campo de selección con las etapas.')}
+                />
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                    <Label htmlFor="w-close">{__('Fecha de cierre esperada')}</Label>
+                    <Select id="w-close" value={p.closeFieldId} onChange={(e) => p.onCloseChange(Number(e.target.value))}>
+                        <option value={0}>{__('— Sin fecha (un total por etapa) —')}</option>
+                        {closeFields.map((f) => (
+                            <option key={f.id} value={f.id}>{f.label}</option>
+                        ))}
+                    </Select>
+                </div>
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                    <Label htmlFor="w-forecast-bucket">{__('Agrupar por')}</Label>
+                    <Select
+                        id="w-forecast-bucket"
+                        value={p.bucket === 'week' || p.bucket === 'quarter' ? p.bucket : 'month'}
+                        disabled={p.closeFieldId <= 0}
+                        onChange={(e) => p.onBucketChange(e.target.value as ChartTimeBucket)}
+                    >
+                        <option value="week">{__('Semana')}</option>
+                        <option value="month">{__('Mes')}</option>
+                        <option value="quarter">{__('Trimestre')}</option>
+                    </Select>
+                </div>
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                    <Label htmlFor="w-forecast-goal">{__('Meta (opcional)')}</Label>
+                    <Input
+                        id="w-forecast-goal"
+                        type="number"
+                        min={0}
+                        step="any"
+                        value={p.goal}
+                        onChange={(e) => p.onGoalChange(e.target.value)}
+                        placeholder={__('Ej. 50000000')}
+                    />
+                </div>
+            </div>
+            {options.length > 0 && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-3">
+                    <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2">
+                        <Label className="imcrm-text-xs">{__('Probabilidad de cierre por etapa')}</Label>
+                        <button
+                            type="button"
+                            className="imcrm-text-[11px] imcrm-text-primary hover:imcrm-underline"
+                            onClick={() => p.onProbabilitiesChange({})}
+                        >
+                            {__('Volver a las sugeridas')}
+                        </button>
+                    </div>
+                    {options.map((o) => (
+                        <div key={o.value} className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-xs" data-testid="imcrm-forecast-probability">
+                            <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate">
+                                {o.label}
+                                <span className="imcrm-ml-1 imcrm-text-[10px] imcrm-text-muted-foreground">
+                                    ({(resolved[o.value] ?? 0) >= 100 ? __('ganada') : (resolved[o.value] ?? 0) <= 0 ? __('perdida') : __('abierta')})
+                                </span>
+                            </span>
+                            <Input
+                                type="number"
+                                min={0}
+                                max={100}
+                                step={5}
+                                value={resolved[o.value] ?? 0}
+                                onChange={(e) => {
+                                    const n = Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0)));
+                                    p.onProbabilitiesChange({ ...p.probabilities, [o.value]: n });
+                                }}
+                                aria-label={o.label}
+                                className="imcrm-h-8 imcrm-w-20 imcrm-text-right"
+                            />
+                            <span className="imcrm-text-muted-foreground">%</span>
+                        </div>
+                    ))}
+                    <p className="imcrm-text-[10px] imcrm-text-muted-foreground">
+                        {__('100 % = ganado; 0 % = perdido (no suma). En las demás, el pronóstico cuenta el monto × la probabilidad. Las sugerimos por el nombre de la etapa.')}
+                    </p>
+                </div>
+            )}
+        </div>
+    );
 }
 
 /** v0.1.292 — Gráficos que aceptan "Desglosar por" (espejo de `BREAKDOWN_WIDGET_TYPES`). */

@@ -10604,3 +10604,47 @@ con este permiso): lo de la hoja llega con el intervalo o con «Sincronizar
 ahora». Las reglas de validación propias de un campo (mínimos, formatos,
 «Sin repetidos» de campos que no son la clave) no se exigen a lo que llega de
 la hoja, igual que en el conector SQL.
+
+### ADR-S113 — Comparar períodos y pronóstico ponderado en los tableros
+
+**Contexto.** Los tableros mostraban un número sin contexto: «$6.000.000» no
+dice si es mucho o poco. Y no había forma de proyectar las ventas con el
+embudo (cada negocio pesa según su etapa).
+
+**Decisión.**
+1. **La comparación es de cada widget** (`config.compare`) y el tablero puede
+   pisarla para todos (`compare` del bundle: `''` = lo de cada widget, `none`,
+   `previous`, `last_year`, `custom:YYYY-MM-DD:YYYY-MM-DD`). Necesita un
+   período: sin él no hay «anterior» y se dice.
+2. **Ventanas** (`comparisonWindows`, puro): el anterior tiene la misma
+   duración; si el período es un mes, trimestre o año se corre por meses de
+   calendario (recortando el día al largo del mes), si no por días. «El año
+   pasado» corre 12 meses (29 feb → 28 feb). «Hasta el mismo día» (por
+   defecto) corta el anterior en el mismo punto que el actual si el actual no
+   terminó. Topes: 3660 días por ventana y 1000 puntos por serie.
+3. **Todo en el servidor, en el mismo bundle**: la ventana anterior se agrega
+   con el mismo árbol de filtros del widget y del tablero (`between_relative`
+   sobre el campo del período), el ACL de quien mira y la zona horaria de la
+   empresa, dentro de un savepoint: si la comparación falla, el widget sigue
+   y la comparación dice por qué. Nada de una segunda request.
+4. **Qué se compara según el widget**: indicador/medidor = el valor; gráficos
+   por categorías = los MISMOS grupos de hoy (los de antes que hoy no están
+   suman en el total, que el servidor manda aparte); series de tiempo = el
+   período anterior COMPLETO alineado por posición (el actual llega hasta hoy
+   o su último dato); tablas = registros y sumas del pie; tabla dinámica =
+   antes por fila. Con «Desglosar por» no se compara.
+5. **Pronóstico** (`forecast`): monto, etapa (selección) y fecha de cierre;
+   probabilidad por etapa guardada en el widget o sugerida por el nombre
+   (100 % ganada, 0 % perdida, abiertas repartidas). Regla única
+   (`weightForecast`): ganado + Σ(monto abierto × probabilidad); sin etapa no
+   cuenta. Una consulta (agrupado en dos niveles por período de cierre y
+   etapa); compara contra el período anterior completo.
+6. **Un solo modelo de reporte** (`buildWidgetReport`) lleva comparación y
+   pronóstico a la imagen, el CSV, el correo programado, el PDF y el enlace
+   público: lo que se ve, se descarga y se envía coincide.
+
+**Consecuencias.** Sin migración ni tablas nuevas. Un widget comparado hace
+una consulta más (la ventana anterior) dentro del mismo bundle. Los
+porcentajes se escriben con el formato numérico de la empresa y espacio duro
+(«+12 %»). El período del widget se oculta en la cabecera cuando la
+comparación ya lo nombra («Este mes vs. mes anterior»).

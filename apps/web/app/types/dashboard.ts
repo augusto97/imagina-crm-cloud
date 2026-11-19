@@ -12,6 +12,8 @@ export type WidgetType =
     | 'gauge'
     /** v0.1.292 — tabla dinámica: filas × columnas con totales. */
     | 'pivot'
+    /** v0.1.462 — pronóstico de ventas: monto × probabilidad de la etapa. */
+    | 'forecast'
     /** v0.1.98 — bloques de CONTENIDO (sin datos): el dashboard se arma como página. */
     | 'heading'
     | 'text'
@@ -95,6 +97,7 @@ export function defaultLayoutForType(type: WidgetType): WidgetLayout {
         case 'table':
             return { x: 0, y: 9999, w: 6, h: 5 };
         case 'pivot':
+        case 'forecast':
             return { x: 0, y: 9999, w: 8, h: 5 };
         case 'heading':
             return { x: 0, y: 9999, w: 12, h: 1 };
@@ -120,6 +123,7 @@ export function minLayoutForType(type: WidgetType): { minW: number; minH: number
             return { minW: 2, minH: 2 };
         case 'table':
         case 'pivot':
+        case 'forecast':
             return { minW: 3, minH: 3 };
         case 'heading':
         case 'text':
@@ -296,7 +300,49 @@ export interface PivotData {
     hidden_cells?: number;
 }
 
+/**
+ * v0.1.462 — «Comparar con…»: lo que devolvió el servidor para el período
+ * con el que se compara (o por qué no se pudo). Las claves de valores
+ * dependen del widget: `value` (KPI), `values` (categorías), `points`
+ * (serie de tiempo, alineada por posición), `totals` (tabla y pronóstico),
+ * `rows` + `total` (tabla dinámica).
+ */
+export interface WidgetCompare {
+    unavailable?: string;
+    mode?: 'previous' | 'last_year' | 'custom';
+    label?: string;
+    short?: string;
+    detail?: string;
+    invert?: boolean;
+    current?: { from: string; to: string };
+    previous?: { from: string; to: string };
+    value?: number | string | null;
+    values?: Array<{ label: string; value: number | string | null }>;
+    points?: Array<{ label: string | null; prev_label: string | null; value: number | null; previous: number | null }>;
+    totals?: unknown;
+    rows?: Array<{ key: string; value: number | string | null }>;
+    total?: number | string | null;
+}
+
+/** v0.1.462 — Datos del pronóstico (J3). */
+export interface ForecastTotalsData {
+    won: number;
+    weighted: number;
+    open: number;
+    lost: number;
+    forecast: number;
+    unassigned: number;
+}
+export interface ForecastData {
+    buckets: Array<ForecastTotalsData & { key: string }>;
+    totals: ForecastTotalsData;
+    stages: Array<{ key: string; label: string; probability: number; amount: number }>;
+    /** null = sin campo de fecha de cierre (un solo total). */
+    bucket: ChartTimeBucket | null;
+}
+
 export type WidgetData =
+    | { forecast: ForecastData; compare?: WidgetCompare }
     | { value: number | string; metric: KpiMetric; spark?: number[] }
     | {
           data: Array<{ label: string; value: number | string; others?: number; segments?: WidgetSegment[] }>;

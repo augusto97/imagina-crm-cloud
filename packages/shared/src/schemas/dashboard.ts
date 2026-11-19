@@ -23,6 +23,9 @@ export const widgetTypeSchema = z.enum([
     // v0.1.292 — tabla dinámica: filas = un campo, columnas = otro, la
     // métrica en cada cruce, con totales por fila, por columna y general.
     'pivot',
+    // v0.1.462 — pronóstico de ventas: monto × probabilidad de la etapa, por
+    // período de la fecha de cierre (embudo ponderado, idea J3).
+    'forecast',
     // v0.1.98 — bloques de CONTENIDO (no evalúan datos; el backend devuelve
     // {} y el front los renderiza desde su config): título, texto, imagen,
     // separador y espaciador. Convierten al dashboard en una página armable.
@@ -190,6 +193,11 @@ export type DashboardFilterValue = z.infer<typeof dashboardFilterValueSchema>;
 export const dashboardBundleRequestSchema = z.object({
     period_preset: z.string().max(64).optional(),
     filters: z.array(dashboardFilterValueSchema).max(10).optional(),
+    /**
+     * v0.1.462 — comparación GLOBAL del tablero: `''` = lo de cada widget,
+     * `none`, `previous`, `last_year` o `custom:YYYY-MM-DD:YYYY-MM-DD`.
+     */
+    compare: z.string().max(64).optional(),
 });
 export type DashboardBundleRequest = z.infer<typeof dashboardBundleRequestSchema>;
 

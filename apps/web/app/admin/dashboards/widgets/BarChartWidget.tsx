@@ -21,6 +21,8 @@ import {
     type ChartSort,
 } from './useChartColors';
 import { formatMetricValue } from './widgetFormat';
+import { CompareBadge, RowDelta, rowCompareTitle } from './CompareParts';
+import { isAdditiveMetric, isReadyCompare, previousByKey, previousTotal, widgetCompareOf, type ReadyCompare } from './compareView';
 import { useSegmentNav } from './useSegmentNav';
 import { AverageBadge, AVG_LINE_COLOR, useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 import { BreakdownBars, useBreakdownModel } from './BreakdownChart';
@@ -89,11 +91,18 @@ export function BarChartWidget({ dashboardId, widget }: BarChartWidgetProps): JS
     const payload = data.data && 'data' in data.data && Array.isArray(data.data.series) ? (data.data as BreakdownPayload) : null;
     const breakdown = useBreakdownModel(widget, payload);
     const stacked = widget.config.stack_mode !== 'grouped';
+    // v0.1.462 — «Comparar con…»: el valor de antes de cada barra.
+    const compare = widgetCompareOf(data.data);
+    const ready = isReadyCompare(compare) ? compare : null;
+    const before = previousByKey(ready);
+    const total = ready && isAdditiveMetric(metric)
+        ? { current: rows.reduce((s, r) => s + r.value, 0), previous: previousTotal(ready, rows.reduce((s, r) => s + (before.get(r.label) ?? 0), 0)) }
+        : null;
 
     if (payload !== null) {
         return (
             <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-gap-3">
-                <WidgetHeader title={widget.title || __('Distribución')} subtitle={subtitle} />
+                <WidgetHeader title={widget.title || __('Distribución')} subtitle={subtitle} right={<CompareBadge compare={compare} />} />
                 {data.isError ? (
                     <WidgetError error={data.error} />
                 ) : breakdown.groups.length > 0 ? (
@@ -118,7 +127,7 @@ export function BarChartWidget({ dashboardId, widget }: BarChartWidgetProps): JS
             <WidgetHeader
                 title={widget.title || __('Distribución')}
                 subtitle={subtitle}
-                right={showAvg && avg !== null ? <AverageBadge value={avg} format={fmt} /> : null}
+                right={compare ? <CompareBadge compare={compare} total={total} format={fmt} /> : showAvg && avg !== null ? <AverageBadge value={avg} format={fmt} /> : null}
             />
 
             {/* Sin justify-center en el scroll container: con muchas filas
@@ -133,9 +142,9 @@ export function BarChartWidget({ dashboardId, widget }: BarChartWidgetProps): JS
                     <WidgetError error={data.error} />
                 ) : rows.length > 0 ? (
                     vertical ? (
-                        <ColumnBars rows={rows} showAvg={showAvg} colorMap={colorMap} labelMap={labelMap} onSegment={onSegment} format={fmt} />
+                        <ColumnBars rows={rows} showAvg={showAvg} colorMap={colorMap} labelMap={labelMap} onSegment={onSegment} format={fmt} compare={ready} before={before} />
                     ) : (
-                        <BarRows rows={rows} showAvg={showAvg} colorMap={colorMap} labelMap={labelMap} onSegment={onSegment} format={fmt} />
+                        <BarRows rows={rows} showAvg={showAvg} colorMap={colorMap} labelMap={labelMap} onSegment={onSegment} format={fmt} compare={ready} before={before} />
                     )
                 ) : (
                     <p className="imcrm-text-center imcrm-text-xs imcrm-text-muted-foreground">
@@ -166,6 +175,8 @@ function BarRows({
     labelMap,
     onSegment,
     format,
+    compare,
+    before,
 }: {
     rows: Array<{ label: string; value: number; others?: number }>;
     showAvg: boolean;
@@ -174,8 +185,11 @@ function BarRows({
     labelMap: Map<string, string>;
     onSegment: ((label: string) => void) | null;
     format: (n: number) => string;
+    /** v0.1.462 — con «Comparar con…»: la barra de antes debajo. */
+    compare: ReadyCompare | null;
+    before: Map<string, number | null>;
 }): JSX.Element {
-    const max = Math.max(...rows.map((r) => r.value), 1);
+    const max = Math.max(...rows.map((r) => Math.max(r.value, compare ? (before.get(r.label) ?? 0) : 0)), 1);
     const total = rows.reduce((sum, r) => sum + r.value, 0) || 1;
     const avg = total / rows.length;
     const avgPct = (avg / max) * 100;
@@ -197,9 +211,11 @@ function BarRows({
                         <li
                             key={row.label}
                             className={`imcrm-group/bar imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded imcrm-text-xs${navigable ? ' imcrm-cursor-pointer hover:imcrm-bg-accent/40' : ''}`}
-                            title={navigable
-                                ? `${name}: ${format(row.value)} — ${__('click para ver los registros')}`
-                                : `${name}: ${format(row.value)} (${sharePct.toFixed(1)}%)`}
+                            title={compare
+                                ? `${rowCompareTitle(compare, name, row.value, before.get(row.label), format)}${navigable ? `\n${__('Click para ver los registros')}` : ''}`
+                                : navigable
+                                    ? `${name}: ${format(row.value)} — ${__('click para ver los registros')}`
+                                    : `${name}: ${format(row.value)} (${sharePct.toFixed(1)}%)`}
                             onClick={navigable && onSegment !== null ? () => onSegment(row.label) : undefined}
                         >
                             <span className="imcrm-w-28 imcrm-shrink-0 imcrm-truncate imcrm-text-muted-foreground">
@@ -207,10 +223,19 @@ function BarRows({
                             </span>
                             <div className="imcrm-relative imcrm-h-5 imcrm-flex-1 imcrm-overflow-hidden imcrm-rounded imcrm-bg-muted/40">
                                 <div
-                                    className="imcrm-absolute imcrm-inset-y-0 imcrm-left-0 imcrm-rounded imcrm-opacity-80 imcrm-transition-opacity group-hover/bar:imcrm-opacity-100"
+                                    className={`imcrm-absolute imcrm-left-0 imcrm-rounded imcrm-opacity-80 imcrm-transition-opacity group-hover/bar:imcrm-opacity-100 ${compare ? 'imcrm-top-0 imcrm-bottom-[6px]' : 'imcrm-inset-y-0'}`}
                                     style={{ width: `${pct}%`, backgroundColor: color }}
                                     aria-hidden
                                 />
+                                {compare && (
+                                    // La barra de antes: delgada y tenue, debajo.
+                                    <div
+                                        className="imcrm-absolute imcrm-bottom-0 imcrm-left-0 imcrm-h-[4px] imcrm-rounded-full imcrm-bg-muted-foreground/45"
+                                        style={{ width: `${((before.get(row.label) ?? 0) / max) * 100}%` }}
+                                        data-testid="imcrm-bar-previous"
+                                        aria-hidden
+                                    />
+                                )}
                                 {showAvg && (
                                     // Línea de referencia del promedio (paridad
                                     // ClickUp): punteada y roja. Es vertical
@@ -233,9 +258,13 @@ function BarRows({
                                 <span className="imcrm-font-semibold imcrm-text-foreground">
                                     {format(row.value)}
                                 </span>
-                                <span className="imcrm-ml-1 imcrm-text-[10px] imcrm-text-muted-foreground">
-                                    {sharePct.toFixed(0)}%
-                                </span>
+                                {compare ? (
+                                    <RowDelta current={row.value} previous={before.get(row.label)} invert={compare.invert === true} className="imcrm-ml-1 imcrm-text-[10px]" />
+                                ) : (
+                                    <span className="imcrm-ml-1 imcrm-text-[10px] imcrm-text-muted-foreground">
+                                        {sharePct.toFixed(0)}%
+                                    </span>
+                                )}
                             </span>
                         </li>
                     );
@@ -257,6 +286,8 @@ function ColumnBars({
     labelMap,
     onSegment,
     format,
+    compare,
+    before,
 }: {
     rows: Array<{ label: string; value: number; others?: number }>;
     showAvg: boolean;
@@ -264,8 +295,10 @@ function ColumnBars({
     labelMap: Map<string, string>;
     onSegment: ((label: string) => void) | null;
     format: (n: number) => string;
+    compare: ReadyCompare | null;
+    before: Map<string, number | null>;
 }): JSX.Element {
-    const max = Math.max(...rows.map((r) => r.value), 1);
+    const max = Math.max(...rows.map((r) => Math.max(r.value, compare ? (before.get(r.label) ?? 0) : 0)), 1);
     const avg = rows.reduce((sum, r) => sum + r.value, 0) / rows.length;
     return (
         <div className="imcrm-h-full imcrm-overflow-x-auto" data-testid="imcrm-column-bars">
@@ -278,20 +311,34 @@ function ColumnBars({
                         <div
                             key={row.label}
                             className={`imcrm-group/col imcrm-flex imcrm-min-w-[28px] imcrm-flex-1 imcrm-flex-col imcrm-gap-1${navigable ? ' imcrm-cursor-pointer' : ''}`}
-                            title={navigable ? `${name}: ${format(row.value)} — ${__('click para ver los registros')}` : `${name}: ${format(row.value)}`}
+                            title={compare
+                                ? `${rowCompareTitle(compare, name, row.value, before.get(row.label), format)}${navigable ? `\n${__('Click para ver los registros')}` : ''}`
+                                : navigable ? `${name}: ${format(row.value)} — ${__('click para ver los registros')}` : `${name}: ${format(row.value)}`}
                             onClick={navigable && onSegment !== null ? () => onSegment(row.label) : undefined}
                         >
                             <span className="imcrm-truncate imcrm-text-center imcrm-text-[10px] imcrm-font-semibold imcrm-tabular-nums imcrm-text-foreground">
                                 {format(row.value)}
                             </span>
-                            <div className="imcrm-flex imcrm-flex-1 imcrm-items-end imcrm-rounded-t imcrm-bg-muted/30">
+                            <div className="imcrm-flex imcrm-flex-1 imcrm-items-end imcrm-gap-0.5 imcrm-rounded-t imcrm-bg-muted/30">
+                                {compare && (
+                                    // Lado a lado: la columna de antes, tenue, a la izquierda.
+                                    <div
+                                        className="imcrm-w-[38%] imcrm-rounded-t imcrm-bg-muted-foreground/35"
+                                        style={{ height: `${(Math.max(0, before.get(row.label) ?? 0) / max) * 100}%` }}
+                                        data-testid="imcrm-bar-previous"
+                                        aria-hidden
+                                    />
+                                )}
                                 <div
-                                    className="imcrm-w-full imcrm-rounded-t imcrm-opacity-80 imcrm-transition-opacity group-hover/col:imcrm-opacity-100"
+                                    className={`${compare ? 'imcrm-flex-1' : 'imcrm-w-full'} imcrm-rounded-t imcrm-opacity-80 imcrm-transition-opacity group-hover/col:imcrm-opacity-100`}
                                     style={{ height: `${(Math.max(0, row.value) / max) * 100}%`, backgroundColor: color }}
                                     aria-hidden
                                 />
                             </div>
                             <span className="imcrm-truncate imcrm-text-center imcrm-text-[10px] imcrm-text-muted-foreground">{name}</span>
+                            {compare && (
+                                <RowDelta current={row.value} previous={before.get(row.label)} invert={compare.invert === true} className="imcrm-truncate imcrm-text-center imcrm-text-[10px]" />
+                            )}
                         </div>
                     );
                 })}

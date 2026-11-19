@@ -1,9 +1,9 @@
-import { useId } from 'react';
+import { useId, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 
 import { useWidgetData } from '@/hooks/useDashboards';
 import { useFields } from '@/hooks/useFields';
-import { __ } from '@/lib/i18n';
+import { __, sprintf } from '@/lib/i18n';
 import { OTHERS_GROUP_KEY, type WidgetSpec } from '@/types/dashboard';
 
 import { WidgetError } from './WidgetError';
@@ -14,6 +14,20 @@ import { BreakdownLines } from './BreakdownLines';
 import type { BreakdownPayload } from './breakdownModel';
 import { useSegmentNav } from './useSegmentNav';
 import { useElementSize } from './useElementSize';
+import { CompareBadge, compareLegendText } from './CompareParts';
+import {
+    compareTooltip,
+    deltaView,
+    diffText,
+    isAdditiveMetric,
+    isReadyCompare,
+    comparedPoints,
+    toneClass,
+    trendTotals,
+    widgetCompareOf,
+    type ComparedPoint,
+    type ReadyCompare,
+} from './compareView';
 
 interface LineChartWidgetProps {
     dashboardId: number;
@@ -70,6 +84,11 @@ export function LineChartWidget({ dashboardId, widget, area }: LineChartWidgetPr
         : null;
     const breakdown = useBreakdownModel(widget, payload);
     const onSegment = useSegmentNav(widget);
+    // v0.1.462 — «Comparar con…»: la serie de antes, punteada.
+    const compare = widgetCompareOf(data.data);
+    const ready = isReadyCompare(compare) ? compare : null;
+    const compared = ready ? comparedPoints(ready, rows) : null;
+    const compareTotal = compared && isAdditiveMetric(metric) ? trendTotals(compared.map((p) => ({ label: p.label, prev_label: p.prevLabel, value: p.value, previous: p.previous }))) : null;
 
     if (payload !== null) {
         const stacked = widget.config.stack_mode !== 'grouped';
@@ -77,7 +96,7 @@ export function LineChartWidget({ dashboardId, widget, area }: LineChartWidgetPr
         const model = { ...breakdown, groups: breakdown.groups.filter((g) => g.key !== '(sin valor)') };
         return (
             <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-gap-2 imcrm-min-h-0">
-                <WidgetHeader title={widget.title || __('Tendencia mensual')} subtitle={subtitle} />
+                <WidgetHeader title={widget.title || __('Tendencia mensual')} subtitle={subtitle} right={<CompareBadge compare={compare} />} />
                 {data.isError ? (
                     <WidgetError error={data.error} />
                 ) : model.groups.length > 0 ? (
@@ -102,7 +121,13 @@ export function LineChartWidget({ dashboardId, widget, area }: LineChartWidgetPr
             <WidgetHeader
                 title={widget.title || __('Tendencia mensual')}
                 subtitle={subtitle}
-                right={showAvg && avg !== null ? <AverageBadge value={avg} format={fmt} /> : null}
+                right={
+                    compare ? (
+                        <CompareBadge compare={compare} total={compareTotal} format={fmt} />
+                    ) : showAvg && avg !== null ? (
+                        <AverageBadge value={avg} format={fmt} />
+                    ) : null
+                }
             />
 
             <div className="imcrm-flex imcrm-flex-1 imcrm-items-stretch imcrm-justify-center imcrm-min-h-0">
@@ -112,6 +137,8 @@ export function LineChartWidget({ dashboardId, widget, area }: LineChartWidgetPr
                     </div>
                 ) : data.isError ? (
                     <WidgetError error={data.error} />
+                ) : ready && compared && compared.length > 0 ? (
+                    <ComparedSparkLine points={compared} area={area ?? false} showLabels={showLabels} format={fmt} compare={ready} />
                 ) : rows.length > 0 ? (
                     <SparkLine
                         rows={rows}
@@ -279,6 +306,225 @@ function SparkLine({
             <div className="imcrm-flex imcrm-shrink-0 imcrm-justify-between imcrm-text-[10px] imcrm-text-muted-foreground">
                 <span>{points[0] ? formatBucketLabel(points[0].label) : null}</span>
                 {points.length > 1 && <span>{formatBucketLabel(points[points.length - 1]!.label)}</span>}
+            </div>
+        </div>
+    );
+}
+
+function capitalize(t: string): string {
+    return t.length > 0 ? t.charAt(0).toUpperCase() + t.slice(1) : t;
+}
+
+/** Arma un trazo que se corta donde falta el valor. */
+function brokenPath(pts: Array<{ x: number; y: number } | null>): string {
+    let d = '';
+    let pen = false;
+    for (const p of pts) {
+        if (!p) {
+            pen = false;
+            continue;
+        }
+        d += `${pen ? 'L' : 'M'} ${p.x.toFixed(1)},${p.y.toFixed(1)} `;
+        pen = true;
+    }
+    return d.trim();
+}
+
+/**
+ * v0.1.462 — La línea de ahora (llena) y la de antes (punteada), alineadas
+ * por posición. Al pasar el mouse (o tocar) un punto, los dos valores y la
+ * diferencia.
+ */
+function ComparedSparkLine({
+    points,
+    area,
+    showLabels,
+    format,
+    compare,
+}: {
+    points: ComparedPoint[];
+    area: boolean;
+    showLabels: boolean;
+    format: (n: number) => string;
+    compare: ReadyCompare;
+}): JSX.Element {
+    const { ref, width, height } = useElementSize();
+    const gradId = useId().replace(/:/g, '');
+    const [hover, setHover] = useState<number | null>(null);
+
+    const max = Math.max(...points.flatMap((p) => [p.value ?? 0, p.previous ?? 0]), 1);
+    const innerW = Math.max(width - PAD_X * 2, 0);
+    const innerH = Math.max(height - PAD_TOP - PAD_BOTTOM, 0);
+    const baseY = PAD_TOP + innerH;
+    const yFor = (v: number): number => PAD_TOP + innerH - (v / (max || 1)) * innerH;
+    const xFor = (i: number): number => (points.length === 1 ? PAD_X + innerW / 2 : PAD_X + (i / (points.length - 1)) * innerW);
+
+    const cur = points.map((p, i) => (p.value === null ? null : { x: xFor(i), y: yFor(p.value) }));
+    const prev = points.map((p, i) => (p.previous === null ? null : { x: xFor(i), y: yFor(p.previous) }));
+    const curPath = brokenPath(cur);
+    const prevPath = brokenPath(prev);
+    const curPts = cur.filter((p): p is { x: number; y: number } => p !== null);
+    const areaPath = area && curPts.length > 0
+        ? `M ${curPts[0]!.x.toFixed(1)},${baseY.toFixed(1)} ${curPts.map((p) => `L ${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')} L ${curPts[curPts.length - 1]!.x.toFixed(1)},${baseY.toFixed(1)} Z`
+        : '';
+    const legend = compareLegendText(compare);
+    const step = points.length > 1 ? innerW / (points.length - 1) : innerW;
+    const shown = hover !== null ? points[hover] : undefined;
+    const pointName = (p: ComparedPoint): string =>
+        p.label !== null ? formatBucketLabel(p.label) : p.prevLabel !== null ? formatBucketLabel(p.prevLabel) : '—';
+    const hoverText = (p: ComparedPoint): { now: string; before: string; delta: ReturnType<typeof deltaView> } => ({
+        now: p.value === null ? '—' : format(p.value),
+        before: p.previous === null ? '—' : `${format(p.previous)}${p.prevLabel !== null && p.prevLabel !== p.label ? ` (${formatBucketLabel(p.prevLabel)})` : ''}`,
+        delta: deltaView(p.value, p.previous, compare.invert === true),
+    });
+    const first = points[0];
+    // El eje dice el período ACTUAL: su último punto se rotula donde está
+    // (hoy, o su último dato), no en la punta derecha si el anterior sigue.
+    let lastIdx = points.length - 1;
+    while (lastIdx > 0 && points[lastIdx]!.label === null) lastIdx--;
+    const last = points[lastIdx];
+    const lastX = xFor(lastIdx);
+    const showLast = points.length > 1 && lastIdx > 0 && lastX > 100;
+
+    return (
+        <div className="imcrm-flex imcrm-w-full imcrm-flex-col imcrm-gap-1 imcrm-min-h-0" data-testid="imcrm-line-compare">
+            <div ref={ref} className="imcrm-relative imcrm-w-full imcrm-flex-1 imcrm-min-h-0" onMouseLeave={() => setHover(null)}>
+                {width > 0 && height > 0 && (
+                    <svg
+                        width={width}
+                        height={height}
+                        viewBox={`0 0 ${width} ${height}`}
+                        className="imcrm-absolute imcrm-inset-0"
+                        role="img"
+                        aria-label={compare.label}
+                    >
+                        <defs>
+                            <linearGradient id={`imcrm-area-${gradId}`} x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="hsl(var(--imcrm-primary))" stopOpacity="0.26" />
+                                <stop offset="100%" stopColor="hsl(var(--imcrm-primary))" stopOpacity="0" />
+                            </linearGradient>
+                        </defs>
+                        {[0.25, 0.5, 0.75].map((f) => (
+                            <line key={f} x1={PAD_X} x2={width - PAD_X} y1={yFor(max * f)} y2={yFor(max * f)} stroke="hsl(var(--imcrm-border))" strokeWidth="1" opacity="0.45" />
+                        ))}
+                        <text x={width - PAD_X} y={PAD_TOP - 3} textAnchor="end" className="imcrm-fill-muted-foreground" style={{ fontSize: 9 }}>
+                            {format(max)}
+                        </text>
+                        {areaPath !== '' && <path d={areaPath} fill={`url(#imcrm-area-${gradId})`} />}
+                        {prevPath !== '' && (
+                            <path
+                                d={prevPath}
+                                fill="none"
+                                stroke="hsl(var(--imcrm-muted-foreground))"
+                                strokeWidth="1.75"
+                                strokeDasharray="5 4"
+                                strokeLinecap="round"
+                                opacity="0.85"
+                                data-testid="imcrm-line-previous"
+                            />
+                        )}
+                        {curPath !== '' && (
+                            <path d={curPath} fill="none" stroke="currentColor" strokeWidth="2" className="imcrm-text-primary" strokeLinecap="round" strokeLinejoin="round" />
+                        )}
+                        {hover !== null && (
+                            <line x1={xFor(hover)} x2={xFor(hover)} y1={PAD_TOP} y2={baseY} stroke="hsl(var(--imcrm-border))" strokeWidth="1" />
+                        )}
+                        {cur.map((p, i) =>
+                            p && (points.length <= 40 || hover === i) ? (
+                                <circle key={`c-${i}`} cx={p.x} cy={p.y} r={hover === i ? 4 : 2.5} className="imcrm-fill-primary" stroke="hsl(var(--imcrm-card))" strokeWidth="1.5" />
+                            ) : null,
+                        )}
+                        {hover !== null && prev[hover] && (
+                            <circle cx={prev[hover]!.x} cy={prev[hover]!.y} r={3.5} fill="hsl(var(--imcrm-card))" stroke="hsl(var(--imcrm-muted-foreground))" strokeWidth="1.5" />
+                        )}
+                        {showLabels && cur.map((p, i) =>
+                            p && points[i]!.value !== null ? (
+                                <text key={`l-${i}`} x={p.x} y={p.y - 7} textAnchor="middle" className="imcrm-fill-foreground" style={{ fontSize: 10, fontWeight: 600 }}>
+                                    {format(points[i]!.value!)}
+                                </text>
+                            ) : null,
+                        )}
+                        {/* Zonas para pasar el mouse o tocar cada punto. */}
+                        {points.map((p, i) => {
+                            const t = hoverText(p);
+                            return (
+                                <rect
+                                    key={`h-${i}`}
+                                    x={Math.max(0, xFor(i) - step / 2)}
+                                    y={0}
+                                    width={Math.max(step, 6)}
+                                    height={height}
+                                    fill="transparent"
+                                    // Con el dedo, el toque simula un «mouseenter» y después el
+                                    // click: con un interruptor se abría y se cerraba solo.
+                                    onPointerEnter={(e) => {
+                                        if (e.pointerType === 'mouse') setHover(i);
+                                    }}
+                                    onClick={() => setHover(i)}
+                                    data-testid="imcrm-line-compare-hit"
+                                >
+                                    <title>
+                                        {compareTooltip({
+                                            compare,
+                                            name: pointName(p),
+                                            nowText: t.now,
+                                            beforeText: t.before,
+                                            diff: t.delta ? diffText(t.delta.diff, format) : null,
+                                            delta: t.delta?.text ?? null,
+                                        })}
+                                    </title>
+                                </rect>
+                            );
+                        })}
+                    </svg>
+                )}
+                {shown && hover !== null && (() => {
+                    const t = hoverText(shown);
+                    const left = Math.min(Math.max(xFor(hover), 70), Math.max(width - 70, 70));
+                    return (
+                        <div
+                            className="imcrm-pointer-events-none imcrm-absolute imcrm-top-1 imcrm-z-10 imcrm--translate-x-1/2 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-popover imcrm-px-2 imcrm-py-1.5 imcrm-text-[11px] imcrm-text-popover-foreground imcrm-shadow-md"
+                            style={{ left }}
+                            data-testid="imcrm-line-compare-tooltip"
+                        >
+                            <div className="imcrm-font-semibold">{pointName(shown)}</div>
+                            <div className="imcrm-flex imcrm-justify-between imcrm-gap-3">
+                                <span className="imcrm-text-muted-foreground">{__('Ahora')}</span>
+                                <span className="imcrm-tabular-nums">{t.now}</span>
+                            </div>
+                            <div className="imcrm-flex imcrm-justify-between imcrm-gap-3">
+                                <span className="imcrm-text-muted-foreground">{__('Antes')}</span>
+                                <span className="imcrm-tabular-nums">{t.before}</span>
+                            </div>
+                            {t.delta && (
+                                <div className={`imcrm-text-right imcrm-font-semibold imcrm-tabular-nums ${toneClass(t.delta.tone)}`}>
+                                    {sprintf(__('%1$s (%2$s)'), diffText(t.delta.diff, format), t.delta.text)}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })()}
+            </div>
+            <div className="imcrm-relative imcrm-h-3.5 imcrm-shrink-0 imcrm-text-[10px] imcrm-text-muted-foreground" data-testid="imcrm-line-compare-axis">
+                <span className="imcrm-absolute imcrm-left-0 imcrm-top-0 imcrm-whitespace-nowrap">{first ? pointName(first) : null}</span>
+                {showLast && last && (
+                    <span
+                        className="imcrm-absolute imcrm-top-0 imcrm-whitespace-nowrap"
+                        style={{ left: lastX, transform: lastX > width - 40 ? 'translateX(-100%)' : 'translateX(-50%)' }}
+                    >
+                        {pointName(last)}
+                    </span>
+                )}
+            </div>
+            <div className="imcrm-flex imcrm-shrink-0 imcrm-flex-wrap imcrm-items-center imcrm-gap-x-3 imcrm-gap-y-0.5 imcrm-text-[10px] imcrm-text-muted-foreground">
+                <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1">
+                    <span className="imcrm-inline-block imcrm-h-0.5 imcrm-w-4 imcrm-rounded imcrm-bg-primary" aria-hidden />
+                    {capitalize(legend.now)}
+                </span>
+                <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1">
+                    <span className="imcrm-inline-block imcrm-w-4 imcrm-border-t-2 imcrm-border-dashed imcrm-border-muted-foreground" aria-hidden />
+                    {capitalize(legend.before)}
+                </span>
             </div>
         </div>
     );

@@ -193,3 +193,5 @@ export * from './airtable-import';
 export * from './list-suggestions';
 // v0.1.456 (ADR-S109) — IA en el día a día: resumen del registro, escribir con IA y agentes desde la ficha.
 export * from './schemas/record-ai';
+export * from './dashboard-report/compare';
+export * from './dashboard-report/forecast';
