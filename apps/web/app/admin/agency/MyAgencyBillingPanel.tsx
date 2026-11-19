@@ -1,24 +1,66 @@
-import { AGENCY_PAYMENT_METHOD_LABELS, resolveTimeZone, zonedInstant } from '@imagina-base/shared';
-import { Loader2, Mail, MessageCircle, Receipt } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router';
+import {
+    AGENCY_PAYMENT_METHOD_LABELS,
+    agencyChargeAmount,
+    agencyMonthsText,
+    resolveTimeZone,
+    zonedInstant,
+    type AgencyClientPlan,
+    type MyAgencyBilling,
+} from '@imagina-base/shared';
+import { CheckCircle2, CreditCard, Loader2, Mail, MessageCircle, Receipt } from 'lucide-react';
 
 import { formatMoney } from '@/cloud/components/payments/paymentUi';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select } from '@/components/ui/select';
 import { __ } from '@/lib/i18n';
 import { browserTimeZone, formatDate, getTenantTimeZone } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 
 import { billingStateLabel, planPriceText } from './agencyUi';
 import { StateBadge } from './ClientBillingDialog';
-import { useMyAgencyBilling } from './useAgency';
+import { useMyAgencyBilling, usePayMyAgencyPlan } from './useAgency';
+
+const ONLINE_METHODS = new Set(['mercadopago', 'wompi', 'paypal']);
+const CONFIRM_FOR_MS = 120_000;
 
 /**
  * v0.1.451 (I3, ADR-S108) — Lo que ve el administrador de una empresa
  * CLIENTE en Ajustes → Suscripción: su plan con la agencia, hasta cuándo está
- * pagado y sus pagos. El cobro lo maneja la agencia: aquí no se paga nada,
- * se ve y se sabe a quién escribirle.
+ * pagado y sus pagos. El cobro lo maneja la agencia; desde v0.1.452, si la
+ * agencia cobra en línea, se paga aquí mismo («Pagar ahora») con la cuenta de
+ * la agencia. Al volver del pago (`?pago=1`) se le pregunta al proveedor
+ * hasta que el pago aparece.
  */
 export function MyAgencyBillingPanel({ agencyName }: { agencyName: string }): JSX.Element {
-    const q = useMyAgencyBilling();
+    const [params, setParams] = useSearchParams();
+    const [checking, setChecking] = useState(() => params.get('pago') === '1');
+    const [startedAt] = useState(() => Date.now());
+    const [confirmed, setConfirmed] = useState<string | null>(null);
+    const [timedOut, setTimedOut] = useState(false);
+    const q = useMyAgencyBilling(true, { refresh: checking, pollMs: checking ? 4000 : 0 });
+
+    useEffect(() => {
+        if (!checking || !q.data) return;
+        const recent = q.data.payments.find(
+            (p) => ONLINE_METHODS.has(p.method) && !p.undone_at && new Date(p.created_at).getTime() > startedAt - 30 * 60_000,
+        );
+        if (!q.data.online.pending && recent) {
+            setChecking(false);
+            setConfirmed(recent.period_to);
+            setParams((prev) => {
+                const next = new URLSearchParams(prev);
+                next.delete('pago');
+                return next;
+            }, { replace: true });
+        } else if (Date.now() - startedAt > CONFIRM_FOR_MS) {
+            setChecking(false);
+            setTimedOut(true);
+        }
+    }, [checking, q.data, startedAt, setParams]);
+
     if (q.isLoading) {
         return (
             <p className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-text-muted-foreground">
@@ -37,6 +79,23 @@ export function MyAgencyBillingPanel({ agencyName }: { agencyName: string }): JS
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-4" data-testid="settings-agency-managed">
+            {checking && (
+                <p className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-bg-muted imcrm-px-3 imcrm-py-2 imcrm-text-sm" role="status" data-testid="my-agency-pay-checking">
+                    <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" aria-hidden />
+                    {__('Estamos confirmando tu pago…')}
+                </p>
+            )}
+            {confirmed && (
+                <p className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-bg-success/10 imcrm-px-3 imcrm-py-2 imcrm-text-sm" role="status" data-testid="my-agency-pay-confirmed">
+                    <CheckCircle2 className="imcrm-h-4 imcrm-w-4 imcrm-text-success" aria-hidden />
+                    {`${__('¡Pago recibido! La empresa quedó pagada hasta el')} ${formatDate(new Date(confirmed))}.`}
+                </p>
+            )}
+            {timedOut && (
+                <p className="imcrm-rounded-md imcrm-bg-warning/10 imcrm-px-3 imcrm-py-2 imcrm-text-sm" role="status" data-testid="my-agency-pay-pending">
+                    {`${__('Todavía no nos llega la confirmación del pago. Si ya pagaste, aparece aquí en unos minutos; si no, puedes volver a intentarlo o escribirle a')} ${name}.`}
+                </p>
+            )}
             <Card data-testid="my-agency-billing">
                 <CardHeader>
                     <CardTitle className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-text-base">
@@ -64,10 +123,15 @@ export function MyAgencyBillingPanel({ agencyName }: { agencyName: string }): JS
                                 data-testid="my-agency-billing-warning"
                             >
                                 {state.tone === 'bad'
-                                    ? `${__('La empresa está en solo lectura: tus datos están intactos y se pueden ver y descargar. Cuando')} ${name} ${__('registre el pago, vuelve a funcionar al instante.')}`
-                                    : `${__('Si ya pagaste,')} ${name} ${__('lo registra y no tienes que hacer nada más. Si no, escríbele para ponerte al día.')}`}
+                                    ? data!.online.enabled
+                                        ? __('La empresa está en solo lectura: tus datos están intactos y se pueden ver y descargar. Apenas pagues, vuelve a funcionar al instante.')
+                                        : `${__('La empresa está en solo lectura: tus datos están intactos y se pueden ver y descargar. Cuando')} ${name} ${__('registre el pago, vuelve a funcionar al instante.')}`
+                                    : data!.online.enabled
+                                      ? __('Puedes pagar aquí abajo con «Pagar ahora». Si ya pagaste por otro medio, tu agencia lo registra.')
+                                      : `${__('Si ya pagaste,')} ${name} ${__('lo registra y no tienes que hacer nada más. Si no, escríbele para ponerte al día.')}`}
                             </p>
                         )}
+                        {data!.online.enabled && <PayNow data={data!} plan={plan} busy={checking} />}
                     </CardContent>
                 )}
             </Card>
@@ -117,6 +181,76 @@ export function MyAgencyBillingPanel({ agencyName }: { agencyName: string }): JS
                     )}
                 </div>
             )}
+        </div>
+    );
+}
+
+/**
+ * «Pagar ahora»: elegir cuántos períodos (el valor lo pone el plan) y salir a
+ * pagar con la cuenta de la agencia. Si ya hay un link esperando, se ofrece
+ * ése primero.
+ */
+function PayNow({ data, plan, busy }: { data: MyAgencyBilling; plan: AgencyClientPlan; busy: boolean }): JSX.Element {
+    const pay = usePayMyAgencyPlan();
+    const online = data.online;
+    const [periods, setPeriods] = useState<number>(online.periods[0] ?? 1);
+    const [error, setError] = useState<string | null>(null);
+    const pending = online.pending && online.pending.url ? online.pending : null;
+    const months = periods * plan.period_months;
+    const total = agencyChargeAmount(plan, months);
+    const provider = online.provider ?? __('el medio de pago de tu agencia');
+
+    const go = (): void => {
+        setError(null);
+        pay.mutate(periods, {
+            onSuccess: (charge) => {
+                if (charge.url) window.location.assign(charge.url);
+                else setError(__('No se pudo armar el link de pago. Intenta de nuevo en un momento.'));
+            },
+            onError: (err) => setError(err instanceof Error ? err.message : String(err)),
+        });
+    };
+
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-border-t imcrm-border-border imcrm-pt-3" data-testid="my-agency-pay" data-tour="settings-agency-pay">
+            <span className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-font-medium">
+                <CreditCard className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" aria-hidden />
+                {__('Pagar ahora')}
+            </span>
+            {pending && (
+                <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-x-3 imcrm-gap-y-2 imcrm-rounded-md imcrm-border imcrm-border-primary/30 imcrm-bg-primary/5 imcrm-px-3 imcrm-py-2 imcrm-text-sm" data-testid="my-agency-pay-link">
+                    <span>
+                        {`${__('Tienes un pago pendiente de')} `}
+                        <span className="imcrm-font-medium">{formatMoney(pending.amount, pending.currency)}</span>
+                        {` (${__(agencyMonthsText(pending.months))}).`}
+                    </span>
+                    <Button size="sm" asChild>
+                        <a href={pending.url!} data-testid="my-agency-pay-link-open">{__('Pagar este')}</a>
+                    </Button>
+                </div>
+            )}
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 sm:imcrm-flex-row sm:imcrm-items-end">
+                {online.periods.length > 1 && (
+                    <label className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-text-sm sm:imcrm-w-64">
+                        <span>{__('Cuánto quieres pagar')}</span>
+                        <Select value={periods} onChange={(e) => setPeriods(Number(e.target.value))} data-testid="my-agency-pay-periods">
+                            {online.periods.map((n) => (
+                                <option key={n} value={n}>
+                                    {`${__(agencyMonthsText(n * plan.period_months))} · ${formatMoney(agencyChargeAmount(plan, n * plan.period_months), plan.currency)}`}
+                                </option>
+                            ))}
+                        </Select>
+                    </label>
+                )}
+                <Button onClick={go} disabled={pay.isPending || busy} data-testid="my-agency-pay-go">
+                    {pay.isPending && <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />}
+                    {`${__('Pagar')} ${formatMoney(total, plan.currency)}`}
+                </Button>
+            </div>
+            <p className="imcrm-text-[12px] imcrm-text-muted-foreground">
+                {`${__('Pagas con')} ${provider} ${__('a la cuenta de tu agencia. Cuando el pago entra, la empresa queda pagada al instante; no tienes que avisar.')}`}
+            </p>
+            {error && <p className="imcrm-text-sm imcrm-text-destructive" role="alert">{error}</p>}
         </div>
     );
 }

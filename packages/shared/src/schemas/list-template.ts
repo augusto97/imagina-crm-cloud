@@ -405,7 +405,7 @@ export function resolveListRefs(value: unknown, keyToId: ReadonlyMap<string, num
  */
 // v0.1.383 — la marca del registro de cobros y lo que trae la importación de Mercado Pago
 // son de ESA lista (una copia no recibe cobros ni importaciones).
-export const BLUEPRINT_EXCLUDED_SETTINGS: readonly string[] = ['public', 'store_sync', 'site_sync', 'subscription_charge_log_of', 'subscription_import_fields', 'shop_orders_of'];
+export const BLUEPRINT_EXCLUDED_SETTINGS: readonly string[] = ['public', 'store_sync', 'site_sync', 'subscription_charge_log_of', 'subscription_import_fields', 'shop_orders_of', 'agency_clients_of'];
 
 /** Claves del `trigger_config` que son credenciales y se regeneran. */
 export const BLUEPRINT_EXCLUDED_TRIGGER_KEYS: readonly string[] = [

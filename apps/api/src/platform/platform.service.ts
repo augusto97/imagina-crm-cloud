@@ -42,6 +42,7 @@ import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx, withoutTimeouts } from '../db/client';
 import {
     activity,
+    agencyCharges,
     agencyPayments,
     attachments,
     automationRuns,
@@ -600,6 +601,7 @@ export class PlatformService {
             await tx.delete(incidents).where(eq(incidents.tenantId, id));
             // v0.1.251 — cobros de la empresa (links de pago y su URL de avisos).
             // v0.1.451 — pagos registrados por una agencia (como agencia o como cliente).
+            await tx.delete(agencyCharges).where(or(eq(agencyCharges.tenantId, id), eq(agencyCharges.clientId, id)));
             await tx.delete(agencyPayments).where(or(eq(agencyPayments.tenantId, id), eq(agencyPayments.clientId, id)));
             await tx.delete(paymentLinks).where(eq(paymentLinks.tenantId, id));
             await tx.delete(collectionHooks).where(eq(collectionHooks.tenantId, id));

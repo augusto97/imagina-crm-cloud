@@ -282,6 +282,9 @@ export type AuditAction =
     | 'agency.client_billing'
     | 'agency.payment'
     | 'agency.payment_undo'
+    | 'agency.charge_create'
+    | 'agency.charge_cancel'
+    | 'agency.clients_list'
     | 'agency.link'
     | 'agency.unlink'
     | 'agency.settings';

@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type {
     AgencyBillingSettings,
+    AgencyCharge,
     AgencyClient,
     AgencyEnterResult,
     AgencyOverview,
     AgencyPayment,
+    CreateAgencyChargeInput,
     CreateAgencyClientInput,
     HelpSupport,
     MyAgencyBilling,
@@ -28,6 +30,7 @@ export const agencyKeys = {
     clients: ['agency', 'clients'] as const,
     support: ['agency', 'support'] as const,
     payments: (clientId: number) => ['agency', 'payments', clientId] as const,
+    charges: (clientId: number) => ['agency', 'charges', clientId] as const,
     /** Lo que ve la empresa CLIENTE de su cobro (otra clave: no es de la agencia). */
     mine: ['agency-billing', 'mine'] as const,
 };
@@ -172,12 +175,65 @@ export function useUndoClientPayment() {
     });
 }
 
-/** La empresa cliente: su plan con la agencia, hasta cuándo está pagado y sus pagos. */
-export function useMyAgencyBilling(enabled = true) {
+/**
+ * La empresa cliente: su plan con la agencia, hasta cuándo está pagado y sus
+ * pagos. Con `refresh` (volvió de pagar) el servidor le pregunta al proveedor
+ * si ya entró el pago, y mientras `pollMs` sea > 0 se vuelve a preguntar.
+ */
+export function useMyAgencyBilling(enabled = true, opts: { refresh?: boolean; pollMs?: number } = {}) {
     return useQuery({
         queryKey: agencyKeys.mine,
-        queryFn: async () => (await api.get<MyAgencyBilling | null>('/workspaces/current/agency-billing')).data,
+        queryFn: async () =>
+            (await api.get<MyAgencyBilling | null>(`/workspaces/current/agency-billing${opts.refresh ? '?refresh=1' : ''}`)).data,
         enabled,
         staleTime: 60_000,
+        refetchInterval: opts.pollMs && opts.pollMs > 0 ? opts.pollMs : false,
+    });
+}
+
+// ── v0.1.452 — cobrar en línea ──────────────────────────────────────────
+
+/** Armar (o rearmar) la lista «Empresas cliente» de la agencia. */
+export function useEnsureAgencyClientsList() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async () => (await api.post<AgencyOverview>('/agency/clients-list', {})).data,
+        onSuccess: (data) => qc.setQueryData(agencyKeys.overview, data),
+    });
+}
+
+export function useClientCharges(clientId: number, enabled = true) {
+    return useQuery({
+        queryKey: agencyKeys.charges(clientId),
+        queryFn: async () => (await api.get<AgencyCharge[]>(`/agency/clients/${clientId}/charges`)).data,
+        enabled,
+        staleTime: 10_000,
+    });
+}
+
+export function useCreateClientCharge() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, input }: { id: number; input: CreateAgencyChargeInput }) =>
+            (await api.post<{ charge: AgencyCharge; reused: boolean; client: AgencyClient }>(`/agency/clients/${id}/charges`, input)).data,
+        onSuccess: () => refresh(qc),
+    });
+}
+
+export function useCancelClientCharge() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, chargeId }: { id: number; chargeId: number }) =>
+            (await api.delete<AgencyCharge[]>(`/agency/clients/${id}/charges/${chargeId}`)).data,
+        onSuccess: () => refresh(qc),
+    });
+}
+
+/** La empresa cliente paga desde su app: N períodos del plan (el valor lo decide el servidor). */
+export function usePayMyAgencyPlan() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (periods: number) => (await api.post<AgencyCharge>('/workspaces/current/agency-billing/pay', { periods })).data,
+        onSuccess: () => void qc.invalidateQueries({ queryKey: agencyKeys.mine }),
     });
 }
