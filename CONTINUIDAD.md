@@ -430,7 +430,15 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.454**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.455**
+(**automatizaciones, parte 1** de la tanda aprobada el 2026-11-19 — disparadores
+«Cuando un registro empieza a cumplir una condición» (dispara una vez al entrar,
+con línea de base sin disparar al crearla y revisión cada 15 min; migración
+0139 `automation_matches`) y «Cuando se sube un archivo»; acciones «Avisar en la
+app» (aviso nuevo `automation`), «Asignar por turno» (por turnos o a quien tenga
+menos abiertos) y «Copiar a otra lista». Addendum ADR-S47. Siguen en orden
+v0.1.456 (IA en el día a día) y v0.1.457 (campos condicionales y de sólo
+lectura), ya hechas en worktrees). Antes **v0.1.454**
 (**la plataforma le cobra a la agencia** — decisión del usuario «las dos»: el
 plan de la plataforma dice en «Para agencias» cuántas empresas cliente incluye
 y cuánto vale cada una de más (USD y COP); el operador puede ponerle a una
@@ -2309,6 +2317,23 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-19 · v0.1.455** — **Disparadores «empieza a cumplir una condición»
+  y «se sube un archivo»; acciones «Avisar en la app», «Asignar por turno» y
+  «Copiar a otra lista»** (E1 + E2; addendum ADR-S47). Migración **0139**
+  (`automation_matches`, RLS): la transición «no estaba → está» la decide un
+  `INSERT … ON CONFLICT DO NOTHING RETURNING`; revisión cada 15 min
+  (`match:<id>`) para lo que entra por el paso del tiempo; línea de base sin
+  disparar al crear/activar/cambiar la condición. Aviso nuevo `automation`
+  (push de fábrica, correo apagado). Turnos con contador en Redis
+  (`autorr:<tenant>:<auto>:<paso>`) o «menos abiertos» con el criterio de «Mi
+  trabajo»; `editorsOf` ahora exige ver Y editar. Copia con
+  `autoMapCopyFields` + valores a mano + vínculo en cualquier sentido. Reglas
+  en `packages/shared/src/schemas/automation-extras.ts`; editores en
+  `ExtraAutomationParts.tsx`; asistente/MCP en `automation-extras-ai.ts`.
+  Queda de E2: «preguntarle a la IA» dentro de una automatización.
+  **Bug de prueba encontrado**: el conteo de «menos abiertos» agrupaba por una
+  expresión con un parámetro distinto en SELECT y GROUP BY (Postgres lo
+  rechaza): se agrupa por posición.
 - **2026-11-19 · conversación** — Publicada y verificada v0.1.454 (zip,
   sha256, install.sh y n8n). El plan aprobado el 2026-11-18 quedó completo
   salvo G8: el usuario dejó la facturación DIAN para después ("Ok dejalo
