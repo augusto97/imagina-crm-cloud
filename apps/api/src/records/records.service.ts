@@ -12,6 +12,9 @@ import {
     SUBSCRIPTION_STATUS_OPTIONS,
     applyFieldDefaults,
     checkRequiredIf,
+    fieldsHiddenByCondition,
+    readonlyFieldIdsOf,
+    resolveFieldDefault,
     collectMentionedUserIds,
     collectMentionedTeamIds,
     doneRuleFor,
@@ -266,6 +269,12 @@ export class RecordsService {
              * llenarlas. Cualquier otro alta las deja vacías.
              */
             sync?: boolean;
+            /**
+             * C4 — valores que NO eligió quien crea (una COPIA al duplicar, o
+             * los de una plantilla): pueden ir en campos que esa persona sólo
+             * ve. `true` = todos; un conjunto = esas claves `f{id}`.
+             */
+            allowReadonly?: boolean | ReadonlySet<string>;
         } = {},
     ): Promise<RecordDto> {
         const { list, fields } = await this.listAndFields(tenantId, listIdOrSlug);
@@ -274,7 +283,11 @@ export class RecordsService {
         // El tope del plan se verifica DENTRO de la transacción del alta (ver
         // assertRecordRoomInTx): aquí sólo se lee cuál es.
         const planCap = opts.planChecked ? null : ((await this.billing?.recordLimit(tenantId)) ?? null);
-        const prep = await this.prepareCreate(tenantId, actor, list, fields, input, { lenientRequired: opts.lenientRequired === true, sync: opts.sync === true });
+        const prep = await this.prepareCreate(tenantId, actor, list, fields, input, {
+            lenientRequired: opts.lenientRequired === true,
+            sync: opts.sync === true,
+            ...(opts.allowReadonly !== undefined ? { allowReadonly: opts.allowReadonly } : {}),
+        });
 
         const { row, enriched, rt, hiddenKeys } = await this.tenantDb.withTenant(tenantId, async (tx) => {
             if (planCap && this.billing) await this.billing.assertRecordRoomInTx(tx, tenantId, planCap);
@@ -363,11 +376,22 @@ export class RecordsService {
          * de checklist), no quien pide: lo que cae en un campo oculto para esa
          * persona se descarta en vez de rechazar el alta.
          */
-        opts: { lenientRequired?: boolean; sync?: boolean; serverData?: boolean } = {},
+        opts: { lenientRequired?: boolean; sync?: boolean; serverData?: boolean; allowReadonly?: boolean | ReadonlySet<string> } = {},
     ): Promise<PreparedCreate> {
         // Nadie escribe en lo que no ve (C3: invitados; SEC: todo el equipo).
         if (opts.serverData) input = { ...input, data: withoutHiddenWrites(list.settings, fields, actor, input.data) };
         else assertWritable(list.settings, fields, actor, input.data);
+        const clock = await this.clock(tenantId);
+        // C4 — lo que quien crea VE pero no puede cambiar no lo pone: valen los
+        // valores por defecto. (Una plantilla o un ítem de checklist los arma
+        // el servidor con lo que configuró un administrador: sí los pone.)
+        if (!opts.serverData && opts.allowReadonly !== true) {
+            const exempt = opts.allowReadonly instanceof Set ? opts.allowReadonly : undefined;
+            input = {
+                ...input,
+                data: withoutReadonlyOnCreate(list.settings, fields, actor, input.data, { now: clock.now, timeZone: clock.timeZone, userId: actor.userId }, exempt),
+            };
+        }
         // D2/E5 + v0.1.383 — las columnas protegidas (SLA, cobros, suscripciones,
         // registro de cobros) las llena su sincronización, no el alta: ni el
         // valor que venga, ni un valor por defecto, ni «obligatorio».
@@ -378,11 +402,13 @@ export class RecordsService {
         const rel = splitRelationValues(fields, withoutManaged(locks, input.data));
         // v0.1.300 — valores por defecto: lo que NO viene en el alta (fijo, hoy en
         // el reloj de la empresa, quien lo crea, una opción).
-        const clock = await this.clock(tenantId);
         const withDefaults = applyFieldDefaults(ruleFields, rel.data, { now: clock.now, timeZone: clock.timeZone, userId: actor.userId });
-        const data = this.validateData(ruleFields, withDefaults, { partial: opts.lenientRequired === true });
+        // A7 — un campo oculto por su condición («Mostrar sólo si…») no es
+        // obligatorio; se decide con lo que VE quien crea (igual que su navegador).
+        const conditionHidden = (d: Record<string, unknown>): Set<number> => hiddenByConditionFor(list.settings, fields, actor, d);
+        const data = this.validateData(ruleFields, withDefaults, { partial: opts.lenientRequired === true, conditionHidden });
         // v0.1.300 — "obligatorio si otro campo vale X" mira el registro entero.
-        if (opts.lenientRequired !== true) assertRequiredIf(ruleFields, data);
+        if (opts.lenientRequired !== true) assertRequiredIf(ruleFields, data, undefined, conditionHidden(data));
         return { list, fields, data, relValues: rel.values, parentId: input.parent_id ?? null };
     }
 
@@ -1246,14 +1272,28 @@ export class RecordsService {
             // Merge parcial: validamos SOLO los campos presentes en el patch.
             // D2/E5 + v0.1.383 — una columna protegida no se cambia a mano (reenviar
             // el MISMO valor no es un cambio: se saca del patch).
-            const patch = keepManagedUnchanged(list.settings, fields, current.data, this.validateData(fields, rel.data, { partial: true }), rel.values);
+            const conditionHidden = (d: Record<string, unknown>): Set<number> => hiddenByConditionFor(list.settings, fields, actor, d);
+            let patch = keepManagedUnchanged(
+                list.settings,
+                fields,
+                current.data,
+                this.validateData(fields, rel.data, { partial: true, base: current.data, conditionHidden }),
+                rel.values,
+            );
+            // C4 — lo que quien edita ve pero no puede cambiar: el MISMO valor
+            // no es un cambio (se saca); otro valor, 403. Lo que decide el
+            // servidor (un botón, una aprobación) sí lo escribe.
+            if (!opts.serverDecided) {
+                patch = keepReadonlyUnchanged(list.settings, fields, actor, current.data, patch);
+                rel.values = await this.keepReadonlyRelationsUnchanged(tx, tenantId, list.settings, fields, actor, id, rel.values);
+            }
             await this.assertUniqueInTx(tx, tenantId, listId, fields, patch, id);
             await this.assertReferencesInTx(tx, tenantId, actor, fields, patch, current.data);
             const merged = mergeData(current.data, patch);
             // v0.1.300 — obligatorio-si: sólo las reglas que tocan algo que cambió
             // (un registro viejo que no cumplía una regla nueva no bloquea la
             // edición de otro campo).
-            if (!opts.automationChain) assertRequiredIf(fields, merged, new Set(Object.keys(patch)));
+            if (!opts.automationChain) assertRequiredIf(fields, merged, new Set(Object.keys(patch)), conditionHidden(merged));
             // v0.1.213 — lista de una tienda: sólo lo que WooCommerce acepta.
             this.assertStoreEdit(list, fields, current.data, merged, [
                 ...Object.keys(patch).map((k) => Number(k.slice(1))),
@@ -1461,6 +1501,39 @@ export class RecordsService {
     }
 
     /**
+     * C4 — Una relación de sólo lectura que llega con los MISMOS vínculos no
+     * es un cambio (se saca); con otros, 403 `field_readonly`.
+     */
+    private async keepReadonlyRelationsUnchanged<V extends { field: Field; ids: number[] }>(
+        tx: Tx,
+        tenantId: number,
+        settings: Record<string, unknown>,
+        fields: Field[],
+        actor: Actor,
+        recordId: number,
+        values: V[],
+    ): Promise<V[]> {
+        if (values.length === 0) return values;
+        const keys = readonlyWriteKeys(settings, fields, actor);
+        const locked = values.filter((v) => keys.has(jsonbKeyForField(v.field.id)));
+        if (locked.length === 0) return values;
+        const current = (await this.relationsRepo.batchTargets(tx, tenantId, [recordId], locked.map((v) => v.field.id))).get(recordId);
+        const out: V[] = [];
+        for (const v of values) {
+            if (!locked.includes(v)) {
+                out.push(v);
+                continue;
+            }
+            const before = [...(current?.get(v.field.id) ?? [])].sort((a, b) => a - b);
+            const after = [...new Set(v.ids)].sort((a, b) => a - b);
+            if (before.length !== after.length || before.some((id, i) => id !== after[i])) {
+                throw readonlyError(v.field, jsonbKeyForField(v.field.id));
+            }
+        }
+        return out;
+    }
+
+    /**
      * E6 — Los MISMOS chequeos de `update` sin escribir nada: el registro existe
      * y el actor lo puede editar, los valores pasan el validador de cada campo,
      * unicidad, «obligatorio si» y las reglas de la tienda. Lo usa un agente de
@@ -1481,11 +1554,21 @@ export class RecordsService {
         return this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.repo.findById(tx, tenantId, list.id, id);
             if (!current || !this.aclCanReach(list, actor, 'edit', current)) throw recordNotFound(id);
-            const patch = keepManagedUnchanged(list.settings, fields, current.data, this.validateData(fields, rel.data, { partial: true }), rel.values);
+            const conditionHidden = (d: Record<string, unknown>): Set<number> => hiddenByConditionFor(list.settings, fields, actor, d);
+            let patch = keepManagedUnchanged(
+                list.settings,
+                fields,
+                current.data,
+                this.validateData(fields, rel.data, { partial: true, base: current.data, conditionHidden }),
+                rel.values,
+            );
+            // C4 — igual que `update`: un campo de sólo lectura no se cambia.
+            patch = keepReadonlyUnchanged(list.settings, fields, actor, current.data, patch);
+            rel.values = await this.keepReadonlyRelationsUnchanged(tx, tenantId, list.settings, fields, actor, id, rel.values);
             await this.assertUniqueInTx(tx, tenantId, list.id, fields, patch, id);
             await this.assertReferencesInTx(tx, tenantId, actor, fields, patch, current.data);
             const merged = mergeData(current.data, patch);
-            if (!opts.lenientRequired) assertRequiredIf(fields, merged, new Set(Object.keys(patch)));
+            if (!opts.lenientRequired) assertRequiredIf(fields, merged, new Set(Object.keys(patch)), conditionHidden(merged));
             this.assertStoreEdit(list, fields, current.data, merged, [
                 ...Object.keys(patch).map((k) => Number(k.slice(1))),
                 ...rel.values.map((v) => v.field.id),
@@ -2593,11 +2676,23 @@ export class RecordsService {
     private validateData(
         fields: Field[],
         rawData: Record<string, unknown>,
-        opts: { partial: boolean },
+        opts: {
+            partial: boolean;
+            /** Los datos que ya tiene el registro (edición): para evaluar las condiciones. */
+            base?: Record<string, unknown>;
+            /**
+             * A7 — qué campos oculta su condición «Mostrar sólo si…» con estos
+             * datos (no son obligatorios). Sin esto, con los datos completos.
+             */
+            conditionHidden?: (data: Record<string, unknown>) => ReadonlySet<number>;
+        },
     ): Record<string, unknown> {
         const byKey = new Map(fields.map((f) => [jsonbKeyForField(f.id), f]));
         const errors: Record<string, string> = {};
         const out: Record<string, unknown> = {};
+        // A7 — «obligatorio» se decide DESPUÉS de normalizar todo: depende de si
+        // la condición del campo se cumple con los valores ya validados.
+        const requiredEmpty: Field[] = [];
 
         for (const [key, value] of Object.entries(rawData)) {
             const field = byKey.get(key);
@@ -2615,30 +2710,37 @@ export class RecordsService {
                 continue;
             }
             const result = validateFieldValue(
-                { type: field.type, config: field.config, is_required: field.is_required },
+                { type: field.type, config: field.config, is_required: false },
                 value,
             );
             if (!result.ok) {
                 errors[field.slug] = result.error;
             } else if (result.value === null) {
                 out[key] = null;
+                if (field.is_required && field.type !== 'checkbox') requiredEmpty.push(field);
             } else {
                 out[key] = result.value;
             }
         }
 
+        const missingRequired = !opts.partial
+            ? fields.filter((f) => isUserWritableType(f.type) && f.is_required && f.type !== 'checkbox' && !(jsonbKeyForField(f.id) in rawData))
+            : [];
+        if (requiredEmpty.length > 0 || missingRequired.length > 0) {
+            const context = { ...(opts.base ?? {}), ...out };
+            const hidden = opts.conditionHidden ? opts.conditionHidden(context) : new Set(fieldsHiddenByCondition(fields, context).keys());
+            for (const field of [...requiredEmpty, ...missingRequired]) {
+                if (!hidden.has(field.id) && errors[field.slug] === undefined) errors[field.slug] = 'Este campo es obligatorio.';
+            }
+        }
         if (!opts.partial) {
-            // Alta: los campos de datos requeridos ausentes deben fallar.
+            // Alta: los campos ausentes toman su valor "vacío" (ej. casilla → false).
             for (const field of fields) {
                 if (!isUserWritableType(field.type)) continue;
                 const key = jsonbKeyForField(field.id);
                 if (!(key in rawData)) {
-                    const result = validateFieldValue(
-                        { type: field.type, config: field.config, is_required: field.is_required },
-                        undefined,
-                    );
-                    if (!result.ok) errors[field.slug] = result.error;
-                    else if (result.value !== null) out[key] = result.value; // ej. checkbox → false
+                    const result = validateFieldValue({ type: field.type, config: field.config, is_required: false }, undefined);
+                    if (result.ok && result.value !== null) out[key] = result.value;
                 }
             }
         }
@@ -2689,8 +2791,14 @@ function withChecklist(p: { done: number; total: number } | undefined): { checkl
  * sólo las reglas que involucran un campo que cambió. Mismo error que la
  * validación por campo (errores por slug).
  */
-function assertRequiredIf(fields: Field[], data: Record<string, unknown>, touched?: ReadonlySet<string>): void {
-    const failed = checkRequiredIf(fields, data, touched ? { touched } : {});
+function assertRequiredIf(
+    fields: Field[],
+    data: Record<string, unknown>,
+    touched?: ReadonlySet<string>,
+    /** A7 — los campos ocultos por su condición (no se exigen). */
+    hiddenByCondition?: ReadonlySet<number>,
+): void {
+    const failed = checkRequiredIf(fields, data, { ...(touched ? { touched } : {}), ...(hiddenByCondition ? { hiddenByCondition } : {}) });
     if (failed.length === 0) return;
     throw new BadRequestException({
         code: 'validation_failed',
@@ -2761,6 +2869,106 @@ export function withoutHiddenWrites(
     data: Record<string, unknown>,
 ): Record<string, unknown> {
     return withoutKeys(data, hiddenWriteKeys(settings, fields, actor));
+}
+
+/**
+ * A7 — Los campos ocultos por su condición «Mostrar sólo si…» con lo que VE
+ * quien guarda: sus campos ocultos cuentan como vacíos, igual que en su
+ * navegador (donde no le llegan). Así el servidor exige exactamente lo que la
+ * persona tiene a la vista.
+ */
+export function hiddenByConditionFor(
+    settings: Record<string, unknown>,
+    fields: Field[],
+    actor: Actor,
+    data: Record<string, unknown>,
+): Set<number> {
+    const hiddenKeys = hiddenWriteKeys(settings, fields, actor);
+    return new Set(fieldsHiddenByCondition(fields, withoutKeys(data, hiddenKeys)).keys());
+}
+
+/**
+ * C4 — Claves (`f{id}`) de los campos que quien pide VE pero no puede cambiar
+ * en esta lista (por rol, rol propio, equipo o persona). Vacío para el admin y
+ * el sistema (automatizaciones, sincronizaciones: corren como administrador).
+ */
+export function readonlyWriteKeys(settings: Record<string, unknown>, fields: Field[], actor: Actor): Set<string> {
+    if (actor.role === 'admin') return new Set();
+    const ids = new Set(readonlyFieldIdsOf(effectivePermissions(settings, actor)));
+    if (ids.size === 0) return new Set();
+    return new Set(fields.filter((f) => ids.has(f.id)).map((f) => jsonbKeyForField(f.id)));
+}
+
+function readonlyError(field: Field | undefined, key: string): ForbiddenException {
+    const label = field?.label ?? key;
+    const message = `Puedes ver «${label}», pero tu acceso a esta lista no te deja cambiarlo.`;
+    // El motivo completo también por campo: pegar en la tabla lo muestra en la celda.
+    return new ForbiddenException({
+        code: 'field_readonly',
+        message,
+        data: { status: 403, errors: { [field?.slug ?? key]: message } },
+    });
+}
+
+/**
+ * C4 — Un alta no pone lo que quien crea sólo puede ver: un valor vacío (o el
+ * valor por defecto del campo, que el alta del navegador siembra) se saca —el
+ * servidor vuelve a aplicar el valor por defecto—; cualquier otro, 403.
+ */
+function withoutReadonlyOnCreate(
+    settings: Record<string, unknown>,
+    fields: Field[],
+    actor: Actor,
+    data: Record<string, unknown>,
+    ctx: { now: Date; timeZone: string; userId: number },
+    /** Claves que no eligió quien crea (los valores de una plantilla). */
+    exempt?: ReadonlySet<string>,
+): Record<string, unknown> {
+    const keys = readonlyWriteKeys(settings, fields, actor);
+    if (keys.size === 0) return data;
+    const byKey = new Map(fields.map((f) => [jsonbKeyForField(f.id), f]));
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(data)) {
+        if (!keys.has(k) || exempt?.has(k)) {
+            out[k] = v;
+            continue;
+        }
+        const field = byKey.get(k);
+        const empty = v === null || v === undefined || v === '' || v === false || (Array.isArray(v) && v.length === 0);
+        if (empty || !field) continue;
+        const def = resolveFieldDefault({ type: field.type, config: field.config }, ctx);
+        const norm = validateFieldValue({ type: field.type, config: field.config, is_required: false }, v);
+        if (def !== undefined && sameStoredValue(norm.ok ? norm.value : v, def)) continue;
+        throw readonlyError(field, k);
+    }
+    return out;
+}
+
+/**
+ * C4 — En una edición, un campo de sólo lectura con el MISMO valor no es un
+ * cambio (un formulario que reenvía todo no falla): se saca del patch. Otro
+ * valor: 403 `field_readonly`.
+ */
+function keepReadonlyUnchanged(
+    settings: Record<string, unknown>,
+    fields: Field[],
+    actor: Actor,
+    currentData: Record<string, unknown>,
+    patch: Record<string, unknown>,
+): Record<string, unknown> {
+    const keys = readonlyWriteKeys(settings, fields, actor);
+    if (keys.size === 0) return patch;
+    const byKey = new Map(fields.map((f) => [jsonbKeyForField(f.id), f]));
+    const out = { ...patch };
+    for (const [key, value] of Object.entries(patch)) {
+        if (!keys.has(key)) continue;
+        if (sameStoredValue(currentData[key], value)) {
+            delete out[key];
+            continue;
+        }
+        throw readonlyError(byKey.get(key), key);
+    }
+    return out;
 }
 
 function withoutKeys(data: Record<string, unknown>, keys: ReadonlySet<string>): Record<string, unknown> {
@@ -3222,7 +3430,7 @@ function describeError(err: unknown): {
     const message = typeof body.message === 'string' ? body.message : err instanceof Error ? err.message : 'Error';
     const data = body.data ?? {};
     let fieldErrors: Record<string, string> | undefined;
-    if ((code === 'validation_failed' || code === 'field_hidden') && data.errors && typeof data.errors === 'object') {
+    if ((code === 'validation_failed' || code === 'field_hidden' || code === 'field_readonly') && data.errors && typeof data.errors === 'object') {
         fieldErrors = data.errors as Record<string, string>;
     } else if ((code === 'store_field_locked' || code === 'store_invalid_value') && typeof data.field_id === 'number') {
         fieldErrors = { [`f${data.field_id}`]: message };

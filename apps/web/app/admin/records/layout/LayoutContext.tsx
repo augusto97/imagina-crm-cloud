@@ -1,5 +1,6 @@
-import { createContext, useContext } from 'react';
+import { createContext, useContext, useMemo } from 'react';
 import { DERIVED_FIELD_TYPES } from '@/lib/fieldTypeCatalog';
+import { conditionHiddenFields } from '@/lib/fieldVisibility';
 import type { PortalPaymentsBlockData } from '@imagina-base/shared';
 
 import type { PortalBootData } from '@/portal/types';
@@ -62,4 +63,17 @@ export function fieldEditable(ctx: LayoutCtx, field: FieldEntity): boolean {
     if (ctx.preview) return false;
     if (ctx.canEditField) return ctx.canEditField(field);
     return ctx.canEdit && (ctx.lockedReasons[field.slug] ?? null) === null && !DERIVED.has(field.type);
+}
+
+/**
+ * v0.1.457 (A7) — Los campos que su condición «Mostrar sólo si…» oculta con
+ * los valores VIVOS de la ficha (aparecen al cumplirse). En el editor de la
+ * ficha (vista previa) se ven todos: quien diseña tiene que poder elegirlos.
+ */
+export function useConditionHiddenIds(): ReadonlySet<number> {
+    const ctx = useLayoutCtx();
+    return useMemo(
+        () => (ctx.preview ? new Set<number>() : new Set(conditionHiddenFields(ctx.fields, ctx.values).keys())),
+        [ctx.preview, ctx.fields, ctx.values],
+    );
 }

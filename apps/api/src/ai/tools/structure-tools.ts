@@ -1,6 +1,14 @@
 import { Injectable, Optional } from '@nestjs/common';
 import {
     meetingActionKind,
+    SHOW_IF_OPS,
+    SHOW_IF_MAX_CONDITIONS,
+    describeShowIf,
+    fieldShowIfOf,
+    readonlyFieldIdsOf,
+    showIfCycle,
+    showIfOpNeedsValue,
+    showIfSourceOps,
     describeWebhookRecord,
     describeWhatsTrigger,
     describeCommentTrigger,
@@ -206,7 +214,7 @@ import { redactAutomationSecrets } from '../../automations/automation-secrets';
 import { canonicalPublicSettings } from '../../public-lists/public-lists.service';
 import { AiToolError, AiToolRegistry, type AiToolContext, type AiToolResult } from './registry';
 import { buildButtonConfig, buttonSpec, describeButtonForModel, type ButtonFieldRef } from './button-ai';
-import { aclExtras } from '../../lists/list-acl';
+import { aclExtras, readonlyFieldIdsFor, resolvePermissions } from '../../lists/list-acl';
 import { describeHelpdeskForModel } from './helpdesk-schema';
 
 // ── Vocabulario que habla el modelo (slugs, nunca ids) ──────────────────
@@ -342,6 +350,23 @@ const fieldSpec = z.object({
         })
         .optional()
         .describe('Validaciones que se exigen al guardar (alta, edición, import, formularios, automatizaciones)'),
+    show_if: z
+        .object({
+            logic: z.enum(['and', 'or']).default('and').describe('and = se cumplen todas; or = basta una'),
+            conditions: z
+                .array(
+                    z.object({
+                        field: fieldSlugSchema.describe('Slug de OTRO campo de la misma lista (selección, varias opciones, casilla, número, moneda, texto, fecha…)'),
+                        op: z.enum(SHOW_IF_OPS).describe('eq/neq = es / no es; in/nin = es / no es alguno de (array); contains/not_contains (varias opciones o texto); gt/gte/lt/lte (números y fechas); is_null/is_not_null = vacío / con valor'),
+                        value: z.unknown().optional().describe('En select el `value` o la etiqueta de la opción; casilla true/false; fechas AAAA-MM-DD; in/nin un array'),
+                    }),
+                )
+                .min(1)
+                .max(SHOW_IF_MAX_CONDITIONS),
+        })
+        .nullable()
+        .optional()
+        .describe('«Mostrar sólo si…»: el campo aparece en el alta y la ficha sólo cuando otros campos cumplen esto (ej. NIT sólo si tipo = Empresa). Oculto no es obligatorio; su valor guardado se conserva. null la quita. Sin ciclos.'),
 });
 type FieldSpec = z.infer<typeof fieldSpec>;
 
@@ -665,6 +690,11 @@ const permissionSpec = z.object({
     edit: z.enum(SCOPES).default('none'),
     delete: z.enum(SCOPES).default('none'),
     fields_hidden: z.array(z.string().max(63)).max(50).default([]).describe('Slugs de campos que este rol NO ve'),
+    readonly_fields: z
+        .array(z.string().max(63))
+        .max(100)
+        .default([])
+        .describe('Slugs de campos que este rol VE pero no puede cambiar (sólo lectura). Las automatizaciones y sincronizaciones sí los cambian; el admin siempre.'),
 });
 
 interface SetPermissionsSpec {
@@ -882,6 +912,7 @@ export class StructureTools implements AiProposalApplier {
                 formula: fieldSpec.shape.formula.describe('Sólo campos formula: la fórmula nueva (por NOMBRE de campo) y cómo mostrarla'),
                 config: z.record(z.unknown()).optional().describe('Reemplazo completo de la configuración (avanzado)'),
                 button: buttonSpec.optional().describe('Sólo campos button: reemplaza lo que hace el botón (mismo vocabulario que propose_add_fields)'),
+                show_if: fieldSpec.shape.show_if.describe('«Mostrar sólo si…»: el campo aparece sólo cuando otros campos cumplen esto (mismo vocabulario que propose_add_fields). null la quita.'),
             }),
             run: (ctx, input) => this.proposeUpdateField(ctx, input as UpdateFieldSpec),
         });
@@ -1154,7 +1185,7 @@ export class StructureTools implements AiProposalApplier {
             name: 'propose_set_list_permissions',
             label: 'Armando los permisos de la lista',
             description:
-                'Propone QUIÉN puede ver y editar los registros de una lista. Por ROL (manager / agent / viewer) con un alcance por operación: all (todo), assigned (lo asignado a esa persona o a uno de sus equipos), own (lo que creó) o none; más si puede crear y qué campos NO ve. También por PERSONA (pisa su rol sólo en esta lista; ids con list_members) y por EQUIPO (pisa el rol de sus personas; ids con list_teams; si alguien está en varios equipos con acceso vale lo más permisivo). Prioridad: persona > equipo > rol. `admin` siempre tiene acceso total y no se configura.',
+                'Propone QUIÉN puede ver y editar los registros de una lista. Por ROL (manager / agent / viewer) con un alcance por operación: all (todo), assigned (lo asignado a esa persona o a uno de sus equipos), own (lo que creó) o none; más si puede crear, qué campos NO ve (fields_hidden) y cuáles ve pero NO puede cambiar (readonly_fields: sólo lectura; con varios equipos, sólo lectura si TODOS lo marcan). También por PERSONA (pisa su rol sólo en esta lista; ids con list_members) y por EQUIPO (pisa el rol de sus personas; ids con list_teams; si alguien está en varios equipos con acceso vale lo más permisivo). Prioridad: persona > equipo > rol. `admin` siempre tiene acceso total y no se configura.',
             capability: 'manage_lists',
             input: z.object({
                 list: z.string().max(63),
@@ -1338,6 +1369,8 @@ export class StructureTools implements AiProposalApplier {
                     reschedule_end_field: depSettings.end_field_id ? fieldById.get(depSettings.end_field_id)?.slug ?? null : null,
                 },
                 fields: fields.map((f) => describeFieldForModel(f, listById, fieldById)),
+                // C4 — campos que cada rol ve pero no puede cambiar (y los ocultos).
+                field_access: describeFieldAccess(settings, fieldById, ctx),
                 views: views.map((v) => describeViewForModel(v, fieldById)),
                 linked_lists: paths.map((p) => ({
                     slug: listById.get(p.other_list_id)?.slug ?? null,
@@ -2071,6 +2104,38 @@ export class StructureTools implements AiProposalApplier {
         } else if (input.config !== undefined) {
             patch.config = parseFieldConfig(field.type, input.config);
             changes.push({ label: 'Configuración', from: JSON.stringify(field.config), to: JSON.stringify(patch.config) });
+        }
+        if (input.show_if !== undefined) {
+            if (!isUserWritableType(field.type)) throw new AiToolError(`«${field.slug}» (${field.type}) no se escribe a mano: no admite «Mostrar sólo si…».`);
+            const listFields = await this.fields.listByListId(ctx.tenantId, list.id);
+            const bySlug = new Map(listFields.map((x) => [x.slug, x]));
+            const rule =
+                input.show_if === null
+                    ? null
+                    : this.buildShowIfRule(input.show_if, field.slug, {
+                          localSlugs: () => new Set(bySlug.keys()),
+                          forBlueprint: false,
+                          resolveInput: (sl) => bySlug.get(sl)?.id,
+                          fieldRef: (sl) => {
+                              const x = bySlug.get(sl);
+                              return x ? { id: x.id, type: x.type, config: x.config } : undefined;
+                          },
+                      });
+            const cycle = rule ? showIfCycle(listFields, field.id, rule as never) : null;
+            if (cycle) {
+                const label = (id: number): string => listFields.find((x) => x.id === id)?.label ?? `#${id}`;
+                throw new AiToolError(`«${field.slug}» (show_if): esa condición se cierra sobre sí misma (${cycle.map(label).join(' → ')}).`);
+            }
+            const base = (patch.config ?? field.config) as Record<string, unknown>;
+            const next: Record<string, unknown> = { ...base, show_if: rule };
+            patch.config = parseFieldConfig(field.type, next);
+            const before = fieldShowIfOf(field.config);
+            const after = fieldShowIfOf(patch.config);
+            changes.push({
+                label: 'Mostrar sólo si',
+                from: before ? describeShowIf(before, listFields) : 'siempre',
+                to: after ? describeShowIf(after, listFields) : 'siempre',
+            });
         }
         if (Object.keys(patch).length === 0) throw new AiToolError('No hay ningún cambio respecto al campo actual.');
         const parsed = updateFieldSchema.safeParse(patch);
@@ -3532,12 +3597,41 @@ export class StructureTools implements AiProposalApplier {
                 return f.slug;
             });
 
+        // C4 — sólo lectura: slugs del modelo → ids (lo que se guarda).
+        const checkReadonly = (slugs: string[] | undefined, hidden: string[], who: string): { readonly_field_ids?: number[] } => {
+            const ids = (slugs ?? []).map((sl) => {
+                const f = bySlug.get(sl);
+                if (!f) {
+                    throw new AiToolError(
+                        `El campo «${sl}» no existe en «${list.name}» (readonly_fields de ${who}). Campos: ${fields.map((x) => x.slug).join(', ')}.`,
+                    );
+                }
+                if (hidden.includes(f.slug)) throw new AiToolError(`«${f.slug}» está en fields_hidden y en readonly_fields de ${who}: elige uno (oculto ya no se ve).`);
+                return f.id;
+            });
+            return ids.length > 0 ? { readonly_field_ids: [...new Set(ids)] } : {};
+        };
+        const perm = (
+            spec: z.infer<typeof permissionSpec>,
+            who: string,
+        ): RolePermissions => {
+            const hidden = checkHidden(spec.fields_hidden ?? [], who);
+            return {
+                view: spec.view,
+                create: spec.create,
+                edit: spec.edit,
+                delete: spec.delete,
+                fields_hidden: hidden,
+                ...checkReadonly(spec.readonly_fields, hidden, who),
+            };
+        };
+
         const patch: UpdateListPermissionsInput = {};
         if (input.roles) {
             const roles: Record<string, RolePermissions> = {};
             for (const [role, spec] of Object.entries(input.roles)) {
                 if (!spec) continue;
-                roles[role] = { ...spec, fields_hidden: checkHidden(spec.fields_hidden ?? [], role) };
+                roles[role] = perm(spec, role);
                 const before = current.permissions[role];
                 changes.push({
                     label: `Rol ${role}`,
@@ -3563,10 +3657,7 @@ export class StructureTools implements AiProposalApplier {
                         `El usuario #${u.user_id} no es miembro de esta empresa. Pide la lista con list_members.`,
                     );
                 }
-                usersSet[String(u.user_id)] = {
-                    view: u.view, create: u.create, edit: u.edit, delete: u.delete,
-                    fields_hidden: checkHidden(u.fields_hidden ?? [], member.name || member.email),
-                };
+                usersSet[String(u.user_id)] = perm(u, member.name || member.email);
                 const prev = before.get(u.user_id);
                 changes.push({
                     label: member.name || member.email,
@@ -3603,10 +3694,7 @@ export class StructureTools implements AiProposalApplier {
                 if (!team) {
                     throw new AiToolError(`El equipo #${t.team_id} no existe en esta empresa. Pide la lista con list_teams.`);
                 }
-                teamsSet[String(t.team_id)] = {
-                    view: t.view, create: t.create, edit: t.edit, delete: t.delete,
-                    fields_hidden: checkHidden(t.fields_hidden ?? [], `el equipo ${team.name}`),
-                };
+                teamsSet[String(t.team_id)] = perm(t, `el equipo ${team.name}`);
                 const prev = before.get(t.team_id);
                 changes.push({ label: `Equipo ${team.name}`, from: prev ? describeScope(prev) : null, to: describeScope(teamsSet[String(t.team_id)]!) });
             }
@@ -4010,6 +4098,58 @@ export class StructureTools implements AiProposalApplier {
     }
 
     /**
+     * A7 — La condición «Mostrar sólo si…» del modelo (slugs) a la config
+     * (ids, o tokens `{$field}` en el blueprint). Revisa que el campo de cada
+     * regla sea de la lista, que sirva para condicionar y el operador; el
+     * servidor revalida al guardar (y rechaza los ciclos).
+     */
+    private buildShowIfRule(
+        spec: NonNullable<FieldSpec['show_if']>,
+        slug: string,
+        opts: {
+            localSlugs: () => Set<string>;
+            forBlueprint: boolean;
+            resolveInput?: (slug: string) => number | undefined;
+            fieldRef?: (slug: string) => ButtonFieldRef | undefined;
+        },
+    ): Record<string, unknown> {
+        const conditions = spec.conditions.map((c) => {
+            if (c.field === slug) throw new AiToolError(`«${slug}» (show_if): un campo no puede depender de sí mismo.`);
+            if (!opts.localSlugs().has(c.field)) throw new AiToolError(`«${slug}» (show_if): «${c.field}» no es un campo de esta lista.`);
+            let fieldId: unknown;
+            if (opts.forBlueprint) fieldId = { $field: c.field };
+            else {
+                fieldId = opts.resolveInput?.(c.field);
+                if (fieldId === undefined) {
+                    throw new AiToolError(`«${slug}» (show_if): «${c.field}» tiene que ser un campo YA existente de la lista (créalo antes, en otra propuesta).`);
+                }
+            }
+            const ref = opts.fieldRef?.(c.field);
+            let value = c.value;
+            if (ref) {
+                const ops = showIfSourceOps(ref.type);
+                if (ops.length === 0) throw new AiToolError(`«${slug}» (show_if): «${c.field}» (${ref.type}) no sirve para mostrar u ocultar otro campo.`);
+                if (!ops.includes(c.op)) throw new AiToolError(`«${slug}» (show_if): con «${c.field}» (${ref.type}) los operadores son: ${ops.join(', ')}.`);
+                const options = ((ref.config?.options as Array<{ value: string; label: string }> | undefined) ?? []);
+                if (options.length > 0) {
+                    const pick = (v: unknown): unknown => {
+                        const hit = options.find((o) => o.value === v || o.label.toLowerCase() === String(v).toLowerCase());
+                        if (!hit) throw new AiToolError(`«${slug}» (show_if): «${String(v)}» no es una opción de «${c.field}». Opciones: ${options.map((o) => o.label).join(', ')}.`);
+                        return hit.value;
+                    };
+                    if (value !== undefined && value !== null) value = Array.isArray(value) ? value.map(pick) : pick(value);
+                }
+            }
+            const needs = showIfOpNeedsValue(c.op);
+            if (needs && (value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0))) {
+                throw new AiToolError(`«${slug}» (show_if): la regla sobre «${c.field}» con ${c.op} necesita value.`);
+            }
+            return { field_id: fieldId, op: c.op, ...(needs ? { value } : {}) };
+        });
+        return { logic: spec.logic, conditions };
+    }
+
+    /**
      * v0.1.300 — `default` y `validation` del vocabulario del modelo a la config del
      * campo. Una opción por defecto se acepta por su `value` o su etiqueta;
      * la condición de "obligatorio si" se resuelve a id (o `{$field}` en el
@@ -4020,9 +4160,16 @@ export class StructureTools implements AiProposalApplier {
         f: FieldSpec,
         slug: string,
         config: Record<string, unknown>,
-        opts: { localSlugs: () => Set<string>; forBlueprint: boolean; resolveInput?: (slug: string) => number | undefined },
+        opts: {
+            localSlugs: () => Set<string>;
+            forBlueprint: boolean;
+            resolveInput?: (slug: string) => number | undefined;
+            fieldRef?: (slug: string) => ButtonFieldRef | undefined;
+        },
     ): Record<string, unknown> {
         const out: Record<string, unknown> = {};
+        // A7 — «Mostrar sólo si…» (por slug en el pedido, por id al guardar).
+        if (f.show_if !== undefined) out.show_if = f.show_if === null ? null : this.buildShowIfRule(f.show_if, slug, opts);
         if (f.default) {
             const kinds = defaultKindsFor(f.type);
             if (!kinds.includes(f.default.kind)) {
@@ -4926,6 +5073,7 @@ interface UpdateFieldSpec {
     formula?: NonNullable<z.infer<typeof fieldSpec>['formula']>;
     config?: Record<string, unknown>;
     button?: z.infer<typeof buttonSpec>;
+    show_if?: z.infer<typeof fieldSpec>['show_if'];
 }
 
 interface ConfigurePaymentColumnsSpec {
@@ -5177,6 +5325,19 @@ function describeFieldForModel(
         out.validation = {
             ...val,
             ...(ri ? { required_if: { field: typeof ri.field_id === 'number' ? fieldById.get(ri.field_id)?.slug ?? null : null, op: ri.op, ...(ri.value !== undefined ? { value: ri.value } : {}) } } : {}),
+        };
+    }
+    // A7 — «Mostrar sólo si…» (campos por slug; una regla de un campo que ya no existe no aplica).
+    const showIf = fieldShowIfOf(cfg);
+    if (showIf) {
+        out.show_if = {
+            logic: showIf.logic,
+            conditions: showIf.conditions.map((c) => ({
+                field: typeof c.field_id === 'number' ? fieldById.get(c.field_id)?.slug ?? null : null,
+                op: c.op,
+                ...(c.value !== undefined ? { value: c.value } : {}),
+            })),
+            note: 'El campo aparece sólo cuando se cumple; oculto no es obligatorio y su valor guardado se conserva. field null = ese campo ya no existe (la regla no aplica).',
         };
     }
     // Campo «Botón»: qué hace al presionarlo (campos por slug).
@@ -5565,6 +5726,33 @@ function describeActions(
     });
 }
 
+/**
+ * C4 — Acceso por campo para el modelo: lo que la persona que pregunta sólo
+ * puede ver, y por rol los campos de sólo lectura y ocultos (slugs).
+ */
+function describeFieldAccess(
+    settings: Record<string, unknown>,
+    fieldById: Map<number, Field>,
+    ctx: AiToolContext,
+): Record<string, unknown> {
+    const slugs = (ids: Iterable<number>): string[] => [...ids].map((id) => fieldById.get(id)?.slug).filter((x): x is string => !!x);
+    // Lo GUARDADO (con los valores por defecto de cada rol), no lo efectivo de quien pregunta.
+    const doc = resolvePermissions(settings);
+    const roles: Record<string, { readonly_fields: string[]; fields_hidden: string[] }> = {};
+    for (const role of CONFIGURABLE_ROLES) {
+        const p = doc.permissions[role];
+        if (!p) continue;
+        const ro = slugs(readonlyFieldIdsOf(p));
+        const hidden = p.fields_hidden.filter((x): x is string => typeof x === 'string');
+        if (ro.length || hidden.length) roles[role] = { readonly_fields: ro, fields_hidden: hidden };
+    }
+    return {
+        _nota: 'readonly_fields = se ven pero no se cambian a mano (las automatizaciones sí). Se cambian con propose_set_list_permissions (readonly_fields / fields_hidden por rol, persona o equipo).',
+        mine_readonly: ctx.role === 'admin' ? [] : slugs(readonlyFieldIdsFor(settings, ctx)),
+        roles,
+    };
+}
+
 /** Resumen humano de un alcance, para la tarjeta de la propuesta. */
 function describeScope(p: RolePermissions): string {
     if (p.view === 'none') return 'sin acceso';
@@ -5575,6 +5763,8 @@ function describeScope(p: RolePermissions): string {
     if (p.edit !== 'none') bits.push(`edita ${word(p.edit)}`);
     if (p.delete !== 'none') bits.push(`borra ${word(p.delete)}`);
     if (p.fields_hidden.length) bits.push(`${p.fields_hidden.length} campo(s) oculto(s)`);
+    const ro = readonlyFieldIdsOf(p).length;
+    if (ro) bits.push(`${ro} campo(s) de sólo lectura`);
     return bits.join(', ');
 }
 

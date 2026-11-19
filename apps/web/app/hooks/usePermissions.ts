@@ -43,6 +43,8 @@ export function useUpdateListPermissions(idOrSlug: string | number) {
             // + campos ocultos): refrescarlos para ver el efecto sin recargar.
             invalidateForList(qc, recordsKeys.all, idOrSlug);
             invalidateForList(qc, fieldsKeys.all, idOrSlug);
+            // v0.1.457 (C4) — la lista trae lo que quien mira sólo puede ver (`my_access`).
+            void qc.invalidateQueries({ queryKey: ['lists'] });
         },
     });
 }

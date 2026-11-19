@@ -528,6 +528,36 @@ describe('Duplicar listas y plantillas (Postgres real, v0.1.166)', () => {
         expect(rows.map((r) => r.data[`f${bySlug.get('numero')!.id}`]).sort()).toEqual(['PED-001', 'PED-002']);
     });
 
+    it('v0.1.457 — duplicar re-apunta «Mostrar sólo si…» y los campos de sólo lectura por rol', async () => {
+        const src = await listsService.create(tenantA, { name: 'Prospectos dup' });
+        const tipo = await fieldsService.create(tenantA, String(src.id), {
+            label: 'Tipo',
+            type: 'select',
+            config: { options: [{ value: 'empresa', label: 'Empresa' }, { value: 'persona', label: 'Persona' }] },
+        });
+        await fieldsService.create(tenantA, String(src.id), {
+            label: 'NIT',
+            type: 'text',
+            is_required: true,
+            config: { show_if: { logic: 'and', conditions: [{ field_id: tipo.id, op: 'eq', value: 'empresa' }] } },
+        });
+        const monto = await fieldsService.create(tenantA, String(src.id), { label: 'Monto', type: 'currency', config: { currency: 'COP' } });
+        await listsService.updatePermissions(tenantA, String(src.id), {
+            permissions: { agent: { view: 'all', create: true, edit: 'all', delete: 'none', fields_hidden: [], readonly_field_ids: [monto.id] } },
+        });
+
+        const { lists: created, warnings } = await templates.duplicate(tenantA, actor, String(src.id), {
+            include: { views: false, automations: false, settings: true, records: false },
+        });
+        expect(warnings).toEqual([]);
+        const cf = await fieldsService.listByListId(tenantA, created[0]!.id);
+        const by = new Map(cf.map((f) => [f.slug, f]));
+        expect(by.get('nit')!.config.show_if).toEqual({ logic: 'and', conditions: [{ field_id: by.get('tipo')!.id, op: 'eq', value: 'empresa' }] });
+        const copy = await listsService.getPermissions(tenantA, String(created[0]!.id));
+        expect(copy.permissions.agent!.readonly_field_ids).toEqual([by.get('monto')!.id]);
+        expect(by.get('monto')!.id).not.toBe(monto.id);
+    });
+
     it('fórmulas (A1): duplicar re-apunta los ids DENTRO de la fórmula (también entre fórmulas)', async () => {
         const src = await listsService.create(tenantA, { name: 'Cotizaciones' });
         await fieldsService.create(tenantA, String(src.id), { label: 'Precio', type: 'number' });

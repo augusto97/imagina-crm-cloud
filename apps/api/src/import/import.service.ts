@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, Optional } from '@
 import {
     applyFieldDefaults,
     checkRequiredIf,
+    fieldsHiddenByCondition,
     type DefaultContext,
     EXPORT_ID_HEADER,
     EXPORT_PARENT_HEADER,
@@ -32,7 +33,7 @@ import { parseCsv } from './csv-parser';
 import { detectFieldType } from './field-type-detector';
 import { BillingService } from '../billing/billing.service';
 import { FieldsService } from '../fields/fields.service';
-import { effectivePermissions, hiddenFieldsFor } from '../lists/list-acl';
+import { effectivePermissions, hiddenFieldsFor, readonlyFieldIdsFor } from '../lists/list-acl';
 import { UniqueTracker } from '../records/unique-values';
 import { assertNotStoreManaged } from '../lists/store-guard';
 import { ListsService } from '../lists/lists.service';
@@ -78,7 +79,9 @@ export class ImportService {
         ctx: DefaultContext,
     ): { ok: true; data: Record<string, unknown> } | { ok: false; field: Field; message: string } {
         const full = applyFieldDefaults(fields.filter((f) => isUserWritableType(f.type)), data, ctx);
-        const failed = checkRequiredIf(fields, full);
+        // A7 — un campo oculto por su condición «Mostrar sólo si…» no se exige.
+        const hiddenByCondition = new Set(fieldsHiddenByCondition(fields, full).keys());
+        const failed = checkRequiredIf(fields, full, { hiddenByCondition });
         if (failed.length > 0) return { ok: false, field: failed[0]!.field as Field, message: failed[0]!.message };
         return { ok: true, data: full };
     }
@@ -98,6 +101,9 @@ export class ImportService {
         const managed = managedFieldLockMap(list.settings);
         const fields = (await this.fields.list(tenantId, String(list.id))).filter((f) => !hidden.has(f.slug) && !managed.has(f.id));
         const byId = new Map(fields.map((f) => [f.id, f]));
+        // C4 — lo que quien importa sólo puede ver: la columna se ignora con aviso.
+        const readonly = readonlyFieldIdsFor(list.settings, actor);
+        const errors: ImportRowError[] = [];
 
         // El mapeo debe apuntar a campos de datos de la lista.
         const columns: Array<{ column: string; field: Field; key: string }> = [];
@@ -110,10 +116,13 @@ export class ImportService {
                     data: { status: 400 },
                 });
             }
+            if (readonly.has(field.id)) {
+                errors.push({ row: 0, field: field.slug, message: readonlyColumnMessage(column, field.label) });
+                continue;
+            }
             columns.push({ column, field, key: jsonbKeyForField(field.id) });
         }
 
-        const errors: ImportRowError[] = [];
         const valid: Record<string, unknown>[] = [];
         // v0.1.294 — «Sin repetidos»: contra la lista y contra el mismo lote.
         const unique = await this.tenantDb.withTenant(tenantId, (tx) => UniqueTracker.load(tx, tenantId, list.id, fields));
@@ -315,10 +324,16 @@ export class ImportService {
         const allImportable = await this.importableFields(tenantId, list.id);
         const managedSlugs = new Map(allImportable.filter((f) => managedIds.has(f.id)).map((f) => [f.slug, managedIds.get(f.id)!.reason]));
         const listFields = allImportable.filter((f) => !hidden.has(f.slug) && !managedIds.has(f.id));
+        // C4 — lo que quien importa sólo puede ver (no cambiar).
+        const readonlyIds = readonlyFieldIdsFor(list.settings, actor);
+        const readonlySlugs = new Map(allImportable.filter((f) => readonlyIds.has(f.id)).map((f) => [f.slug, f.label]));
         for (const [colIdx, slug] of [...mapping]) {
             if (hidden.has(slug)) {
                 mapping.delete(colIdx);
                 errors.push({ row: 0, message: `La columna «${headers[colIdx] ?? slug}» apunta a un campo que tu rol no puede ver: se ignoró.` });
+            } else if (readonlySlugs.has(slug)) {
+                mapping.delete(colIdx);
+                errors.push({ row: 0, message: readonlyColumnMessage(headers[colIdx] ?? slug, readonlySlugs.get(slug)!) });
             } else if (managedSlugs.has(slug)) {
                 mapping.delete(colIdx);
                 errors.push({ row: 0, message: `La columna «${headers[colIdx] ?? slug}» no se importó: ${managedSlugs.get(slug)}` });
@@ -926,4 +941,9 @@ function assertCanCreate(settings: Record<string, unknown>, actor: ImportActor):
             data: { status: 403 },
         });
     }
+}
+
+/** C4 — el aviso de una columna que apunta a un campo de sólo lectura para quien importa. */
+export function readonlyColumnMessage(column: string, label: string): string {
+    return `La columna «${column}» apunta a «${label}», que tu acceso a esta lista sólo te deja ver: se ignoró.`;
 }

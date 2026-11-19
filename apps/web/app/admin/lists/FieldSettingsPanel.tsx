@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Eye, EyeOff, Heading1, Loader2, Trash2 } from 'lucide-react';
+import { Eye, EyeOff, Heading1, Loader2, Lock, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,11 +12,12 @@ import { ApiError } from '@/lib/api';
 import { fieldIconOf } from '@/lib/fieldTypeIcons';
 import { formulaConversionNote, riskOf } from '@/lib/fieldTypeMigration';
 import { formulaConfigFromComputed } from './formula/formulaConvert';
-import { __ } from '@/lib/i18n';
+import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity, FieldTypeSlug } from '@/types/field';
 
-import type { ManagedFieldLock } from '@imagina-base/shared';
+import { fieldAccessLevel, withFieldAccessLevel, type FieldAccessLevel, type ManagedFieldLock } from '@imagina-base/shared';
+import { Select } from '@/components/ui/select';
 import { ManagedFieldNote, StoreFieldNote } from '@/admin/records/StoreColumnBadge';
 
 import { FieldConfigEditor } from './FieldConfigEditor';
@@ -255,7 +256,7 @@ export function FieldSettingsPanel({ listId, field, onDelete, onMakeTitle, store
             </Section>
             )}
 
-            <RoleVisibility listId={listId} fieldSlug={field.slug} />
+            <RoleVisibility listId={listId} field={field} />
 
             {error !== null && (
                 <div className="imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-2.5 imcrm-text-xs imcrm-text-destructive">
@@ -325,14 +326,16 @@ function TypeRiskNote({ fromType, toType }: { fromType: string; toType: string }
 }
 
 /**
- * "Quién lo ve": los roles que NO deben ver este campo.
+ * "Quién lo ve": por rol, si puede ver y cambiar el campo, sólo verlo o no lo
+ * ve (v0.1.457, C4).
  *
- * Escribe en `settings.permissions[rol].fields_hidden` de la lista — el
- * MISMO ACL que el backend aplica al leer registros (v0.1.126). Aquí se ve
- * desde el campo; en Ajustes → Permisos, desde el rol. Los administradores
- * ven todo siempre y por eso no aparecen.
+ * Escribe en `settings.permissions[rol]` de la lista (`fields_hidden` por
+ * slug y `readonly_field_ids` por id) — el MISMO ACL que el backend aplica
+ * al leer y al guardar registros. Aquí se ve desde el campo; en Ajustes →
+ * Permisos, desde el rol. Los administradores ven y cambian todo siempre y
+ * por eso no aparecen.
  */
-function RoleVisibility({ listId, fieldSlug }: { listId: number; fieldSlug: string }): JSX.Element | null {
+function RoleVisibility({ listId, field }: { listId: number; field: { id: number; slug: string } }): JSX.Element | null {
     const query = useListPermissions(listId);
     const update = useUpdateListPermissions(listId);
 
@@ -351,39 +354,44 @@ function RoleVisibility({ listId, fieldSlug }: { listId: number; fieldSlug: stri
 
     const perms = query.data?.permissions ?? {};
 
-    const toggle = (role: string, hide: boolean): void => {
+    const setLevel = (role: string, level: FieldAccessLevel): void => {
         const current = perms[role];
         if (!current) return;
-        const hidden = new Set(current.fields_hidden ?? []);
-        if (hide) hidden.add(fieldSlug);
-        else hidden.delete(fieldSlug);
-        update.mutate({ permissions: { [role]: { ...current, fields_hidden: Array.from(hidden) } } });
+        update.mutate({ permissions: { [role]: withFieldAccessLevel(current, field, level) } });
     };
 
     return (
         <Section title={__('Quién lo ve')}>
-            {roles.map((r) => {
-                const hidden = (perms[r.slug]?.fields_hidden ?? []).includes(fieldSlug);
-                return (
-                    <button
-                        key={r.slug}
-                        type="button"
-                        disabled={update.isPending}
-                        onClick={() => toggle(r.slug, !hidden)}
-                        className="imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-1.5 imcrm-py-1 imcrm-text-left imcrm-text-sm hover:imcrm-bg-accent/50"
-                    >
-                        {hidden ? (
-                            <EyeOff className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-destructive" aria-hidden />
-                        ) : (
-                            <Eye className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />
-                        )}
-                        <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate">{r.label}</span>
-                        <span className="imcrm-shrink-0 imcrm-text-xs imcrm-text-muted-foreground">
-                            {hidden ? __('Oculto') : __('Lo ve')}
-                        </span>
-                    </button>
-                );
-            })}
+            <div data-tour="field-role-access" className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                {roles.map((r) => {
+                    const current = perms[r.slug];
+                    const level: FieldAccessLevel = current ? fieldAccessLevel(current, field) : 'edit';
+                    const Icon = level === 'none' ? EyeOff : level === 'read' ? Lock : Eye;
+                    return (
+                        <div key={r.slug} className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-px-1.5 imcrm-py-0.5 imcrm-text-sm">
+                            <Icon
+                                className={cn(
+                                    'imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0',
+                                    level === 'none' ? 'imcrm-text-destructive' : 'imcrm-text-muted-foreground',
+                                )}
+                                aria-hidden
+                            />
+                            <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate">{r.label}</span>
+                            <Select
+                                value={level}
+                                disabled={update.isPending || !current}
+                                aria-label={sprintf(__('Acceso de %s a este campo'), r.label)}
+                                className="imcrm-h-8 imcrm-w-auto imcrm-text-xs"
+                                onChange={(e) => setLevel(r.slug, e.target.value as FieldAccessLevel)}
+                            >
+                                <option value="edit">{__('Puede ver y cambiar')}</option>
+                                <option value="read">{__('Sólo ver')}</option>
+                                <option value="none">{__('No lo ve')}</option>
+                            </Select>
+                        </div>
+                    );
+                })}
+            </div>
         </Section>
     );
 }

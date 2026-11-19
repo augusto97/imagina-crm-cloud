@@ -2,6 +2,7 @@ import { isUserWritableType, jsonbKeyForField, type FieldType } from '../schemas
 import type { FieldDefault, FieldValidation, FieldFormatPreset, RequiredIfOp } from '../schemas/field-rules';
 import { zonedToday } from '../schemas/timezone';
 import { USER_PATTERN_VALUE_MAX, compileUserPattern } from './pattern-matcher';
+import { fieldsHiddenByCondition } from './field-visibility';
 
 export {
     USER_PATTERN_VALUE_MAX,
@@ -311,12 +312,23 @@ export interface RequiredIfError {
 export function checkRequiredIf(
     fields: ReadonlyArray<RuleField>,
     data: Record<string, unknown>,
-    opts: { touched?: ReadonlySet<string> } = {},
+    opts: {
+        touched?: ReadonlySet<string>;
+        /**
+         * A7 — los campos ocultos por su condición «Mostrar sólo si…» (no se
+         * exigen). Si no viene, se calcula con `data`; el servidor la pasa
+         * calculada con lo que VE quien guarda (así decide igual que su
+         * navegador).
+         */
+        hiddenByCondition?: ReadonlySet<number> | ReadonlyMap<number, unknown>;
+    } = {},
 ): RequiredIfError[] {
     const byId = new Map(fields.map((f) => [f.id, f]));
+    const hidden = opts.hiddenByCondition ?? fieldsHiddenByCondition(fields, data);
     const out: RequiredIfError[] = [];
     for (const f of fields) {
         if (!validationKindsFor(f.type).requiredIf) continue;
+        if (hidden.has(f.id)) continue;
         const rule = fieldValidationOf(f.config)?.required_if;
         if (!rule || rule.field_id === null || rule.field_id === undefined) continue;
         const other = byId.get(rule.field_id);

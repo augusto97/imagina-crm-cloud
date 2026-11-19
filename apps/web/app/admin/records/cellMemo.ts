@@ -25,6 +25,7 @@ interface CellMemoProps {
     canEdit?: boolean;
     lockedReason?: string | null;
     record?: unknown;
+    dimReason?: string | null;
 }
 
 /** Comparador del `memo` de `EditableCell`. */
@@ -36,6 +37,7 @@ export function editableCellPropsEqual(prev: CellMemoProps, next: CellMemoProps)
         && prev.value === next.value
         && prev.canEdit === next.canEdit
         && prev.lockedReason === next.lockedReason
+        && (prev.dimReason ?? null) === (next.dimReason ?? null)
         // Campo «Botón»: no tiene valor propio; su «deshabilitado si…» mira la
         // FILA — sin esto quedaba con el estado viejo.
         && (next.field.type !== 'button' || prev.record === next.record)

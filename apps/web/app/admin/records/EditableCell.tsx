@@ -1,7 +1,7 @@
 import { createContext, forwardRef, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { editableCellPropsEqual } from './cellMemo';
 import { createPortal } from 'react-dom';
-import { RefreshCw } from 'lucide-react';
+import { Lock, RefreshCw } from 'lucide-react';
 import { formatDuration, parseDuration, parseNumberText, teamIdsOf, validateFieldValue, type DurationFormat } from '@imagina-base/shared';
 
 import { PhoneControl } from '@/components/fields/PhoneControl';
@@ -33,6 +33,7 @@ import { isCheckedValue, renderCellValue } from './renderCellValue';
 import { useRelationTitlesFor } from './relationTitlesContext';
 import { useWrapText } from './wrapText';
 import { useManagedLock } from '@/admin/records/managedFields';
+import { useReadonlyLock } from '@/admin/records/fieldAccess';
 
 interface EditableCellProps {
     field: FieldEntity;
@@ -58,6 +59,12 @@ interface EditableCellProps {
      * «deshabilitado si…» mira otros campos del registro).
      */
     record?: RecordEntity;
+    /**
+     * v0.1.457 (A7) — Por qué este campo NO aplica a esta fila (su condición
+     * «Mostrar sólo si…» no se cumple): va de tooltip (la tabla atenúa la
+     * celda). El valor guardado se conserva y se puede editar.
+     */
+    dimReason?: string | null;
 }
 
 /**
@@ -147,10 +154,13 @@ function EditableCellInner({
     canEdit: canEditByCaps = true,
     lockedReason: lockedReasonProp = null,
     record,
+    dimReason = null,
 }: EditableCellProps): JSX.Element {
     // E5 — las columnas del SLA de la mesa de ayuda no se editan a mano.
     const managedLock = useManagedLock(field.id);
-    const lockedReason = lockedReasonProp ?? managedLock;
+    // C4 — lo que quien mira ve pero no puede cambiar en esta lista.
+    const readonlyLock = useReadonlyLock(field.id);
+    const lockedReason = lockedReasonProp ?? managedLock ?? readonlyLock;
     const canEditByUser = canEditByCaps && lockedReason === null;
     // v0.1.259 — UNA mutación por tabla (contexto), no una por celda: con
     // decenas de filas visibles eran cientos de observers montados por nada.
@@ -501,8 +511,11 @@ function EditableCellInner({
                         !gridMode && 'imcrm-cursor-default',
                         wrapText ? 'imcrm-whitespace-pre-wrap imcrm-break-words' : 'imcrm-truncate',
                     )}
-                    title={lockedReason ?? (canEdit ? undefined : __('No editable inline'))}
+                    title={lockedReason ?? dimReason ?? (canEdit ? undefined : __('No editable inline'))}
                 >
+                    {lockedReason && readonlyLock === lockedReason && (
+                        <Lock className="imcrm-mr-1 imcrm-inline imcrm-h-3 imcrm-w-3 imcrm-align-[-1px] imcrm-text-muted-foreground" aria-label={lockedReason} data-readonly-lock="true" />
+                    )}
                     {renderCellValue(field, value)}
                 </div>
             );
@@ -521,7 +534,7 @@ function EditableCellInner({
                     canEdit && 'hover:imcrm-bg-accent/40 imcrm-rounded imcrm--mx-1 imcrm-px-1',
                     !canEdit && 'imcrm-cursor-default',
                 )}
-                title={lockedReason ?? (canEdit ? __('Click para editar') : __('No editable inline'))}
+                title={lockedReason ?? dimReason ?? (canEdit ? __('Click para editar') : __('No editable inline'))}
             >
                 {renderCellValue(field, value)}
             </button>

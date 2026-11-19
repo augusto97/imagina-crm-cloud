@@ -38,6 +38,7 @@ import {
     tenantFormatSchema,
     isUserWritableType,
     checkRequiredIf,
+    fieldsHiddenByCondition,
     jsonbKeyForField,
     resolveTitleFieldId,
     validateFieldValue,
@@ -1354,7 +1355,10 @@ export class PortalService implements OnModuleInit {
             if (!current) throw portalGone();
             // v0.1.300 — "obligatorio si…" sobre el registro como queda (sólo las
             // reglas que tocan lo que el cliente cambió).
-            const failedIf = checkRequiredIf(ctx.fields, { ...(current.data as Record<string, unknown>), ...patch }, { touched: new Set(Object.keys(patch)) });
+            const merged = { ...(current.data as Record<string, unknown>), ...patch };
+            // A7 — un campo oculto por su condición «Mostrar sólo si…» no se exige.
+            const hiddenByCondition = new Set(fieldsHiddenByCondition(ctx.fields, merged).keys());
+            const failedIf = checkRequiredIf(ctx.fields, merged, { touched: new Set(Object.keys(patch)), hiddenByCondition });
             if (failedIf.length > 0) {
                 throw new BadRequestException({
                     code: 'validation_failed',

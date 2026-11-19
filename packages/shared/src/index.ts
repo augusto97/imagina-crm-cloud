@@ -92,6 +92,7 @@ export * from './schemas/export';
 export * from './schemas/import';
 export * from './field-types/validate';
 export * from './field-types/field-rules';
+export * from './field-types/field-visibility';
 export * from './field-types/autonumber';
 export * from './field-types/button';
 export * from './field-types/computed';

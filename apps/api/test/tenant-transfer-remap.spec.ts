@@ -578,3 +578,45 @@ describe('remapWidgetConfig (v0.1.395)', () => {
         expect(out.buttons[1]).toEqual({ id: 'b2', type: 'call', phone: '+573001112233' });
     });
 });
+
+describe('v0.1.457 — condiciones de campos y sólo lectura por rol', () => {
+    it('re-mapea «Mostrar sólo si…» y los campos de sólo lectura de rol, persona y equipo', () => {
+        const m = maps();
+        m.team.set(80, 180);
+        const config = remapJson(
+            {
+                show_if: {
+                    logic: 'or',
+                    conditions: [
+                        { field_id: 10, op: 'eq', value: 'empresa' },
+                        { field_id: 99, op: 'is_not_null' },
+                    ],
+                },
+            },
+            m,
+        ) as { show_if: { conditions: Array<{ field_id: number | null }> } };
+        // Una regla de un campo que no viajó queda sin campo (no aplica): nunca con el id de otra empresa.
+        expect(config.show_if.conditions.map((c) => c.field_id)).toEqual([110, null]);
+
+        const settings = remapListSettings(
+            {
+                permissions: {
+                    permissions: { agent: { view: 'all', create: true, edit: 'all', delete: 'none', fields_hidden: [], readonly_field_ids: [10, 99] } },
+                    users: { '30': { view: 'all', create: false, edit: 'all', delete: 'none', fields_hidden: [], readonly_field_ids: [11] } },
+                    teams: { '80': { view: 'all', create: false, edit: 'all', delete: 'none', fields_hidden: [], readonly_field_ids: [12] } },
+                },
+            },
+            m,
+            null,
+        ) as {
+            permissions: {
+                permissions: Record<string, { readonly_field_ids: number[] }>;
+                users: Record<string, { readonly_field_ids: number[] }>;
+                teams: Record<string, { readonly_field_ids: number[] }>;
+            };
+        };
+        expect(settings.permissions.permissions.agent!.readonly_field_ids).toEqual([110]);
+        expect(settings.permissions.users['130']!.readonly_field_ids).toEqual([111]);
+        expect(settings.permissions.teams['180']!.readonly_field_ids).toEqual([112]);
+    });
+});

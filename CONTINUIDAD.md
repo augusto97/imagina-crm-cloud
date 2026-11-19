@@ -430,7 +430,12 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.456**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.457**
+(**campos que aparecen según otros y campos de sólo lectura por rol** —
+«Mostrar sólo si…» por campo (alta, ficha, tabla, servidor, import y portal) y,
+en Permisos, «Puede ver y cambiar / Sólo ver / No lo ve» por campo y por rol
+(por persona y equipo, por API o el asistente); sin migración; ADR-S110).
+Antes **v0.1.456**
 (**IA en el día a día** — resumir el registro, escribir con IA en la
 descripción, sugerir respuesta en los comentarios, pedirle al agente desde la
 ficha y correrlo en lote; misma clave, cuota y consentimiento que el
@@ -440,8 +445,7 @@ asistente; migración 0140; ADR-S109). Antes **v0.1.455**
 con línea de base sin disparar al crearla y revisión cada 15 min; migración
 0139 `automation_matches`) y «Cuando se sube un archivo»; acciones «Avisar en la
 app» (aviso nuevo `automation`), «Asignar por turno» (por turnos o a quien tenga
-menos abiertos) y «Copiar a otra lista». Addendum ADR-S47. Sigue v0.1.457
-(campos condicionales y de sólo lectura)). Antes **v0.1.454**
+menos abiertos) y «Copiar a otra lista». Addendum ADR-S47). Antes **v0.1.454**
 (**la plataforma le cobra a la agencia** — decisión del usuario «las dos»: el
 plan de la plataforma dice en «Para agencias» cuántas empresas cliente incluye
 y cuánto vale cada una de más (USD y COP); el operador puede ponerle a una
@@ -2320,6 +2324,23 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-19 · v0.1.457** — **Campos que aparecen según otros y campos de
+  sólo lectura por rol** (A7 + C4; ADR-S110; sin migración). «Mostrar sólo
+  si…» por campo en `field.config.show_if` (por `field_id`, hasta 10 reglas);
+  una sola lógica en `packages/shared/src/field-types/field-visibility.ts`
+  (`fieldsHiddenByCondition`, en cascada) para navegador y servidor. Sólo
+  lectura en `readonly_field_ids` del acceso de cada rol, persona y equipo
+  (`lists.settings.permissions`); la lista viaja con
+  `my_access.readonly_field_ids`. Reglas: un campo oculto por su condición no
+  es obligatorio pero su valor no se borra; un campo de la condición en la
+  papelera deja de aplicar sin perder la regla; el sistema y el admin escriben
+  los de sólo lectura; el MISMO valor no es un cambio. Bugs de paso: el bundle
+  de la ficha sembraba la caché de la lista sin recortar los ajustes ni
+  `my_access`; pegar con una celda bloqueada fallaba la fila entera; import y
+  portal pedían el «obligatorio si…» de un campo oculto. Pendiente: por persona
+  y por equipo el nivel por campo se guarda y aplica pero sólo se configura por
+  API o el asistente/MCP (la interfaz lo ofrece por rol); la condición no aplica
+  en formularios públicos ni en el portal (deciden con su diseño).
 - **2026-11-19 · v0.1.456** — **IA en el día a día** (F1 + F2 y las mejoras
   de agentes; ADR-S109). «Resumir con IA» en la ficha (modal, página y bloque
   «Resumen con IA» de la ficha diseñada; caché de 7 días por huella), «Escribir

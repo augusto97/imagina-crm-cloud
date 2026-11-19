@@ -89,10 +89,57 @@ export const fieldValidationSchema = z.object({
 });
 export type FieldValidation = z.infer<typeof fieldValidationSchema>;
 
-/** Las dos claves comunes que acepta la config de un campo escribible. */
+/**
+ * A7 (v0.1.457) — «Mostrar sólo si…»: el campo aparece en el alta, la ficha y
+ * el modal sólo cuando OTROS campos de la lista cumplen la condición (todas o
+ * alguna). Las reglas referencian el campo por `field_id` (regla de oro nº 1;
+ * la clave sigue la convención `*_field_id`, así plantillas, duplicar y migrar
+ * una empresa la re-apuntan solas) y usan los operadores de los filtros, sin
+ * los relativos al reloj («este mes»): así el navegador y el servidor deciden
+ * igual sin depender de la hora. La evaluación vive en
+ * `field-types/field-visibility.ts`.
+ */
+export const SHOW_IF_OPS = [
+    'eq',
+    'neq',
+    'in',
+    'nin',
+    'contains',
+    'not_contains',
+    'gt',
+    'gte',
+    'lt',
+    'lte',
+    'is_null',
+    'is_not_null',
+] as const;
+export type ShowIfOp = (typeof SHOW_IF_OPS)[number];
+
+/** Tope de reglas por campo (una condición legible, no un programa). */
+export const SHOW_IF_MAX_CONDITIONS = 10;
+
+export const fieldShowIfConditionSchema = z.object({
+    // Nullable/opcional: una plantilla cuyo campo de referencia no llegó deja
+    // la regla sin campo y no aplica (se descarta al guardar).
+    field_id: idSchema.nullable().optional(),
+    op: z.enum(SHOW_IF_OPS),
+    value: z.unknown().optional(),
+});
+export type FieldShowIfCondition = z.infer<typeof fieldShowIfConditionSchema>;
+
+export const fieldShowIfSchema = z.object({
+    /** `and` = se tienen que cumplir todas; `or` = alguna. */
+    logic: z.enum(['and', 'or']).default('and'),
+    conditions: z.array(fieldShowIfConditionSchema).max(SHOW_IF_MAX_CONDITIONS),
+});
+export type FieldShowIf = z.infer<typeof fieldShowIfSchema>;
+
+/** Las claves comunes que acepta la config de un campo escribible. */
 export const fieldRulesSchema = z.object({
     default_value: fieldDefaultSchema.nullable().optional(),
     validation: fieldValidationSchema.nullable().optional(),
+    /** A7 — «Mostrar sólo si…» (null o ausente = siempre se muestra). */
+    show_if: fieldShowIfSchema.nullable().optional(),
 });
 export type FieldRules = z.infer<typeof fieldRulesSchema>;
 

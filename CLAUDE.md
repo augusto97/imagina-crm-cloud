@@ -16660,6 +16660,78 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         contra el proveedor simulado (escritorio claro y celular 390×844
         oscuro, sin errores de JS).
 
+  - [x] **Campos que aparecen según otros + campos de sólo lectura por rol
+        (v0.1.457, ADR-S110, opciones A7 y C4 del estudio)**. Sin migración.
+        (a) **«Mostrar sólo si…»** por campo (`config.show_if`,
+        `fieldShowIfSchema` en shared: `{logic: and|or, conditions:[{field_id,
+        op, value}]}`, hasta 10 reglas sobre OTROS campos de la lista, por id —
+        regla de oro nº 1, y la clave `field_id` hace que plantillas, duplicar y
+        migrar una empresa la re-apunten solas). Operadores de los filtros según
+        el tipo del campo de la condición (`showIfSourceOps`: selección
+        es/no es/es alguno de/vacío, varias opciones contiene, número y fecha
+        mayor/menor, texto contiene, casilla marcada, persona/equipo/archivo
+        con o sin valor), sin los relativos al reloj: el navegador y el servidor
+        deciden igual. UNA función en shared (`fieldsHiddenByCondition`, con
+        cascada: lo que depende de un campo oculto también se oculta) usan el
+        alta, el modal, la página, la ficha diseñada (bloque de campo y de
+        propiedades), la tabla, el servidor, el import y el portal. El campo
+        oculto **no es obligatorio** (tampoco su «obligatorio si…»), pero su
+        valor guardado **se conserva**. En la tabla la columna queda y la celda
+        se atenúa con el motivo al pasar el mouse («Este campo no aplica aquí:
+        se muestra sólo si «Tipo de cliente» es «Empresa».»). **Ciclos**
+        rechazados al guardar (400 `show_if_cycle` con el camino; el editor
+        avisa en vivo); un campo de la condición en la papelera deja la regla
+        guardada pero sin aplicar (el campo se muestra) y el editor lo dice;
+        borrar un campo que es condición de otros avisa cuáles. Editor
+        (`FieldShowIfEditor`) en el panel del campo y en el administrador: campo
+        en su renglón y la regla con su valor debajo (en una sola línea los
+        selectores quedaban ilegibles en el panel angosto).
+        (b) **Campos de sólo lectura** (`readonly_field_ids` en el acceso de
+        cada rol, persona y equipo, junto a `fields_hidden`; prioridad persona >
+        equipo > rol, con varios equipos sólo lectura si TODOS lo marcan —
+        `mostPermissive` intersecta—; ocultar gana). El servidor lo exige en
+        todos los caminos humanos: alta (no lo pone; valen los valores por
+        defecto, y mandar el valor por defecto sembrado no es elegirlo), edición
+        (403 `field_readonly` con el nombre del campo, salvo que sea el MISMO
+        valor), relaciones, edición masiva (la operación se rechaza con el
+        motivo), importar y actualizar desde archivo (la columna se ignora con
+        aviso) y pegar (la celda queda con el motivo, el resto de la fila se
+        guarda). Automatizaciones, sincronizaciones, botones, plantillas y el
+        admin no se ven afectados. Cada lista trae `my_access.readonly_field_ids`
+        para quien pregunta (`GET /lists`, `/lists/:id`, bootstrap y el bundle
+        de la ficha), y la interfaz pone el candado con el motivo en la celda,
+        el modal, la página, la ficha diseñada, el kanban (no se arrastra) y el
+        alta (no se manda). **Permisos** pasa de «campos ocultos» a un selector
+        por campo y por rol: **Puede ver y cambiar / Sólo ver / No lo ve**
+        (también desde el panel de cada campo, «Qué puede hacer cada rol»).
+        (c) **Asistente y MCP**: `propose_add_fields`/`propose_update_field`
+        aceptan `show_if` por slug (la opción por su etiqueta) y lo guardan por
+        id; `propose_set_list_permissions` acepta `readonly_fields` por slug en
+        roles, personas y equipos; `get_list_schema` describe la condición de
+        cada campo y `field_access` (lo de cada rol y lo tuyo).
+        **Bugs encontrados en el camino**: (1) el bundle de la ficha
+        (`/records/:id/view`, v0.1.286) sembraba la caché de la lista con la
+        lista CRUDA —sin recortar los ajustes para quien no administra listas,
+        a diferencia de `GET /lists/:id`— y sin `my_access`: al abrir un
+        registro, el candado desaparecía; ahora va como la sirve `GET /lists`;
+        (2) pegar en la tabla con una celda bloqueada fallaba la fila entera
+        (`field_readonly` no se trataba como error de celda); (3) el import y el
+        portal exigían el «obligatorio si…» de un campo oculto por su condición.
+        Ayuda: guías `field-show-if` y `field-readonly`, secciones nuevas en
+        Aprende (listas y campos; equipo y permisos), anclas `field-show-if`,
+        `field-role-access` y `permissions-field-access`, y novedad con
+        carrusel. Tests: `field-visibility-readonly.spec` (11: condición que
+        oculta y quita lo obligatorio, valor conservado, «obligatorio si»,
+        cascada, ciclos, campo en la papelera; sólo lectura por rol en
+        alta/edición/edición masiva/importación/pegar, admin y sistema, persona,
+        equipos, ids ajenos descartados) + casos en `ai-list-config`,
+        `templates` (duplicar re-apunta las dos cosas), `record-view` y
+        `tenant-transfer-remap`; shared 1062 (8 nuevos), front 958 (7 nuevos);
+        E2E navegador 28/28 (escritorio claro y celular oscuro: el NIT aparece
+        al elegir Empresa en el alta y en la ficha, celda atenuada, 400 sin NIT,
+        agente con candado en tabla y ficha, 403 por API) y 16/16 de los
+        editores.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

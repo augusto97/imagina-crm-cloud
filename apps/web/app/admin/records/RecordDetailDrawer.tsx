@@ -84,6 +84,7 @@ import { useRecordDraft } from './recordDraft';
 
 import { formatLongDate } from '@/lib/tenantFormat';
 import { managedLockedReasons, useManagedFields } from '@/admin/records/managedFields';
+import { readonlyLockedReasons, useReadonlyFieldIds } from '@/admin/records/fieldAccess';
 interface RecordDetailDrawerProps {
     listId: number;
     /**
@@ -195,9 +196,15 @@ export function RecordDetailDrawer({
     useUnsavedChangesGuard(open && dirty);
     const view = useRecordView(listId, record?.id, open && record !== null);
     const managedLocks = useManagedFields();
+    // v0.1.457 (C4) — lo que quien mira ve pero no puede cambiar.
+    const readonlyIds = useReadonlyFieldIds();
     const lockedReasons = useMemo(
-        () => ({ ...lockedReasonsFor(storeRules, fields, values), ...managedLockedReasons(managedLocks, fields) }),
-        [storeRules, fields, values, managedLocks],
+        () => ({
+            ...lockedReasonsFor(storeRules, fields, values),
+            ...readonlyLockedReasons(readonlyIds, fields),
+            ...managedLockedReasons(managedLocks, fields),
+        }),
+        [storeRules, fields, values, managedLocks, readonlyIds],
     );
     const [error, setError] = useState<string | null>(null);
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});

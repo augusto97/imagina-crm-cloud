@@ -37,6 +37,7 @@ import { useLayoutData } from './useLayoutData';
 import { useRecordAutosave } from './useRecordAutosave';
 import { useRecordLayout, type LayoutOrigin } from './useRecordLayout';
 import { managedLockedReasons, useManagedFields } from '@/admin/records/managedFields';
+import { readonlyLockedReasons, useReadonlyFieldIdsOf } from '@/admin/records/fieldAccess';
 
 interface Props {
     list: ListSummary;
@@ -72,9 +73,15 @@ export function RecordLayoutView({ list, record, fields, currentUserId, isAdmin,
     const save = useRecordAutosave(list.id, record);
     const { query, override } = useLayoutData(list.id, list.slug, record.id, layout);
     const managedLocks = useManagedFields();
+    // v0.1.457 (C4) — lo que quien mira ve pero no puede cambiar.
+    const readonlyIds = useReadonlyFieldIdsOf(list);
     const lockedReasons = useMemo(
-        () => ({ ...lockedReasonsFor(storeRules, fields, save.values), ...managedLockedReasons(managedLocks, fields) }),
-        [storeRules, fields, save.values, managedLocks],
+        () => ({
+            ...lockedReasonsFor(storeRules, fields, save.values),
+            ...readonlyLockedReasons(readonlyIds, fields),
+            ...managedLockedReasons(managedLocks, fields),
+        }),
+        [storeRules, fields, save.values, managedLocks, readonlyIds],
     );
     const fieldsById = useMemo(() => new Map(fields.map((f) => [f.id, f])), [fields]);
     const theme = resolveTheme(layout?.theme);

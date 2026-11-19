@@ -6,6 +6,7 @@ import {
     jsonbKeyForField,
     listPermissionsSchema,
     mostPermissive,
+    readonlyFieldIdsOf,
     teamIdsOf,
     type ConfigurableRole,
     type ListPermissions,
@@ -278,6 +279,20 @@ export function scopeFor(
     userId?: number,
 ): Scope {
     return effectivePermissions(settings, who, userId)[action];
+}
+
+/**
+ * C4 — Campos que quien pide VE pero no puede cambiar en esta lista (ids). Vacío
+ * para el admin (y el sistema, que corre como admin). Un campo oculto no está:
+ * ocultar gana.
+ */
+export function readonlyFieldIdsFor(
+    settings: Record<string, unknown>,
+    who: AclSubject | Role,
+    userId?: number,
+): Set<number> {
+    const perms = effectivePermissions(settings, who, userId);
+    return new Set(readonlyFieldIdsOf(perms));
 }
 
 /** Campos ocultos para el rol (Set de slugs). */

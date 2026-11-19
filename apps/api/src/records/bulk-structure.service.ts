@@ -207,11 +207,12 @@ export class BulkStructureService {
                         actor,
                         String(list.id),
                         { data: copyData(loaded.fields, row.data), parent_id: row.parentId ?? null },
-                        { planChecked: true },
+                        // C4 — una copia no ELIGE valores: también lleva los de sólo lectura.
+                        { planChecked: true, allowReadonly: true },
                     );
                     result.created++;
                     for (const child of children.get(row.id) ?? []) {
-                        await this.records.create(tenantId, actor, String(list.id), { data: copyData(loaded.fields, child.data), parent_id: copy.id }, { planChecked: true });
+                        await this.records.create(tenantId, actor, String(list.id), { data: copyData(loaded.fields, child.data), parent_id: copy.id }, { planChecked: true, allowReadonly: true });
                         result.created++;
                     }
                     result.succeeded.push(row.id);

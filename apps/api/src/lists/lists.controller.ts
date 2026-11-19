@@ -34,7 +34,7 @@ import { TenantGuard } from '../tenancy/tenant.guard';
 import { aclOf } from '../tenancy/acl-of';
 import { AllowGuest } from '../tenancy/allow-guest.decorator';
 import { can } from '../authz/can';
-import { guestCanOpenList, guestSafeListSettings, memberListSettings } from './list-acl';
+import { guestCanOpenList, guestSafeListSettings, memberListSettings, readonlyFieldIdsFor } from './list-acl';
 import { ListsService } from './lists.service';
 
 /**
@@ -63,7 +63,7 @@ export class ListsController {
             return {
                 data: data
                     .filter((l) => guestCanOpenList(l.settings as Record<string, unknown>, who, l.id))
-                    .map((l) => ({ ...l, group_id: null, settings: guestSafeListSettings(l.settings as Record<string, unknown>) })),
+                    .map((l) => ({ ...l, group_id: null, settings: guestSafeListSettings(l.settings as Record<string, unknown>), my_access: myAccess(l, who) })),
             };
         }
         return { data: data.map((l) => this.forMember(req, l)) };
@@ -72,7 +72,7 @@ export class ListsController {
     /** Los ajustes de la lista recortados para quien no administra las listas. */
     private forMember(req: FastifyRequest, list: List): List {
         const who = { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
-        return { ...list, settings: memberListSettings(list.settings as Record<string, unknown>, who, can(who, 'manage_lists')) };
+        return { ...list, settings: memberListSettings(list.settings as Record<string, unknown>, who, can(who, 'manage_lists')), my_access: myAccess(list, who) };
     }
 
     /** v0.1.107 — reordenar el menú de listas (orden compartido del workspace).
@@ -96,7 +96,7 @@ export class ListsController {
             if (!guestCanOpenList(list.settings as Record<string, unknown>, who, list.id)) {
                 throw new NotFoundException({ code: 'list_not_found', message: `Lista '${idOrSlug}' no encontrada`, data: { status: 404 } });
             }
-            return { ...list, group_id: null, settings: guestSafeListSettings(list.settings as Record<string, unknown>) };
+            return { ...list, group_id: null, settings: guestSafeListSettings(list.settings as Record<string, unknown>), my_access: myAccess(list, who) };
         }
         return this.forMember(req, list);
     }
@@ -185,4 +185,9 @@ export class ListsController {
 function tenantId(req: FastifyRequest): number {
     // TenantGuard garantiza que req.tenant existe antes de llegar aquí.
     return req.tenant!.tenantId;
+}
+
+/** C4 — los campos de ESTA lista que quien pide ve pero no puede cambiar (derivado, no se guarda). */
+function myAccess(list: List, who: Parameters<typeof readonlyFieldIdsFor>[1]): NonNullable<List['my_access']> {
+    return { readonly_field_ids: [...readonlyFieldIdsFor(list.settings as Record<string, unknown>, who)] };
 }

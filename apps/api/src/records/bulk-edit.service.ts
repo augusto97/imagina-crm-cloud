@@ -25,6 +25,7 @@ import { RealtimeService } from '../realtime/realtime.service';
 import { BulkHistoryService, type BulkItemInput } from './bulk-history.service';
 import { RecordsService, type Actor } from './records.service';
 import { can } from '../authz/can';
+import { readonlyFieldIdsFor } from '../lists/list-acl';
 
 export interface AutomationBulkOutcome {
     total: number;
@@ -77,7 +78,7 @@ export class BulkEditService {
             });
         }
         const loaded = await this.records.bulkRows(tenantId, actor, listIdOrSlug, target, BULK_EDIT_MAX_TARGET);
-        const ctx = this.context(loaded.list, loaded.fields, loaded.hiddenIds, operations);
+        const ctx = this.context(loaded.list, loaded.fields, loaded.hiddenIds, operations, readonlyFieldIdsFor(loaded.list.settings, actor));
         const out: BulkEditPreview = { total: loaded.total, ids: [], unchanged: 0, error_count: 0, errors: [], sample: [] };
         for (const row of loaded.rows) {
             const res = this.compute(ctx, row);
@@ -112,7 +113,7 @@ export class BulkEditService {
         opts: { summaryPrefix?: string; noAutomations?: boolean } = {},
     ): Promise<BulkEditResult> {
         const loaded = await this.records.bulkRows(tenantId, actor, listIdOrSlug, { ids }, BULK_EDIT_APPLY_CHUNK);
-        const ctx = this.context(loaded.list, loaded.fields, loaded.hiddenIds, operations);
+        const ctx = this.context(loaded.list, loaded.fields, loaded.hiddenIds, operations, readonlyFieldIdsFor(loaded.list.settings, actor));
         const result: BulkEditResult = { succeeded: [], unchanged: [], failed: [], edit_id: editId ?? null };
         const found = new Set(loaded.rows.map((r) => r.id));
         // Lo que no se encontró (borrado entre la vista previa y ahora, o fuera
@@ -218,13 +219,21 @@ export class BulkEditService {
      * calculados que dependen de ellos). SEC — antes sólo se miraban los slugs
      * ocultos: un resumen restringido servía de origen de una copia.
      */
-    private context(list: List, fields: Field[], hiddenIds: ReadonlySet<number>, operations: BulkOperation[]) {
+    private context(
+        list: List,
+        fields: Field[],
+        hiddenIds: ReadonlySet<number>,
+        operations: BulkOperation[],
+        /** C4 — lo que quien edita ve pero no puede cambiar (vacío para el admin y el sistema). */
+        readonlyIds: ReadonlySet<number> = new Set(),
+    ) {
         const byId = new Map(fields.map((f) => [f.id, f]));
         // Las columnas que la operación ESCRIBE y las que LEE (operandos, origen de una copia).
         for (const op of operations) {
             const field = byId.get(op.field_id);
             if (!field) throw badOp('Una de las columnas ya no existe en esta lista.');
             if (hiddenIds.has(field.id)) throw badOp(`No puedes editar «${field.label}».`);
+            if (readonlyIds.has(field.id)) throw badOp(`Puedes ver «${field.label}», pero tu acceso a esta lista no te deja cambiarlo.`);
             if (field.type === 'computed' || isThroughField(field.type)) {
                 throw badOp(`«${field.label}» se calcula sola: no se edita.`);
             }

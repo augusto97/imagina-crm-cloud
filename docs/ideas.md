@@ -96,7 +96,6 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 ### A. Datos y campos
 | Idea | Valor · esfuerzo | Nota |
 |---|---|---|
-| A7 · Campos condicionales en la ficha y en el alta («NIT» sólo si «Tipo = Empresa») | medio · M | Los formularios públicos ya tienen condiciones. |
 | A10 · Campo Firma (dibujar la firma en la ficha, un formulario o el portal) | medio · S-M | Ver D6. **En parte hecho en v0.1.355**: un formulario público pide una firma con el dedo o el mouse (se guarda como imagen en un campo de archivos). Queda firmar desde la ficha y el portal. |
 | A11 · Ubicación / dirección con autocompletado, latitud y longitud | medio · M | Base de B3 (mapa). OpenStreetMap o la clave de Google de cada empresa. |
 | A12 · Código de barras / QR como campo | medio · S | Con H3 se escanea con la cámara. **En parte hecho en v0.1.344**: cada registro tiene su QR (enlace o el valor del campo «Código»), con etiquetas en PDF y variables para correos y documentos. Lo que queda es un tipo de campo que dibuje el código de barras (EAN/Code 128) dentro de la tabla. |
@@ -115,7 +114,6 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 ### C. Trabajo en equipo
 | Idea | Valor · esfuerzo | Nota |
 |---|---|---|
-| C4 · Campos de sólo lectura por rol («lo ve pero no lo cambia») | medio · S-M | Revisar si la entrega de roles propios (v0.1.311) ya lo cubre. |
 | C7 · Documentos / wiki del workspace, publicables | medio-alto · L | Reusa el editor de la descripción. |
 | C8 · Revisión sobre archivos (comentar un punto de una imagen o un PDF; aprobar desde el portal) | medio (agencias) · M | |
 | C9 · Sprints (puntos, burndown) | bajo-medio · M | Nicho de software. |

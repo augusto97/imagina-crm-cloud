@@ -37,6 +37,8 @@ import { EditableCell } from '@/admin/records/EditableCell';
 import { StoreColumnBadge } from '@/admin/records/StoreColumnBadge';
 import { storeAccessFor, useStoreRules, type StoreRules } from '@/admin/records/storeRules';
 import { managedReason, useManagedFields } from '@/admin/records/managedFields';
+import { readonlyReason, useReadonlyFieldIds } from '@/admin/records/fieldAccess';
+import { makeConditionReasons } from '@/lib/fieldVisibility';
 import { FieldHeaderMenu } from '@/admin/records/FieldHeaderMenu';
 import { extractFieldOptions } from '@/admin/records/fieldOptions';
 import { orderByCatalog, parseMultiBucket } from '@/lib/multiBucket';
@@ -1031,6 +1033,9 @@ function GroupBucketSection({
     const canEditRow = (id: number): boolean => canEditRecords && (guestEditable === null || guestEditable.has(id));
     const canManageFields = useCan(CAP.MANAGE_FIELDS);
     const titleField = useMemo(() => titleFieldOf(allFields), [allFields]);
+    // v0.1.457 — sólo lectura por rol (C4) y campos que no aplican a una fila (A7).
+    const readonlyIds = useReadonlyFieldIds();
+    const conditionReason = useMemo(() => makeConditionReasons(allFields ?? []), [allFields]);
     const grid = useGridController({
         containerRef: bodyScrollRef,
         rows: gridRows,
@@ -1049,8 +1054,11 @@ function GroupBucketSection({
             return typeof v === 'string' && v.trim() !== '' ? v : `#${r.id}`;
         },
         locked:
-            storeRules || managedLocks
-                ? (field, record) => (field ? managedReason(managedLocks, field.id) : null) ?? (field ? lockedReasonOf(storeRules, field, record) : null)
+            storeRules || managedLocks || readonlyIds
+                ? (field, record) =>
+                      (field ? managedReason(managedLocks, field.id) : null)
+                      ?? (field ? readonlyReason(readonlyIds, field.id) : null)
+                      ?? (field ? lockedReasonOf(storeRules, field, record) : null)
                 : undefined,
         relationTitles,
         onOpenRow: onRowClick,
@@ -1417,10 +1425,10 @@ function GroupBucketSection({
                                                                 expanded={expandedIds.includes(record.id)}
                                                                 onToggle={() => toggleSubtasks(record.id)}
                                                             >
-                                                                {renderColumnCell(c, record, listId, storeRules, canEditRow(record.id))}
+                                                                {renderColumnCell(c, record, listId, storeRules, canEditRow(record.id), conditionReason)}
                                                             </RecordNameCell>
                                                         ) : (
-                                                            renderColumnCell(c, record, listId, storeRules, canEditRow(record.id))
+                                                            renderColumnCell(c, record, listId, storeRules, canEditRow(record.id), conditionReason)
                                                         )}
                                                         <CellMarkOverlay mark={mark} />
                                                         {hasHandle && (
@@ -1749,6 +1757,7 @@ function renderColumnCell(
     listId: number,
     storeRules: StoreRules | null,
     canEdit: boolean,
+    conditionReason: ((values: Record<string, unknown>, fieldId: number) => string | null) | null = null,
 ): JSX.Element | null {
     if (column.id === 'id') {
         return (
@@ -1768,7 +1777,9 @@ function renderColumnCell(
     if (column.field === null) {
         return null;
     }
-    return (
+    // A7 — el campo no aplica a esta fila («Mostrar sólo si…»): atenuado con el motivo.
+    const dim = conditionReason?.(record.fields, column.field.id) ?? null;
+    const cell = (
         <EditableCell
             listId={listId}
             recordId={record.id}
@@ -1777,7 +1788,15 @@ function renderColumnCell(
             canEdit={canEdit}
             lockedReason={lockedReasonOf(storeRules, column.field, record)}
             record={record}
+            dimReason={dim}
         />
+    );
+    return dim ? (
+        <div className="imcrm-opacity-40" title={dim} data-condition-hidden="true">
+            {cell}
+        </div>
+    ) : (
+        cell
     );
 }
 

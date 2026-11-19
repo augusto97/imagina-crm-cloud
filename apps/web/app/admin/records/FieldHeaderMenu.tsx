@@ -21,6 +21,7 @@ import {
 
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { formulaDeleteWarning } from '@/lib/formulaDependents';
+import { showIfDeleteWarning } from '@/lib/fieldVisibility';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -186,6 +187,7 @@ export function FieldHeaderMenu({
             description: [
                 __('La columna va a la papelera con sus valores: puedes recuperarla tal cual durante 30 días.'),
                 formulaDeleteWarning(field, fields ?? []),
+                showIfDeleteWarning(field, fields ?? []),
             ]
                 .filter(Boolean)
                 .join(' '),
