@@ -175,9 +175,8 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 | I9 · Página de estado pública (la franja de avisos ya existe desde v0.1.319) | bajo-medio · S | |
 
 ### J. Reportes
-| Idea | Valor · esfuerzo | Nota |
-|---|---|---|
-| J1 · Informes armados (texto, tablas y gráficos de varias listas, exportables y programables) | medio · M | |
+Las tres salieron: comparar períodos y el pronóstico de ventas (J2, J3) en
+v0.1.462, y los informes con bloques de varias listas (J1) en v0.1.464.
 
 ---
 

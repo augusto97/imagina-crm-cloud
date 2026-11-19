@@ -189,6 +189,8 @@ export function helpScreensFor(pathname: string, search = ''): string[] {
     // v0.1.347 — el editor de la barra de abajo del celular.
     if (path === '/menu/barra') out.push('menu', 'menu:barra');
     if (/^\/dashboards(\/.*)?$/.test(path)) out.push('dashboards');
+    // v0.1.464 (J1) — los informes viven en Tableros.
+    if (/^\/reports(\/.*)?$/.test(path)) out.push('dashboards');
     if (/^\/agents(\/.*)?$/.test(path)) out.push('agents');
     if (path === '/agency') out.push('agency');
     if (/^\/settings(\/.*)?$/.test(path)) {

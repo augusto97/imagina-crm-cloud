@@ -9,6 +9,7 @@ import {
     CreditCard,
     Database,
     FileSpreadsheet,
+    FileText,
     Globe,
     Inbox,
     Mail,
@@ -48,6 +49,8 @@ const SOURCE_ICON: Record<IncidentSource, LucideIcon> = {
     recurrence: Repeat,
     collections: CreditCard,
     dashboard: ChartColumn,
+    // v0.1.464 (J1) — el envío programado de un informe.
+    report: FileText,
     booking: CalendarClock,
     // D2 — el buzón de soporte de una lista.
     helpdesk: Inbox,

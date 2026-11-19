@@ -15,6 +15,7 @@ export const meta: LearnModuleMeta = {
         'Compara cada gráfico con el período anterior o el año pasado y mira la variación',
         'Filtra por período o por persona y haz clic en un gráfico para ver los registros que lo forman',
         'Compártelo con un enlace público o recíbelo por correo cada semana con su PDF',
+        'Arma informes con datos de varias listas y descárgalos en PDF o Excel',
     ],
     articles: [
         {
@@ -85,6 +86,15 @@ export const meta: LearnModuleMeta = {
             minutes: 8,
             level: 'intermediate',
             keywords: 'compartir visibilidad privado roles enlace publico insertar iframe sitio web vencimiento correo programado resumen semanal pdf plantilla duplicar',
+            needs: 'manage_dashboards',
+        },
+        {
+            id: 'tableros-informes',
+            title: 'Informes con datos de varias listas',
+            summary: 'Un documento con títulos, textos e indicadores, gráficos o tablas de VARIAS listas, para leer, descargar en PDF o Excel y recibir por correo.',
+            minutes: 7,
+            level: 'intermediate',
+            keywords: 'informe reporte documento varias listas pdf excel exportar descargar correo programado mensual bloques columnas salto de pagina portada',
             needs: 'manage_dashboards',
         },
     ],

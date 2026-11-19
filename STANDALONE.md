@@ -10676,3 +10676,53 @@ una consulta más (la ventana anterior) dentro del mismo bundle. Los
 porcentajes se escriben con el formato numérico de la empresa y espacio duro
 («+12 %»). El período del widget se oculta en la cabecera cuando la
 comparación ya lo nombra («Este mes vs. mes anterior»).
+
+### ADR-S114 — Informes: documentos armados con bloques de varias listas
+
+**Contexto.** Los tableros muestran una grilla viva de widgets de cualquier
+lista, pero no sirven para mandar «el resumen del mes»: no tienen orden de
+lectura, ni texto entre los números, ni se descargan como un documento, y el
+envío programado (ADR-S50) manda la grilla tal cual. El pedido (J1) era un
+informe que junte varias listas, se descargue en PDF o Excel y se programe.
+
+**Decisión.**
+1. **Objeto propio**, no un modo del tablero: tabla `reports` (RLS por
+   empresa, misma visibilidad `workspace | private | roles` que los
+   tableros) con `blocks` (jsonb) y `settings` (período, comparación, icono,
+   color). Bloques: `heading`, `text` (formato sencillo), `widget` (dato),
+   `columns` (2-3 datos), `divider`, `page_break`. Topes: 40 bloques, 60 de
+   datos, 20.000 caracteres por texto. Validación estricta al guardar y
+   lectura tolerante al leer (lo roto se descarta y se cuenta).
+2. **Un bloque de datos ES un widget de tablero** (`WidgetSpec` con su
+   `list_id` y su `config`, tipos `kpi | gauge | stat_delta | chart_* |
+   funnel | table | pivot | forecast`): se calcula con
+   `DashboardsService.evaluateWidgets` y se dibuja con los mismos
+   componentes y con `buildWidgetReport`. No hay un segundo motor de datos.
+   Listas y campos por ID (regla de oro nº 1); una lista de otra empresa se
+   rechaza al guardar.
+3. **Un pedido por informe** (`bundle`): todos los bloques en una pasada con
+   el ACL de quien mira, la zona horaria de la empresa y cada bloque aislado
+   (`{__error}`). El período y la comparación del informe (ADR-S113) pisan
+   los de cada bloque; quien mira puede cambiarlos sin guardar.
+4. **Lista sin acceso = bloque que lo dice.** Antes de calcular se mira el
+   acceso efectivo de quien pregunta a cada lista (rol, rol propio, persona,
+   equipos); una lista con `view: none` no se calcula y su bloque devuelve
+   «No tienes acceso a esta lista.»; sus campos y nombres tampoco viajan al
+   PDF ni al Excel. Un admin ve todo.
+5. **Descargas desde el mismo modelo**: PDF con pdfmake en el hilo de PDF
+   (tipo de tarea `report`), Excel con un escritor propio en shared
+   (`buildXlsxWorkbook`: portada + una hoja por bloque, nombres de hoja
+   únicos, números como números, texto peligroso como texto).
+6. **El envío programado es el de los tableros**:
+   `dashboard_subscriptions` suma `report_id` y un CHECK exige exactamente
+   uno de `dashboard_id` / `report_id`. Mismo scheduler, cola, cuota,
+   destinatarios, Problemas y prueba; el correo cambia sus textos («el
+   informe») y adjunta el PDF del informe. La fuente «informe» se registra al
+   arrancar el módulo para no crear una dependencia circular con tableros.
+
+**Consecuencias.** Migración 0142. Los informes no van a la papelera (borrar
+es definitivo y en cascada con sus envíos) y no tienen módulo del plan propio
+(siguen a `view_dashboards` / `manage_dashboards`). Migrar una empresa los
+lleva con bloques re-mapeados y envíos pausados. Quedan fuera por ahora:
+plantillas de informes y herramientas del asistente/MCP para leerlos o
+proponerlos.

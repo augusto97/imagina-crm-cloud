@@ -17,6 +17,7 @@ import { AutomationsModule } from './automations/automations.module';
 import { AuthModule } from './auth/auth.module';
 import { DashboardsModule } from './dashboards/dashboards.module';
 import { DashboardSharingModule } from './dashboard-sharing/dashboard-sharing.module';
+import { ReportsModule } from './reports/reports.module';
 import { LegalModule } from './legal/legal.module';
 import { HelpModule } from './help/help.module';
 import { BrandModule } from './brand/brand.module';
@@ -175,6 +176,8 @@ import { WhatsNewModule } from './whats-new/whats-new.module';
         DashboardsModule,
         // v0.1.292 (ADR-S50) — enlace público y envío programado de tableros.
         DashboardSharingModule,
+        // v0.1.464 (J1) — informes con bloques de varias listas.
+        ReportsModule,
         DomainsModule,
         NetworkModule,
         LegalModule,

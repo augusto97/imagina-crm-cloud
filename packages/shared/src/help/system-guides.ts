@@ -995,6 +995,26 @@ export const SYSTEM_GUIDES: readonly HelpGuide[] = /* @__PURE__ */ (() => [
         requires: ['manage_dashboards'],
         if_restricted: 'note',
     },
+    {
+        id: 'reports',
+        title: '¿Cómo armo un informe con datos de varias listas?',
+        category: 'dashboards',
+        minutes: 3,
+        body: [
+            '1. Ve a **Tableros → Informes** y toca **Nuevo informe**; ponle un nombre y toca **Crear y armar**.',
+            '2. En el editor agrega bloques desde **Agregar**: **Datos de una lista** (un indicador, un gráfico o una tabla de CUALQUIERA de tus listas, con sus filtros y su período), **Título**, **Texto**, **Separador** y **Salto de página**.',
+            '3. Ordénalos arrastrando o con las flechas. Para poner dos o tres bloques de datos lado a lado, toca **Poner al lado del siguiente** (en el celular se apilan solos).',
+            '4. Sin ningún bloque elegido, en **Período y comparación** eliges uno para todo el informe (por ejemplo, «Este mes» comparado con el período anterior) o dejas que cada bloque use el suyo.',
+            '5. Guarda. Desde el informe puedes **Descargar** en PDF (con portada y saltos de página) o en Excel (una hoja por bloque) y, en **Envío por correo**, programarlo para que llegue solo, con **Enviarme una prueba** para ver cómo llega.',
+        ].join('\n'),
+        tip: 'Cada persona ve el informe con su acceso: un campo que tiene oculto no se suma y un bloque de una lista que no puede ver lo dice, sin mostrar los datos.',
+        screens: ['dashboards'],
+        keywords: 'informe reporte documento varias listas pdf excel exportar descargar correo programado mensual semanal bloques columnas salto de pagina',
+        route: '/dashboards?tab=informes',
+        related: ['dashboards', 'dashboard-compare'],
+        requires: ['manage_dashboards'],
+        if_restricted: 'note',
+    },
 
     // ── Formularios, portal y citas ───────────────────────────────────────
     {

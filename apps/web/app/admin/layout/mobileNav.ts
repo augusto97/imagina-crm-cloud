@@ -64,7 +64,7 @@ export const MOBILE_SECTIONS: readonly MobileSectionDef[] = [
     { section: 'lists', label: 'Listas', hint: 'Tus listas y carpetas', icon: ListIcon, dataTour: 'tabbar-lists', to: '/lists', prefixes: ['/lists', '/folders'], group: 'go' },
     { section: 'mywork', label: 'Mi trabajo', hint: 'Lo que tienes asignado, por fecha', icon: ListChecks, dataTour: 'tabbar-mywork', to: '/my-work', prefixes: ['/my-work', '/approvals'], group: 'go' },
     { section: 'inbox', label: 'Avisos', hint: 'Menciones, asignaciones y aprobaciones', icon: Bell, dataTour: 'tabbar-inbox', to: '/avisos', prefixes: ['/avisos'], group: 'go' },
-    { section: 'dashboards', label: 'Tableros', hint: 'Cifras y gráficos de tus listas', icon: BarChart3, dataTour: 'tabbar-dashboards', to: '/dashboards', prefixes: ['/dashboards'], group: 'go' },
+    { section: 'dashboards', label: 'Tableros', hint: 'Cifras y gráficos de tus listas', icon: BarChart3, dataTour: 'tabbar-dashboards', to: '/dashboards', prefixes: ['/dashboards', '/reports'], group: 'go' },
     { section: 'favorites', label: 'Favoritos', hint: 'Lo que anclaste para tenerlo a mano', icon: Pin, dataTour: 'tabbar-favorites', to: '/favorites', prefixes: ['/favorites'], group: 'go' },
     { section: 'agents', label: 'Agentes', hint: 'Compañeros de IA que trabajan solos', icon: Bot, dataTour: 'tabbar-agents', to: '/agents', prefixes: ['/agents'], group: 'go' },
     { section: 'learn', label: 'Aprende', hint: 'El manual de cada parte de la app', icon: GraduationCap, dataTour: 'tabbar-learn', to: '/aprende', prefixes: ['/aprende'], group: 'go' },

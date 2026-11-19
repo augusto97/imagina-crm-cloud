@@ -24,6 +24,7 @@ import {
     useSaveDashboardSubscription,
     useSendDashboardSubscription,
     useTestDashboardSubscription,
+    type SharingBase,
 } from '@/hooks/useDashboardSharing';
 import { useMemberNames } from '@/hooks/useWpUsers';
 import { ApiError } from '@/lib/api';
@@ -47,7 +48,7 @@ export function parseEmails(text: string): string[] {
     return [...new Set(text.split(/[\s,;]+/).map((e) => e.trim().toLowerCase()).filter(Boolean))];
 }
 
-function emptyInput(): DashboardSubscriptionInput {
+function emptyInput(kind: SharingKind): DashboardSubscriptionInput {
     const me = getBootData().user.id;
     return {
         enabled: true,
@@ -61,9 +62,15 @@ function emptyInput(): DashboardSubscriptionInput {
         recipient_emails: [],
         subject: '',
         message: '',
-        attach_pdf: false,
+        // Un informe se manda con su PDF (es lo que se lee); un tablero, opcional.
+        attach_pdf: kind === 'report',
     };
 }
+
+/** v0.1.464 (J1) — Lo que se manda por correo: un tablero o un informe. */
+export type SharingKind = 'dashboard' | 'report';
+
+const baseOf = (kind: SharingKind): SharingBase => (kind === 'report' ? 'reports' : 'dashboards');
 
 function errorText(err: unknown): string {
     return err instanceof ApiError || err instanceof Error ? err.message : __('No se pudo guardar.');
@@ -74,8 +81,17 @@ function errorText(err: unknown): string {
  * (KPIs y los valores principales de cada gráfico, PDF opcional) a una hora
  * fija, en la zona de la empresa.
  */
-export function EmailSubscriptionsPanel({ dashboardId, dashboardName }: { dashboardId: number; dashboardName: string }): JSX.Element {
-    const list = useDashboardSubscriptions(dashboardId, true);
+export function EmailSubscriptionsPanel({
+    dashboardId,
+    dashboardName,
+    kind = 'dashboard',
+}: {
+    dashboardId: number;
+    dashboardName: string;
+    kind?: SharingKind;
+}): JSX.Element {
+    const list = useDashboardSubscriptions(dashboardId, true, baseOf(kind));
+    const report = kind === 'report';
     const [editing, setEditing] = useState<{ id: number | null; input: DashboardSubscriptionInput } | null>(null);
 
     if (editing) {
@@ -83,6 +99,7 @@ export function EmailSubscriptionsPanel({ dashboardId, dashboardName }: { dashbo
             <SubscriptionForm
                 dashboardId={dashboardId}
                 dashboardName={dashboardName}
+                kind={kind}
                 id={editing.id}
                 initial={editing.input}
                 onDone={() => setEditing(null)}
@@ -93,7 +110,9 @@ export function EmailSubscriptionsPanel({ dashboardId, dashboardName }: { dashbo
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="imcrm-subscriptions">
             <p className="imcrm-text-sm imcrm-text-muted-foreground">
-                {__('Un resumen del tablero por correo, cada día, semana o mes: los indicadores y los valores principales de cada gráfico, con un botón para abrirlo. Los datos son los que ve quien programa el envío.')}
+                {report
+                    ? __('El informe por correo, cada día, semana o mes: los indicadores y los valores principales de cada bloque, con el PDF adjunto y un botón para abrirlo. Los datos son los que ve quien programa el envío.')
+                    : __('Un resumen del tablero por correo, cada día, semana o mes: los indicadores y los valores principales de cada gráfico, con un botón para abrirlo. Los datos son los que ve quien programa el envío.')}
             </p>
             {list.isLoading ? (
                 <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-py-4 imcrm-text-sm imcrm-text-muted-foreground">
@@ -103,17 +122,17 @@ export function EmailSubscriptionsPanel({ dashboardId, dashboardName }: { dashbo
             ) : (list.data ?? []).length === 0 ? (
                 <div className="imcrm-flex imcrm-items-center imcrm-gap-3 imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-p-4 imcrm-text-sm imcrm-text-muted-foreground">
                     <Mail className="imcrm-h-5 imcrm-w-5 imcrm-shrink-0" />
-                    {__('Todavía no hay envíos programados de este tablero.')}
+                    {report ? __('Todavía no hay envíos programados de este informe.') : __('Todavía no hay envíos programados de este tablero.')}
                 </div>
             ) : (
                 <ul className="imcrm-flex imcrm-flex-col imcrm-gap-2">
                     {(list.data ?? []).map((s) => (
-                        <SubscriptionRow key={s.id} dashboardId={dashboardId} sub={s} onEdit={() => setEditing({ id: s.id, input: inputOf(s) })} />
+                        <SubscriptionRow key={s.id} dashboardId={dashboardId} kind={kind} sub={s} onEdit={() => setEditing({ id: s.id, input: inputOf(s) })} />
                     ))}
                 </ul>
             )}
             <div>
-                <Button type="button" size="sm" className="imcrm-gap-1.5" onClick={() => setEditing({ id: null, input: emptyInput() })} data-testid="imcrm-subscription-new">
+                <Button type="button" size="sm" className="imcrm-gap-1.5" onClick={() => setEditing({ id: null, input: emptyInput(kind) })} data-testid="imcrm-subscription-new">
                     <Plus className="imcrm-h-4 imcrm-w-4" />
                     {__('Programar un envío')}
                 </Button>
@@ -139,12 +158,12 @@ function inputOf(s: DashboardSubscription): DashboardSubscriptionInput {
     };
 }
 
-function SubscriptionRow({ dashboardId, sub, onEdit }: { dashboardId: number; sub: DashboardSubscription; onEdit: () => void }): JSX.Element {
+function SubscriptionRow({ dashboardId, kind, sub, onEdit }: { dashboardId: number; kind: SharingKind; sub: DashboardSubscription; onEdit: () => void }): JSX.Element {
     const toast = useToast();
     const confirm = useConfirm();
-    const save = useSaveDashboardSubscription(dashboardId);
-    const send = useSendDashboardSubscription(dashboardId);
-    const remove = useDeleteDashboardSubscription(dashboardId);
+    const save = useSaveDashboardSubscription(dashboardId, baseOf(kind));
+    const send = useSendDashboardSubscription(dashboardId, baseOf(kind));
+    const remove = useDeleteDashboardSubscription(dashboardId, baseOf(kind));
     const recipients = sub.recipient_user_ids.length + sub.recipient_emails.length;
     return (
         <li className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-3 sm:imcrm-flex-row sm:imcrm-items-center sm:imcrm-justify-between" data-testid="imcrm-subscription-row">
@@ -231,19 +250,22 @@ function SubscriptionRow({ dashboardId, sub, onEdit }: { dashboardId: number; su
 function SubscriptionForm({
     dashboardId,
     dashboardName,
+    kind,
     id,
     initial,
     onDone,
 }: {
     dashboardId: number;
     dashboardName: string;
+    kind: SharingKind;
     id: number | null;
     initial: DashboardSubscriptionInput;
     onDone: () => void;
 }): JSX.Element {
     const toast = useToast();
-    const save = useSaveDashboardSubscription(dashboardId);
-    const test = useTestDashboardSubscription(dashboardId);
+    const save = useSaveDashboardSubscription(dashboardId, baseOf(kind));
+    const test = useTestDashboardSubscription(dashboardId, baseOf(kind));
+    const report = kind === 'report';
     const [v, setV] = useState<DashboardSubscriptionInput>(initial);
     const [emails, setEmails] = useState(initial.recipient_emails.join(', '));
     const [error, setError] = useState<string | null>(null);
@@ -374,7 +396,7 @@ function SubscriptionForm({
                         />
                     </div>
                 </div>
-                <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Tienen que poder ver el tablero.')}</p>
+                <p className="imcrm-text-xs imcrm-text-muted-foreground">{report ? __('Tienen que poder ver el informe.') : __('Tienen que poder ver el tablero.')}</p>
             </div>
 
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
@@ -399,8 +421,8 @@ function SubscriptionForm({
                 <label className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-text-sm sm:imcrm-pt-6">
                     <input type="checkbox" className="imcrm-mt-0.5" checked={v.attach_pdf} onChange={(e) => set({ attach_pdf: e.target.checked })} data-testid="imcrm-subscription-pdf" />
                     <span>
-                        {__('Adjuntar el tablero en PDF')}
-                        <span className="imcrm-block imcrm-text-xs imcrm-text-muted-foreground">{__('Los gráficos dibujados, para imprimir o archivar.')}</span>
+                        {report ? __('Adjuntar el informe en PDF') : __('Adjuntar el tablero en PDF')}
+                        <span className="imcrm-block imcrm-text-xs imcrm-text-muted-foreground">{report ? __('El informe completo, con portada y páginas, para imprimir o archivar.') : __('Los gráficos dibujados, para imprimir o archivar.')}</span>
                     </span>
                 </label>
             </div>

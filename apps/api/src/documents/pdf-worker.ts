@@ -2,6 +2,7 @@ import { parentPort } from 'node:worker_threads';
 
 import { renderDashboardPdfLocal } from '../dashboard-sharing/dashboard-pdf';
 import { renderGanttPdfLocal } from '../gantt/gantt-pdf';
+import { renderReportPdfLocal } from '../reports/report-pdf';
 import { renderDocumentLocal, renderPdfDefinition, replayDocInput, useDirectPdfRender } from './document-render';
 import { PdfTaskFallback, type PdfTask, type PdfWorkerReply } from './pdf-pool';
 
@@ -31,6 +32,8 @@ async function run(task: PdfTask): Promise<Omit<PdfWorkerReply, 'id'>> {
             return { ok: true, bytes: own(await renderGanttPdfLocal(task.input)) };
         case 'dashboard':
             return { ok: true, bytes: own(await renderDashboardPdfLocal(task.input)) };
+        case 'report':
+            return { ok: true, bytes: own(await renderReportPdfLocal(task.input)) };
         default:
             return { ok: false, error: 'Tarea de PDF desconocida.' };
     }

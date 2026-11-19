@@ -237,6 +237,9 @@ export function useDeleteDashboard() {
  * `listId` (evento genérico) o sin tableros en cache, recalcula todos.
  */
 export function invalidateDashboardsForList(qc: QueryClient, listId: number | undefined): void {
+    // v0.1.464 (J1) — los informes abiertos (sus bloques pueden mirar
+    // cualquier lista) se recalculan también; sólo refetchean los que se ven.
+    void qc.invalidateQueries({ queryKey: ['reports', 'bundle'] });
     if (listId === undefined) {
         void qc.invalidateQueries({ queryKey: [...dashboardsKeys.all, 'widgets-data'] });
         return;

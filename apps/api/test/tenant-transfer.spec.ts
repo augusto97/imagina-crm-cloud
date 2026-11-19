@@ -40,6 +40,7 @@ import {
     recordTemplates,
     recurrences,
     relations,
+    reports,
     savedViews,
     teamMembers,
     teams,
@@ -633,6 +634,43 @@ describe('Migración de empresa (v0.1.197)', () => {
             recipientEmails: ['socio@externo.test'],
             attachPdf: true,
         });
+        // v0.1.464 (J1) — un informe con bloques de varias listas y su envío.
+        const [informe] = await pg.db
+            .insert(reports)
+            .values({
+                tenantId: tenantA,
+                name: 'Informe mensual',
+                createdBy: anaId,
+                blocks: [
+                    { id: 'h', type: 'heading', text: 'Resumen' },
+                    { id: 'k', type: 'widget', widget: { type: 'kpi', list_id: facturasId, title: 'Facturas', config: { metric: 'sum', metric_field_id: estadoFieldId } } },
+                    {
+                        id: 'row',
+                        type: 'columns',
+                        children: [
+                            { id: 'a', type: 'widget', widget: { type: 'kpi', list_id: clientesId, title: 'Clientes', config: { metric: 'count' } } },
+                            {
+                                id: 'b',
+                                type: 'widget',
+                                widget: { type: 'chart_bar', list_id: facturasId, title: 'Por estado', config: { metric: 'count', group_by_field_id: estadoFieldId } },
+                            },
+                        ],
+                    },
+                ],
+                settings: { period: 'this_month', compare: 'previous' },
+            })
+            .returning();
+        await pg.db.insert(dashboardSubscriptions).values({
+            tenantId: tenantA,
+            reportId: informe!.id,
+            ownerId: anaId,
+            enabled: true,
+            frequency: 'monthly',
+            monthDay: 1,
+            recipientUserIds: [anaId],
+            recipientEmails: [],
+            attachPdf: true,
+        });
         await pg.db.insert(recurrences).values({
             tenantId: tenantA,
             listId: clientesId,
@@ -1064,11 +1102,25 @@ describe('Migración de empresa (v0.1.197)', () => {
         expect(newPublicDash[0]!.token).not.toBe('tablero-publico-del-origen');
         expect(newPublicDash[0]).toMatchObject({ dashboardId: newDashboards[0]!.id, publishedBy: anaId, allowedDomains: ['ejemplo.com'], allowPeriod: true });
         // El envío programado llega PAUSADO, con las personas re-apuntadas.
-        const newSubs = await pg.db.select().from(dashboardSubscriptions).where(eq(dashboardSubscriptions.tenantId, tenantB));
+        const allSubs = await pg.db.select().from(dashboardSubscriptions).where(eq(dashboardSubscriptions.tenantId, tenantB));
+        expect(allSubs).toHaveLength(2);
+        const newSubs = allSubs.filter((x) => x.dashboardId !== null);
         expect(newSubs).toHaveLength(1);
         expect(newSubs[0]).toMatchObject({ dashboardId: newDashboards[0]!.id, ownerId: anaId, enabled: false, weekdays: [1, 4], attachPdf: true });
         expect(newSubs[0]!.recipientUserIds).toEqual([anaId, newMentions[0]!.mentionedUserId]);
         expect(newSubs[0]!.recipientEmails).toEqual(['socio@externo.test']);
+        // v0.1.464 (J1) — el informe: cada bloque apunta a la lista y al campo
+        // NUEVOS, y su envío llega pausado.
+        const newReports = await pg.db.select().from(reports).where(eq(reports.tenantId, tenantB));
+        expect(newReports).toHaveLength(1);
+        type W = { widget: { list_id: number; config: Record<string, unknown> } };
+        const rb = newReports[0]!.blocks as Array<W & { children: W[] }>;
+        expect(rb[1]!.widget).toMatchObject({ list_id: newFacturas.id, config: { metric_field_id: newEstado.id } });
+        expect(rb[2]!.children[0]!.widget.list_id).toBe(newClientes.id);
+        expect(rb[2]!.children[1]!.widget).toMatchObject({ list_id: newFacturas.id, config: { group_by_field_id: newEstado.id } });
+        expect(newReports[0]).toMatchObject({ name: 'Informe mensual', createdBy: anaId, settings: { period: 'this_month', compare: 'previous' } });
+        const reportSub = allSubs.find((x) => x.reportId !== null)!;
+        expect(reportSub).toMatchObject({ reportId: newReports[0]!.id, dashboardId: null, ownerId: anaId, enabled: false, frequency: 'monthly' });
 
         const newRec = await pg.db.select().from(recurrences).where(eq(recurrences.tenantId, tenantB));
         expect(newRec[0]!.recordId).toBe(newCliente.id);

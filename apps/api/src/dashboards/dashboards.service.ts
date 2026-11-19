@@ -319,7 +319,22 @@ export class DashboardsService {
         viewer: DashboardViewer,
         body: DashboardBundleRequest = {},
     ): Promise<Record<string, unknown>> {
-        return this.evaluate(tenantId, viewer, dash.widgets, bundleOptions(body));
+        return this.evaluateWidgets(tenantId, viewer, dash.widgets, body);
+    }
+
+    /**
+     * v0.1.464 (J1) — Widgets sueltos con el motor de los tableros: los
+     * bloques de datos de un INFORME (cada uno con su lista). Mismo ACL, misma
+     * zona, mismo período/comparación global (`body`), mismos topes de
+     * tiempo y de widgets, y cada widget aislado (`{ __error }` con el motivo).
+     */
+    evaluateWidgets(
+        tenantId: number,
+        viewer: DashboardViewer,
+        widgets: WidgetSpec[],
+        body: DashboardBundleRequest = {},
+    ): Promise<Record<string, unknown>> {
+        return this.evaluate(tenantId, viewer, widgets, bundleOptions(body));
     }
 
     /**

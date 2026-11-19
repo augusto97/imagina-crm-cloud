@@ -42,6 +42,7 @@ import type { ListGroup, ListSummary } from '@/types/list';
 import type { FilterTree } from '@/types/record';
 
 import { FiltersPanel } from '@/admin/records/FiltersPanel';
+import { useReportWidgetPreview, type ReportScope } from '@/admin/reports/useReports';
 import {
     isFlatAndTree,
     treeFromActiveFilters,
@@ -55,6 +56,13 @@ interface WidgetFormDialogProps {
     /** v0.1.286 — para la vista previa EN VIVO del widget que se configura. */
     dashboardId?: number;
     scope?: DashboardBundleScope;
+    /**
+     * v0.1.464 (J1) — El diálogo dentro del editor de un informe: sólo tipos
+     * de DATOS (sin título, texto ni imagen: el informe tiene sus propios
+     * bloques), sin la capa de estilo de la tarjeta, y la vista previa
+     * calculada por la del informe con su período y su comparación.
+     */
+    report?: ReportScope;
 }
 
 /**
@@ -105,6 +113,7 @@ export function WidgetFormDialog({
     onSave,
     dashboardId,
     scope,
+    report,
 }: WidgetFormDialogProps): JSX.Element {
     const lists = useLists();
     const groups = useListGroups();
@@ -602,11 +611,15 @@ export function WidgetFormDialog({
                                     <option value="table">{__('Tabla · Top N')}</option>
                                     <option value="pivot">{__('Tabla dinámica · Filas × columnas')}</option>
                                     <option value="forecast">{__('Pronóstico de ventas · Embudo ponderado')}</option>
-                                    <option value="heading">{__('Contenido · Título de sección')}</option>
-                                    <option value="text">{__('Contenido · Texto')}</option>
-                                    <option value="image">{__('Contenido · Imagen')}</option>
-                                    <option value="divider">{__('Contenido · Separador')}</option>
-                                    <option value="spacer">{__('Contenido · Espaciador')}</option>
+                                    {!report && (
+                                        <>
+                                            <option value="heading">{__('Contenido · Título de sección')}</option>
+                                            <option value="text">{__('Contenido · Texto')}</option>
+                                            <option value="image">{__('Contenido · Imagen')}</option>
+                                            <option value="divider">{__('Contenido · Separador')}</option>
+                                            <option value="spacer">{__('Contenido · Espaciador')}</option>
+                                        </>
+                                    )}
                                 </Select>
                             </div>
                             {! isContentWidget(type) && (
@@ -1039,9 +1052,10 @@ export function WidgetFormDialog({
                         {/* v0.1.286 — la vista previa aparece apenas hay lista: lo
                             que falte (agrupar, fecha, campo a calcular) se dice
                             DENTRO del recuadro en vez de dejarlo vacío. */}
-                        {open && dashboardId !== undefined && dashboardId > 0 && ! isContentWidget(type) && listId > 0 && (
+                        {open && (report !== undefined || (dashboardId !== undefined && dashboardId > 0)) && ! isContentWidget(type) && listId > 0 && (
                             <WidgetPreview
-                                dashboardId={dashboardId}
+                                dashboardId={dashboardId ?? 0}
+                                report={report}
                                 widget={buildWidget()}
                                 scope={scope ?? { period: '', filters: [] }}
                                 blockedHint={canSubmit ? null : __('Completa los datos del widget para ver la vista previa.')}
@@ -1051,9 +1065,11 @@ export function WidgetFormDialog({
                         {/* v0.1.98 — capa de estilo del card (misma del editor
                             de plantillas: fondo/texto/borde/tipografía + presets
                             de marca). Aplica a TODOS los tipos de widget. */}
-                        <div className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-3">
-                            <BlockStyleEditor value={style} onChange={setStyle} />
-                        </div>
+                        {!report && (
+                            <div className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-3">
+                                <BlockStyleEditor value={style} onChange={setStyle} />
+                            </div>
+                        )}
 
                         <div className="imcrm-flex imcrm-justify-end imcrm-gap-3 imcrm-border-t imcrm-border-border imcrm-pt-5">
                             <Dialog.Close asChild>
@@ -2396,11 +2412,14 @@ function WidgetPreview({
     dashboardId,
     widget,
     scope,
+    report,
     blockedHint = null,
 }: {
     dashboardId: number;
     widget: WidgetSpec;
     scope: DashboardBundleScope;
+    /** v0.1.464 (J1) — en un informe: la vista previa del informe. */
+    report?: ReportScope;
     /** Motivo por el que todavía no se puede calcular (formulario incompleto). */
     blockedHint?: string | null;
 }): JSX.Element {
@@ -2411,7 +2430,10 @@ function WidgetPreview({
         return () => window.clearTimeout(t);
     }, [sig]);
     const hint = widgetPreviewHint(debounced) ?? blockedHint;
-    const preview = useWidgetPreview(dashboardId, hint === null ? debounced : null, scope);
+    const ready = hint === null ? debounced : null;
+    const dashPreview = useWidgetPreview(report ? undefined : dashboardId, report ? null : ready, scope);
+    const reportPreview = useReportWidgetPreview(report ? ready : null, report ?? { period: '', compare: '' });
+    const preview = report ? reportPreview : dashPreview;
     const override = useMemo<WidgetDataOverride>(
         () => ({
             get: () => ({

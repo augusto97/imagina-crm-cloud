@@ -61,6 +61,7 @@ import {
     timeEntries,
     dashboards,
     dashboardSubscriptions,
+    reports,
     publicDashboards,
     emailUsage,
     aiUsage,
@@ -736,6 +737,8 @@ export class PlatformService {
             await tx.delete(listSlugHistory).where(eq(listSlugHistory.tenantId, id));
             // v0.1.292 — enlaces públicos y envíos programados de los tableros.
             await tx.delete(dashboardSubscriptions).where(eq(dashboardSubscriptions.tenantId, id));
+            // v0.1.464 (J1) — informes (después de sus envíos programados).
+            await tx.delete(reports).where(eq(reports.tenantId, id));
             await tx.delete(publicDashboards).where(eq(publicDashboards.tenantId, id));
             await tx.delete(dashboards).where(eq(dashboards.tenantId, id));
             await tx.delete(lists).where(eq(lists.tenantId, id));

@@ -6,6 +6,7 @@ import { Logger } from '@nestjs/common';
 
 import type { DashboardPdfInput } from '../dashboard-sharing/dashboard-pdf';
 import type { GanttPdfInput } from '../gantt/gantt-pdf';
+import type { ReportPdfInput } from '../reports/report-pdf';
 import type { DocRenderOutput, RecordedDocInput } from './document-render';
 import { PDF_RENDER_GATE } from './pdf-limits';
 
@@ -34,7 +35,9 @@ export type PdfTask =
     | { kind: 'document'; input: RecordedDocInput }
     | { kind: 'definition'; def: Record<string, unknown> }
     | { kind: 'gantt'; input: GanttPdfInput }
-    | { kind: 'dashboard'; input: DashboardPdfInput };
+    | { kind: 'dashboard'; input: DashboardPdfInput }
+    // v0.1.464 (J1) — un informe (portada + bloques).
+    | { kind: 'report'; input: ReportPdfInput };
 
 export type PdfTaskResult = DocRenderOutput | Buffer;
 

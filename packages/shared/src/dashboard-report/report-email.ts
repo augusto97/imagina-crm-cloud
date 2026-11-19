@@ -28,6 +28,11 @@ export interface DashboardEmailInput {
     senderName: string;
     /** Aviso de que va el PDF adjunto. */
     withPdf?: boolean;
+    /**
+     * v0.1.464 (J1) — qué se manda: un tablero (lo de siempre) o un informe.
+     * Cambia los textos («Ver el informe», «Va adjunto el informe en PDF»).
+     */
+    kind?: 'dashboard' | 'report';
 }
 
 const TEXT = '#1f2937';
@@ -93,9 +98,9 @@ function barRow(label: string, parts: Array<{ frac: number; color: string }>, va
 </tr>`;
 }
 
-function more(count: number): string {
+function more(count: number, where = 'el tablero'): string {
     return count > 0
-        ? `<p style="margin:6px 0 0;font-family:${FONT};font-size:12px;color:${MUTED};">y ${count} más en el tablero</p>`
+        ? `<p style="margin:6px 0 0;font-family:${FONT};font-size:12px;color:${MUTED};">y ${count} más en ${esc(where)}</p>`
         : '';
 }
 
@@ -193,7 +198,8 @@ function dataTable(head: string[], rows: string[][], opts: { numericFrom?: numbe
 }
 
 /** El HTML (tablas) de UN widget que no es KPI. */
-export function reportEmailHtml(r: WidgetReport, accent: string): string {
+/** `where`: dónde se ve el resto («el tablero», «el informe»). */
+export function reportEmailHtml(r: WidgetReport, accent: string, where = 'el tablero'): string {
     switch (r.kind) {
         case 'kpi':
             return kpiGrid([r], accent);
@@ -216,7 +222,7 @@ export function reportEmailHtml(r: WidgetReport, accent: string): string {
                     rows.map((x) => [x.label, x.text, x.previousText ?? '—', x.deltaText ?? '—']),
                     { numericFrom: 1 },
                 );
-                return `${header(r)}${compareNote(r.compare)}${table}${more(r.rows.length - rows.length)}`;
+                return `${header(r)}${compareNote(r.compare)}${table}${more(r.rows.length - rows.length, where)}`;
             }
             const timeline = r.chart === 'line' || r.chart === 'area';
             // Una tendencia: los últimos períodos (lo más reciente importa más).
@@ -230,7 +236,7 @@ export function reportEmailHtml(r: WidgetReport, accent: string): string {
                     return barRow(x.label, [{ frac: max > 0 ? x.value / max : 0, color: timeline ? accent : x.color }], value);
                 })
                 .join('');
-            return `${header(r)}<table ${TABLE}>${body}</table>${more(rest)}`;
+            return `${header(r)}<table ${TABLE}>${body}</table>${more(rest, where)}`;
         }
         case 'stacked': {
             if (r.groups.length === 0 || r.series.length === 0) return header(r) + emptyNote();
@@ -244,7 +250,7 @@ export function reportEmailHtml(r: WidgetReport, accent: string): string {
                     groups.map((g) => [g.label, ...g.texts.map((t) => t || '—'), g.totalText]),
                     { numericFrom: 1 },
                 );
-                return `${header(r)}${legend(r.series)}${table}${more(rest)}`;
+                return `${header(r)}${legend(r.series)}${table}${more(rest, where)}`;
             }
             const sums = groups.map((g) => g.values.reduce((s, v) => s + Math.max(0, v), 0));
             const maxStack = Math.max(...sums, 0);
@@ -255,7 +261,7 @@ export function reportEmailHtml(r: WidgetReport, accent: string): string {
                     return barRow(g.label, parts, g.totalText);
                 })
                 .join('');
-            return `${header(r)}${legend(r.series)}<table ${TABLE}>${body}</table>${more(rest)}`;
+            return `${header(r)}${legend(r.series)}<table ${TABLE}>${body}</table>${more(rest, where)}`;
         }
         case 'table': {
             if (r.rows.length === 0) return header(r) + emptyNote();
@@ -264,7 +270,7 @@ export function reportEmailHtml(r: WidgetReport, accent: string): string {
             const totals = r.totals
                 ? `<div style="height:10px;line-height:10px;font-size:0;">&nbsp;</div>${compareNote(r.compare)}${dataTable(['Totales', 'Ahora', 'Antes', 'Variación'], r.totals.map((t) => [t.label, t.valueText, t.previousText, t.deltaText]), { numericFrom: 1 })}`
                 : '';
-            return `${header(r)}${dataTable(r.columns.slice(0, cols), rows)}${more(r.rows.length - rows.length)}${totals}`;
+            return `${header(r)}${dataTable(r.columns.slice(0, cols), rows)}${more(r.rows.length - rows.length, where)}${totals}`;
         }
         case 'forecast': {
             const t = r.totals;
@@ -276,7 +282,7 @@ export function reportEmailHtml(r: WidgetReport, accent: string): string {
                 rows.map((b) => [b.label, b.wonText, b.weightedText, b.openText, b.forecastText]),
                 { numericFrom: 1, footer: ['Total', t.wonText, t.weightedText, t.openText, t.forecastText] },
             );
-            return `${header(r)}${head}${table}${more(r.buckets.length - rows.length)}`;
+            return `${header(r)}${head}${table}${more(r.buckets.length - rows.length, where)}`;
         }
         case 'pivot': {
             if (r.rows.length === 0) return header(r) + emptyNote();
@@ -313,6 +319,8 @@ export function dashboardEmailDesign(input: DashboardEmailInput): EmailDesign {
     let seq = 0;
     const bid = (): string => `b${++seq}`;
     const accent = /^#[0-9a-f]{6}$/i.test(input.accent) ? input.accent : '#0e7490';
+    const isReport = input.kind === 'report';
+    const where = isReport ? 'el informe' : 'el tablero';
     const blocks: EmailBlock[] = [];
     blocks.push({ id: bid(), type: 'heading', text: input.dashboardName, level: 2, align: 'left', padding: 'sm' } as EmailBlock);
     blocks.push({
@@ -337,21 +345,21 @@ export function dashboardEmailDesign(input: DashboardEmailInput): EmailDesign {
             blocks.push({ id: bid(), type: 'html', html: kpiGrid(run, accent), padding: 'sm' } as EmailBlock);
             continue;
         }
-        blocks.push({ id: bid(), type: 'html', html: reportEmailHtml(r, accent), padding: 'md' } as EmailBlock);
+        blocks.push({ id: bid(), type: 'html', html: reportEmailHtml(r, accent, where), padding: 'md' } as EmailBlock);
         i++;
     }
     if (reports.length === 0) {
-        blocks.push({ id: bid(), type: 'html', html: paragraph('Este tablero no tiene gráficos con datos para resumir.', { color: MUTED }), padding: 'sm' } as EmailBlock);
+        blocks.push({ id: bid(), type: 'html', html: paragraph(isReport ? 'Este informe no tiene bloques con datos para resumir.' : 'Este tablero no tiene gráficos con datos para resumir.', { color: MUTED }), padding: 'sm' } as EmailBlock);
     }
     blocks.push({ id: bid(), type: 'spacer', height: 8 } as EmailBlock);
-    blocks.push({ id: bid(), type: 'button', label: 'Ver el tablero', url: input.dashboardUrl, align: 'center', color: accent, full_width: false } as EmailBlock);
+    blocks.push({ id: bid(), type: 'button', label: isReport ? 'Ver el informe' : 'Ver el tablero', url: input.dashboardUrl, align: 'center', color: accent, full_width: false } as EmailBlock);
     const publicLink = input.publicUrl
         ? `<p style="margin:10px 0 0;font-family:${FONT};font-size:12px;line-height:18px;color:${MUTED};text-align:center;">También puedes verlo sin iniciar sesión en el <a href="${esc(input.publicUrl)}" style="color:${accent};">enlace público</a>.</p>`
         : '';
     blocks.push({
         id: bid(),
         type: 'html',
-        html: `${input.withPdf ? `<p style="margin:10px 0 0;font-family:${FONT};font-size:12px;line-height:18px;color:${MUTED};text-align:center;">Va adjunto el tablero en PDF.</p>` : ''}${publicLink}<p style="margin:18px 0 0;font-family:${FONT};font-size:11px;line-height:16px;color:${MUTED};text-align:center;">Lo envía ${esc(input.senderName)} desde ${esc(input.companyName)} con un envío programado. Si ya no quieres recibirlo, responde a este correo.</p>`,
+        html: `${input.withPdf ? `<p style="margin:10px 0 0;font-family:${FONT};font-size:12px;line-height:18px;color:${MUTED};text-align:center;">Va adjunto ${where} en PDF.</p>` : ''}${publicLink}<p style="margin:18px 0 0;font-family:${FONT};font-size:11px;line-height:16px;color:${MUTED};text-align:center;">Lo envía ${esc(input.senderName)} desde ${esc(input.companyName)} con un envío programado. Si ya no quieres recibirlo, responde a este correo.</p>`,
         padding: 'sm',
     } as EmailBlock);
     return { version: 1, theme: { background: '#f4f5f7', surface: '#ffffff', text: TEXT, muted: MUTED, accent, font: 'modern', width: 600, radius: 8, dark: { enabled: false, background: '#0f1115', surface: '#1b1d22', text: '#e8eaed', muted: '#a1a7b3' } }, blocks } as EmailDesign;

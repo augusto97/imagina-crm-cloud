@@ -69,6 +69,7 @@ import {
     dashboards,
     dashboardSubscriptions,
     publicDashboards,
+    reports,
     emailUsage,
     fields,
     listGroups,
@@ -374,6 +375,8 @@ export class TenantTransferService {
             await dump('ai_agents', await this.byTenant(aiAgents, tenantId));
             await dump('ai_agent_lists', await this.byTenant(aiAgentLists, tenantId, liveList(aiAgentLists.listId)));
             await dump('dashboards', await this.byTenant(dashboards, tenantId, sql`${dashboards.deletedAt} IS NULL`));
+            // v0.1.464 (J1) — informes (sus bloques apuntan a listas y campos por id).
+            await dump('reports', await this.byTenant(reports, tenantId));
             // v0.1.292 — envíos programados y enlaces públicos de los tableros.
             // El TOKEN del enlace no viaja (es la credencial de ESTE servidor):
             // el destino emite uno nuevo, igual que con las listas públicas.
@@ -1826,15 +1829,33 @@ export class TenantTransferService {
             createdBy: mapId(maps.user, d.createdBy) ?? fallbackUser ?? 0,
         }));
 
+        // v0.1.464 (J1) — informes: sus bloques (listas, campos, personas de los
+        // filtros) se re-mapean como los widgets de un tablero.
+        const reportMap = new Map<number, number>();
+        counts.reports = await this.insertMapped(tx, await this.readAll(rows('reports')), reports, reportMap, (r) => ({
+            tenantId,
+            name: String(r.name),
+            description: (r.description as string | null) ?? null,
+            blocks: remapJson(r.blocks ?? [], maps) as unknown[],
+            settings: remapJson((r.settings as Row | null) ?? {}, maps) as Row,
+            visibility: String(r.visibility ?? 'workspace'),
+            allowedRoles: r.allowedRoles ?? [],
+            position: Number(r.position ?? 0),
+            createdBy: mapId(maps.user, r.createdBy) ?? fallbackUser ?? 0,
+        }));
+
         // Los envíos programados llegan PAUSADOS: si no, el servidor de origen y
-        // éste mandarían el mismo resumen mientras dura la mudanza.
+        // éste mandarían el mismo resumen mientras dura la mudanza. Cada uno
+        // manda un tablero o (v0.1.464) un informe.
         counts.dashboard_subscriptions = await this.insertPlain(tx, rows('dashboard_subscriptions'), dashboardSubscriptions, (s) => {
-            const dashboardId = mapId(dashboardMap, s.dashboardId);
+            const dashboardId = s.dashboardId === null || s.dashboardId === undefined ? null : mapId(dashboardMap, s.dashboardId);
+            const reportId = s.reportId === null || s.reportId === undefined ? null : mapId(reportMap, s.reportId);
             const ownerId = mapId(maps.user, s.ownerId);
-            if (dashboardId === null || ownerId === null) return null;
+            if ((dashboardId === null) === (reportId === null) || ownerId === null) return null;
             return {
                 tenantId,
                 dashboardId,
+                reportId,
                 ownerId,
                 enabled: false,
                 frequency: String(s.frequency ?? 'weekly'),
@@ -2290,7 +2311,7 @@ export class TenantTransferService {
         }
         if ((counts.dashboard_subscriptions ?? 0) > 0) {
             warnings.push(
-                `${counts.dashboard_subscriptions} envío(s) programado(s) de tableros llegaron PAUSADOS (para no duplicar correos con el servidor anterior): actívalos en cada tablero → Compartir → Envío por correo.`,
+                `${counts.dashboard_subscriptions} envío(s) programado(s) de tableros e informes llegaron PAUSADOS (para no duplicar correos con el servidor anterior): actívalos en cada tablero o informe → Envío por correo.`,
             );
         }
         if ((counts.data_consents ?? 0) > 0) {

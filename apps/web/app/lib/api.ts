@@ -457,6 +457,12 @@ async function normalizeCloudResponse<T>(
         return { data: payload as T };
     }
 
+    // v0.1.464 (J1) — el informe calculado: `{ data: {bloque: datos}, period,
+    // compare }`. Desenvolverlo perdería el período y la comparación.
+    if (/^\/reports\/(\d+\/bundle|preview)$/.test(path)) {
+        return { data: payload as T };
+    }
+
     // Endpoint de fields: cacheamos el mapa de la lista (lo usan los records).
     if (/\/lists\/[^/]+\/fields$/.test(path)) {
         const listKey = listKeyFromPath(path);

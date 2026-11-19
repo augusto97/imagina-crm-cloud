@@ -24,6 +24,18 @@ export interface CsvDialect {
     decimal: '.' | ',';
 }
 
+
+/**
+ * v0.1.464 — Las fechas de la ventana ANTERIOR para la fila «Antes».
+ * `detail` es «actual vs. anterior»: la fila «Antes» sólo lleva la anterior.
+ */
+function previousWindowText(c: { detail?: string; short?: string; label: string }): string {
+    const fromDetail = c.detail?.split(' vs. ').pop()?.trim();
+    if (fromDetail && c.detail && c.detail.includes(' vs. ')) return fromDetail;
+    const fromShort = c.short?.replace(/^vs\.\s*/, '').trim();
+    return fromShort || c.label;
+}
+
 export function csvDialect(format: Pick<ReportFormat, 'number_format'>): CsvDialect {
     return format.number_format === 'comma_dot' ? { delimiter: ',', decimal: '.' } : { delimiter: ';', decimal: ',' };
 }
@@ -35,7 +47,9 @@ export function csvSafeText(cell: string): string {
     return `'${cell}`;
 }
 
-type Cell = string | number | null | undefined;
+/** Una celda de la planilla: número crudo o texto (vacío = `null`). */
+export type ReportCell = string | number | null | undefined;
+type Cell = ReportCell;
 
 function numberCell(n: number, d: CsvDialect): string {
     if (!Number.isFinite(n)) return '';
@@ -61,7 +75,15 @@ function csv(rows: Cell[][], d: CsvDialect): string {
 const valueCell = (value: number | string | null, text: string): Cell => (typeof value === 'number' ? value : value ?? (text === '—' ? '' : text));
 
 export function widgetReportCsv(report: WidgetReport, format: Pick<ReportFormat, 'number_format'>): string {
-    const d = csvDialect(format);
+    return csv(widgetReportRows(report), csvDialect(format));
+}
+
+/**
+ * v0.1.464 (J1) — Las filas de un widget como planilla: las mismas del CSV y
+ * de cada hoja del Excel de un informe (etiquetas legibles, números crudos;
+ * con comparación, las columnas «Antes» y «Variación (%)»).
+ */
+export function widgetReportRows(report: WidgetReport): Cell[][] {
     switch (report.kind) {
         case 'kpi': {
             const rows: Cell[][] = [['Indicador', 'Valor'], [report.title, valueCell(report.value, report.valueText)]];
@@ -74,34 +96,34 @@ export function widgetReportCsv(report: WidgetReport, format: Pick<ReportFormat,
                 if (report.delta.pct !== null) rows.push(['Variación (%)', Math.round(report.delta.pct * 10) / 10]);
             }
             if (report.compare) {
-                rows.push([`Antes (${report.compare.detail || report.compare.label})`, valueCell(report.compare.previous, report.compare.previousText)]);
+                rows.push([`Antes (${previousWindowText(report.compare)})`, valueCell(report.compare.previous, report.compare.previousText)]);
                 if (report.compare.pct !== null) rows.push(['Variación (%)', report.compare.pct]);
             }
-            return csv(rows, d);
+            return rows;
         }
         case 'categories': {
             if (report.trend) {
                 // v0.1.462 — serie comparada: una fila por posición (el día 1 con el día 1).
-                return csv([
+                return [
                     [report.dimension, report.metricName, 'Período anterior', 'Antes', 'Variación (%)'],
                     ...report.trend.map((p) => {
                         const pct = p.value !== null && p.previous !== null && p.previous !== 0 ? Math.round(((p.value - p.previous) / Math.abs(p.previous)) * 1000) / 10 : null;
                         return [p.label, p.value, p.prevLabel, p.previous, pct];
                     }),
-                ], d);
+                ];
             }
             if (report.compare) {
-                return csv([
+                return [
                     [report.dimension, report.metricName, 'Antes', 'Variación (%)'],
                     ...report.rows.map((r) => [r.label, valueCell(r.raw, r.text), r.previous ?? null, r.deltaText !== undefined ? (r.pct ?? null) : null]),
-                ], d);
+                ];
             }
-            return csv([[report.dimension, report.metricName], ...report.rows.map((r) => [r.label, valueCell(r.raw, r.text)])], d);
+            return [[report.dimension, report.metricName], ...report.rows.map((r) => [r.label, valueCell(r.raw, r.text)])];
         }
         case 'stacked': {
             const header: Cell[] = [report.dimension, ...report.series.map((s) => s.label), 'Total'];
             const body = report.groups.map((g) => [g.label, ...g.values, g.total]);
-            return csv([header, ...body], d);
+            return [header, ...body];
         }
         case 'table': {
             const rows: Cell[][] = [report.columns, ...report.rawRows];
@@ -110,7 +132,7 @@ export function widgetReportCsv(report: WidgetReport, format: Pick<ReportFormat,
                 rows.push(['Totales del período', 'Ahora', 'Antes', 'Variación (%)']);
                 for (const t of report.totals) rows.push([t.label, t.value, t.previous, t.pct]);
             }
-            return csv(rows, d);
+            return rows;
         }
         case 'pivot': {
             const corner = [report.rowHeader, report.colHeader].filter(Boolean).join(' \\ ');
@@ -129,20 +151,20 @@ export function widgetReportCsv(report: WidgetReport, format: Pick<ReportFormat,
                 valueCell(report.total, report.totalText),
                 ...(withCmp ? [before(report.compare!.previousText), report.compare!.pct] : []),
             ];
-            return csv([header, ...body, footer], d);
+            return [header, ...body, footer];
         }
         case 'forecast': {
             const rows: Cell[][] = [['Período', 'Ganado', 'Ponderado', 'Abierto', 'Pronóstico']];
             for (const b of report.buckets) rows.push([b.label, b.won, b.weighted, b.open, b.forecast]);
             const t = report.totals;
             rows.push(['Total', t.won, t.weighted, t.open, t.forecast]);
-            if (report.compare) rows.push([`Pronóstico antes (${report.compare.detail || report.compare.label})`, null, null, null, report.compare.previousText, report.compare.pct]);
+            if (report.compare) rows.push([`Pronóstico antes (${previousWindowText(report.compare)})`, null, null, null, report.compare.previousText, report.compare.pct]);
             if (report.stages.length > 0) {
                 rows.push([]);
                 rows.push(['Etapa', 'Probabilidad (%)', 'Monto']);
                 for (const st of report.stages) rows.push([st.label, st.probability, st.amountText]);
             }
-            return csv(rows, d);
+            return rows;
         }
     }
 }
