@@ -39,13 +39,11 @@ export type PortalRelatedList = z.infer<typeof portalRelatedListSchema>;
  * las listas y campos que usan (colores, etiquetas), sin pedir nada al admin.
  */
 export const portalLayoutDataSchema = z.object({
-    data: z.record(z.unknown()),
-    lists: z.record(
-        z.object({ id: idSchema, slug: z.string(), name: z.string(), icon: z.string().nullable(), color: z.string().nullable() }),
-    ),
-    fields: z.record(z.array(fieldSchema)),
+    data: z.record(z.string(), z.unknown()),
+    lists: z.record(z.string(), z.object({ id: idSchema, slug: z.string(), name: z.string(), icon: z.string().nullable(), color: z.string().nullable() })),
+    fields: z.record(z.string(), z.array(fieldSchema)),
     /** De qué lista lee cada bloque (colores y etiquetas de sus gráficos). */
-    block_lists: z.record(idSchema).default({}),
+    block_lists: z.record(z.string(), idSchema).prefault({}),
 });
 export type PortalLayoutData = z.infer<typeof portalLayoutDataSchema>;
 
@@ -102,13 +100,13 @@ export const portalBootSchema = z.object({
     user_id: idSchema,
     record: recordSchema,
     fields: z.array(fieldSchema),
-    template: z.array(z.record(z.unknown())),
+    template: z.array(z.record(z.string(), z.unknown())),
     /** v0.1.94 — ajustes de página del portal (fondo/ancho/tipografía), crudos. */
-    template_page: z.record(z.unknown()).nullable().default(null),
+    template_page: z.record(z.string(), z.unknown()).nullable().default(null),
     /** White-label del workspace (logo por URL firmada — rol client). */
-    branding: publicBrandingSchema.default({ primary_color: null, app_name: null, logo_url: null }),
+    branding: publicBrandingSchema.prefault({ primary_color: null, app_name: null, logo_url: null }),
     /** v0.1.104 — formato regional del workspace (números/fecha/hora). */
-    format: tenantFormatSchema.default({}),
+    format: tenantFormatSchema.prefault({}),
     /**
      * v0.1.153 — listas RELACIONADAS que el cliente ve además de su ficha
      * (sus facturas, sus tickets…). Opt-in por lista desde el panel del
@@ -157,12 +155,12 @@ export const portalBootSchema = z.object({
      * v0.1.289 — entrar con contraseña: si la empresa lo permite (`enabled`)
      * y si este cliente ya creó la suya en ESTA empresa (`has_password`).
      */
-    password: z.object({ enabled: z.boolean(), has_password: z.boolean() }).default({ enabled: false, has_password: false }),
+    password: z.object({ enabled: z.boolean(), has_password: z.boolean() }).prefault({ enabled: false, has_password: false }),
     /**
      * v0.1.289 — datos de los bloques «Pagos» del diseño (por id de bloque):
      * los links de pago de los registros del cliente y si se le ofrece pagar.
      */
-    payments: z.record(z.lazy(() => portalPaymentsBlockDataSchema)).default({}),
+    payments: z.record(z.string(), z.lazy(() => portalPaymentsBlockDataSchema)).prefault({}),
     /**
      * Autorización de tratamiento de datos (Ley 1581) que el cliente aceptó
      * en este portal: para «Ver mi autorización» y «Retirarla» en su menú.
@@ -177,8 +175,8 @@ export const portalBootSchema = z.object({
      * config del botón que viaja es sólo la de presentación.
      */
     buttons: z
-        .record(z.object({ disabled: z.boolean(), reason: z.string().nullable(), blocked: z.string().nullable() }))
-        .default({}),
+        .record(z.string(), z.object({ disabled: z.boolean(), reason: z.string().nullable(), blocked: z.string().nullable() }))
+        .prefault({}),
 });
 export type PortalBoot = z.infer<typeof portalBootSchema>;
 
@@ -260,7 +258,7 @@ export const portalPaymentsBlockConfigSchema = z
                 concept: z.string().max(200).default(''),
                 label: z.string().max(60).default('Pagar ahora'),
             })
-            .default({}),
+            .prefault({}),
     })
     .passthrough();
 export type PortalPaymentsBlockConfig = z.infer<typeof portalPaymentsBlockConfigSchema>;
@@ -348,7 +346,7 @@ export type PortalPayResult = z.infer<typeof portalPayResultSchema>;
 
 /** POST /portal/lists/:id/records — el cliente crea un registro (por id de campo). */
 export const portalCreateRecordSchema = z.object({
-    fields: z.record(z.string(), z.unknown()).default({}),
+    fields: z.record(z.string(), z.unknown()).prefault({}),
 });
 export type PortalCreateRecordInput = z.infer<typeof portalCreateRecordSchema>;
 

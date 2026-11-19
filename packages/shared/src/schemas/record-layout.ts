@@ -109,8 +109,8 @@ export const layoutBlockSchema = z
         id: z.string().min(1).max(80),
         type: layoutBlockTypeSchema,
         title: z.string().max(200).optional(),
-        config: z.record(z.unknown()).default({}),
-        style: z.record(z.unknown()).optional(),
+        config: z.record(z.string(), z.unknown()).prefault({}),
+        style: z.record(z.string(), z.unknown()).optional(),
     })
     .passthrough();
 export type LayoutBlock = z.infer<typeof layoutBlockSchema>;
@@ -166,7 +166,7 @@ export type RelatedView = z.infer<typeof relatedViewSchema>;
 export const layoutChartConfigSchema = z
     .object({
         source: layoutDataSourceSchema,
-        kind: layoutChartKindSchema.default('kpi'),
+        kind: layoutChartKindSchema.prefault('kpi'),
         metric: z.string().max(40).optional(),
         metric_field_id: idSchema.optional(),
         group_by_field_id: idSchema.optional(),
@@ -186,7 +186,7 @@ export type LayoutChartConfig = z.infer<typeof layoutChartConfigSchema>;
 export const layoutRelatedConfigSchema = z
     .object({
         source: layoutDataSourceSchema,
-        view: relatedViewSchema.default('table'),
+        view: relatedViewSchema.prefault('table'),
         field_ids: z.array(idSchema).max(12).optional(),
         sort_field_id: idSchema.optional(),
         sort_dir: z.enum(['asc', 'desc']).optional(),
@@ -210,7 +210,7 @@ export const layoutSectionSchema = z
         columns: z.array(z.number().int().min(1).max(12)).min(1).max(4),
         /** Una pila de bloques por columna. */
         blocks: z.array(z.array(layoutBlockSchema).max(40)),
-        style: z.record(z.unknown()).optional(),
+        style: z.record(z.string(), z.unknown()).optional(),
     })
     .passthrough()
     .refine((s) => s.columns.reduce((a, b) => a + b, 0) === 12, {
@@ -252,14 +252,14 @@ export const layoutHeaderSchema = z
                 image_field_id: idSchema.optional(),
                 image_url: z.string().max(2000).optional(),
             })
-            .default({ kind: 'gradient' }),
+            .prefault({ kind: 'gradient' }),
         avatar: z
             .object({
                 kind: z.enum(['initials', 'image', 'icon', 'none']).default('initials'),
                 field_id: idSchema.optional(),
                 icon: z.string().max(40).optional(),
             })
-            .default({ kind: 'initials' }),
+            .prefault({ kind: 'initials' }),
         /** Creado / actualizado / por quién. */
         show_meta: z.boolean().default(true),
     })
@@ -282,8 +282,8 @@ export type LayoutTheme = z.infer<typeof layoutThemeSchema>;
 export const recordLayoutV3Schema = z
     .object({
         v: z.literal(3),
-        theme: layoutThemeSchema.default({ preset: 'default' }),
-        header: layoutHeaderSchema.default({}),
+        theme: layoutThemeSchema.prefault({ preset: 'default' }),
+        header: layoutHeaderSchema.prefault({}),
         pages: z.array(layoutPageSchema).min(1).max(12),
     })
     .passthrough();
@@ -514,7 +514,7 @@ export const layoutDataRequestSchema = z.object({
                 id: z.string().min(1).max(80),
                 type: z.enum(['chart', 'related']),
                 title: z.string().max(200).optional(),
-                config: z.record(z.unknown()),
+                config: z.record(z.string(), z.unknown()),
             }),
         )
         .max(40),

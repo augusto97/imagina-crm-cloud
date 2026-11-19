@@ -48,7 +48,7 @@ const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 
 const refId = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 const nullableRef = refId.nullable().catch(null).default(null);
-const text = (max: number, def = '') => z.string().trim().max(max).catch(def).default(def);
+const text = (max: number, def = '') => z.string().trim().max(max).catch(def).prefault(def);
 
 // ── Configuración ───────────────────────────────────────────────────────
 
@@ -118,16 +118,16 @@ export const shopKindsSchema = z.object({
     /** Archivo: lo que se descarga al pagar. */
     download_field: nullableRef,
     /** Cuántos días después del pago sirven las descargas. */
-    download_days: z.number().int().min(1).max(365).catch(SHOP_DOWNLOAD_DAYS_DEFAULT).default(SHOP_DOWNLOAD_DAYS_DEFAULT),
+    download_days: z.number().int().min(1).max(365).catch(SHOP_DOWNLOAD_DAYS_DEFAULT).prefault(SHOP_DOWNLOAD_DAYS_DEFAULT),
     /** Cuántas veces se puede bajar cada archivo (null = sin límite). */
-    max_downloads: z.number().int().min(1).max(100).nullable().catch(SHOP_MAX_DOWNLOADS_DEFAULT).default(SHOP_MAX_DOWNLOADS_DEFAULT),
+    max_downloads: z.number().int().min(1).max(100).nullable().catch(SHOP_MAX_DOWNLOADS_DEFAULT).prefault(SHOP_MAX_DOWNLOADS_DEFAULT),
     /** La agenda donde se reservan los servicios. */
     booking_page_id: nullableRef,
     /** Producto (id) → servicio de esa agenda. Sin elección: el servicio con el mismo nombre. */
     service_links: z
         .record(z.string(), z.unknown())
         .catch({})
-        .default({})
+        .prefault({})
         .transform((raw) => {
             const out: Record<string, string> = {};
             let n = 0;
@@ -142,7 +142,7 @@ export const shopKindsSchema = z.object({
     subscription_links: z
         .record(z.string(), z.unknown())
         .catch({})
-        .default({})
+        .prefault({})
         .transform((raw) => {
             const out: Record<string, number> = {};
             let n = 0;
@@ -162,7 +162,7 @@ export type ShopKindsConfig = z.infer<typeof shopKindsSchema>;
 export const SHOP_KIND_FIELD_TYPES = ['select', 'text'] as const;
 export const SHOP_DOWNLOAD_FIELD_TYPES = ['file'] as const;
 
-const money = (def = 0) => z.number().min(0).max(1_000_000_000).catch(def).default(def);
+const money = (def = 0) => z.number().min(0).max(1_000_000_000).catch(def).prefault(def);
 const nullableMoney = z.number().min(0).max(1_000_000_000).nullable().catch(null).default(null);
 
 /** v0.1.415 — Una zona de envío: «Bogotá», «Área metropolitana», «Resto del país». */
@@ -221,21 +221,21 @@ export const shopPaymentsSchema = z.object({
             intro: text(200, SHOP_WHATSAPP_DEFAULT_INTRO),
         })
         .catch({ enabled: false, phone: '', intro: SHOP_WHATSAPP_DEFAULT_INTRO })
-        .default({}),
+        .prefault({}),
     transfer: z
         .object({
             enabled: z.boolean().catch(false).default(false),
             instructions: text(1500, SHOP_TRANSFER_DEFAULT),
         })
         .catch({ enabled: false, instructions: SHOP_TRANSFER_DEFAULT })
-        .default({}),
+        .prefault({}),
     cod: z
         .object({
             enabled: z.boolean().catch(false).default(false),
             instructions: text(600, SHOP_COD_DEFAULT),
         })
         .catch({ enabled: false, instructions: SHOP_COD_DEFAULT })
-        .default({}),
+        .prefault({}),
     /** v0.1.413 — Pago en línea con la cuenta de cobro del equipo (ADR-S31). */
     online: z
         .object({
@@ -245,7 +245,7 @@ export const shopPaymentsSchema = z.object({
             hold_minutes: z.number().int().min(10).max(240).catch(30).default(30),
         })
         .catch({ enabled: false, connection_id: null, hold_minutes: 30 })
-        .default({}),
+        .prefault({}),
 });
 export type ShopPayments = z.infer<typeof shopPaymentsSchema>;
 
@@ -271,7 +271,7 @@ export const shopQuestionSchema = z.object({
 });
 export type ShopQuestion = z.infer<typeof shopQuestionSchema>;
 
-const fieldMode = (def: ShopFieldMode) => z.enum(SHOP_FIELD_MODES).catch(def).default(def);
+const fieldMode = (def: ShopFieldMode) => z.enum(SHOP_FIELD_MODES).catch(def).prefault(def);
 
 export const shopCheckoutSchema = z.object({
     /** v0.1.430 — Celular: no pedirlo, opcional u obligatorio (antes siempre opcional). */
@@ -287,7 +287,7 @@ export const shopCheckoutSchema = z.object({
     labels: z
         .object({ phone: text(60), document: text(60), notes: text(60) })
         .catch({ phone: '', document: '', notes: '' })
-        .default({}),
+        .prefault({}),
     /** v0.1.430 — Preguntas propias (una rota se descarta, no tira las demás). */
     questions: z
         .array(z.unknown())
@@ -415,9 +415,9 @@ export const shopOrdersMapSchema = z.object({
     list_id: nullableRef,
     lines_list_id: nullableRef,
     customers_list_id: nullableRef,
-    fields: z.record(z.string(), refId).catch({}).default({}),
-    line_fields: z.record(z.string(), refId).catch({}).default({}),
-    customer_fields: z.record(z.string(), refId).catch({}).default({}),
+    fields: z.record(z.string(), refId).catch({}).prefault({}),
+    line_fields: z.record(z.string(), refId).catch({}).prefault({}),
+    customer_fields: z.record(z.string(), refId).catch({}).prefault({}),
 });
 export type ShopOrdersMap = z.infer<typeof shopOrdersMapSchema>;
 
@@ -466,17 +466,17 @@ export const shopConfigSchema = z.object({
         .regex(/^[A-Z]{3}$/)
         .catch('COP')
         .default('COP'),
-    catalog: shopCatalogFieldsSchema.catch(() => shopCatalogFieldsSchema.parse({})).default({}),
-    variants: shopVariantsSchema.catch(() => shopVariantsSchema.parse({})).default({}),
+    catalog: shopCatalogFieldsSchema.catch(() => shopCatalogFieldsSchema.parse({})).prefault({}),
+    variants: shopVariantsSchema.catch(() => shopVariantsSchema.parse({})).prefault({}),
     /** v0.1.416 — Productos digitales y servicios. */
-    kinds: shopKindsSchema.catch(() => shopKindsSchema.parse({})).default({}),
+    kinds: shopKindsSchema.catch(() => shopKindsSchema.parse({})).prefault({}),
     delivery: z.array(shopDeliveryMethodSchema).max(SHOP_MAX_DELIVERY_METHODS).catch([]).default([]),
-    payments: shopPaymentsSchema.catch(() => shopPaymentsSchema.parse({})).default({}),
-    checkout: shopCheckoutSchema.catch(() => shopCheckoutSchema.parse({})).default({}),
-    seller: shopSellerSchema.catch(() => shopSellerSchema.parse({})).default({}),
-    policies: shopPoliciesSchema.catch(() => shopPoliciesSchema.parse({})).default({}),
-    display: shopDisplaySchema.catch(() => shopDisplaySchema.parse({})).default({}),
-    texts: shopTextsSchema.catch(() => shopTextsSchema.parse({})).default({}),
+    payments: shopPaymentsSchema.catch(() => shopPaymentsSchema.parse({})).prefault({}),
+    checkout: shopCheckoutSchema.catch(() => shopCheckoutSchema.parse({})).prefault({}),
+    seller: shopSellerSchema.catch(() => shopSellerSchema.parse({})).prefault({}),
+    policies: shopPoliciesSchema.catch(() => shopPoliciesSchema.parse({})).prefault({}),
+    display: shopDisplaySchema.catch(() => shopDisplaySchema.parse({})).prefault({}),
+    texts: shopTextsSchema.catch(() => shopTextsSchema.parse({})).prefault({}),
     /**
      * v0.1.420 — De dónde sale la descripción del producto: de un campo de
      * texto (`catalog.description`) o de la DESCRIPCIÓN del registro (el
@@ -486,15 +486,15 @@ export const shopConfigSchema = z.object({
     /** null = el color de la marca. */
     color: z.string().regex(HEX_RE).nullable().catch(null).default(null),
     /** v0.1.422 — El estilo: plantilla, colores, modo oscuro, letra, encabezado, portada y tarjetas. */
-    design: shopDesignSchema.catch(() => shopDesignSchema.parse({})).default({}),
+    design: shopDesignSchema.catch(() => shopDesignSchema.parse({})).prefault({}),
     show_logo: z.boolean().catch(true).default(true),
     /** Los sitios que pueden insertarla (vacío = cualquiera). */
     allowed_domains: z.array(z.string().trim().max(200)).max(20).catch([]).default([]),
-    orders: shopOrdersMapSchema.catch(() => shopOrdersMapSchema.parse({})).default({}),
+    orders: shopOrdersMapSchema.catch(() => shopOrdersMapSchema.parse({})).prefault({}),
     /** v0.1.418 — Medir conversiones. */
-    conversion: shopConversionSchema.catch(() => shopConversionSchema.parse({})).default({}),
+    conversion: shopConversionSchema.catch(() => shopConversionSchema.parse({})).prefault({}),
     /** v0.1.423 — Cómo aparece en Google (sólo con dominio propio). */
-    seo: shopSeoSchema.catch(() => shopSeoSchema.parse({})).default({}),
+    seo: shopSeoSchema.catch(() => shopSeoSchema.parse({})).prefault({}),
 });
 export type ShopConfig = z.infer<typeof shopConfigSchema>;
 
@@ -956,8 +956,8 @@ export const shopCouponInputSchema = z
         /** Una vez por cliente (por su correo). */
         once_per_customer: z.boolean().default(false),
         /** Fechas en la zona de la empresa, AAAA-MM-DD (null = sin límite). */
-        starts_on: isoDate.default(null),
-        ends_on: isoDate.default(null),
+        starts_on: isoDate.prefault(null),
+        ends_on: isoDate.prefault(null),
         /** Sólo estos productos (por ID; un producto con variantes cubre todas). Vacío = todos. */
         product_ids: z.array(refId).max(200).default([]),
         /** Sólo estas categorías (el valor de la categoría). Vacío = todas. */

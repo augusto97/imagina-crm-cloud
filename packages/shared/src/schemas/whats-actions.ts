@@ -389,7 +389,7 @@ export const whatsActionTestSchema = z.object({
     connection_id: idSchema,
     action_key: z.string().trim().min(1).max(60),
     /** Los `values` de la acción tal cual se están editando (con variables). */
-    values: z.record(z.unknown()).default({}),
+    values: z.record(z.string(), z.unknown()).prefault({}),
     /** Registro para resolver las variables (default: el último de la lista que se alcanza). */
     record_id: z.number().int().positive().optional(),
     /** Ejecutarla de verdad (sobre el contacto del registro de muestra). Sin esto sólo se muestra. */

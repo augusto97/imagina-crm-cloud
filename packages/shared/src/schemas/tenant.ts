@@ -12,7 +12,7 @@ export const tenantSchema = z.object({
     slug: tenantSlugSchema,
     name: z.string().min(1).max(120),
     plan: z.string().default('trial'),
-    settings: z.record(z.unknown()).default({}),
+    settings: z.record(z.string(), z.unknown()).prefault({}),
 });
 export type Tenant = z.infer<typeof tenantSchema>;
 
@@ -86,7 +86,7 @@ export const brandingSchema = z.object({
      */
     sidebar_color: hexColorSchema.nullable().default(null),
     /** v0.1.326 — barras del sistema en el teléfono (ver `appBarColorSchema`). */
-    app_bar_color: appBarColorSchema.default(null),
+    app_bar_color: appBarColorSchema.prefault(null),
     logo_file_id: idSchema.nullable().default(null),
     app_name: z.string().trim().min(1).max(60).nullable().default(null),
 });
@@ -176,7 +176,7 @@ export type InheritedBranding = z.infer<typeof inheritedBrandingSchema>;
 
 export const brandingResponseSchema = brandingSchema.extend({
     logo_url: z.string().nullable().default(null),
-    format: tenantFormatSchema.default({}),
+    format: tenantFormatSchema.prefault({}),
     /** v0.1.450 — la marca de la agencia (si la empresa es cliente de una). */
     inherited: inheritedBrandingSchema.nullable().default(null),
     /**

@@ -15,13 +15,20 @@
  * nuevo arrastra un módulo pesado y cárgalo a pedido (`lazyDialog`,
  * `lazyWithReload`); sube el presupuesto sólo si el peso nuevo es necesario
  * para la primera pantalla.
+ *
+ * v0.1.465 — subió de 275/820 a 285/830 por Zod 4: la librería de validación
+ * que usan los esquemas de `@imagina-base/shared` desde el arranque pesa unos
+ * 14 KB gzip más que la 3 (arma cada esquema con todos sus métodos, así que
+ * no se recorta). Lo compensa el servidor: una automatización de 14 pasos
+ * se valida en 8 µs en vez de 537, la query del listado en 3 en vez de 17, y
+ * se fue la excepción de la auditoría de dependencias.
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 
-const BUDGET_KB = { login: 275, app: 820 };
+const BUDGET_KB = { login: 285, app: 830 };
 
 const dist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', process.argv[2] ?? 'dist-cloud');
 const assets = path.join(dist, 'assets');

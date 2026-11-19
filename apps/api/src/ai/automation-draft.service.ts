@@ -15,8 +15,8 @@ import {
 } from '@imagina-base/shared';
 import type Redis from 'ioredis';
 import { randomBytes } from 'node:crypto';
-import type { ZodTypeAny } from 'zod';
-import { zodToJsonSchema } from 'zod-to-json-schema';
+import type { ZodType as ZodTypeAny } from 'zod';
+import { zodToJson } from '../common/zod-json-schema';
 import { AuditService } from '../audit/audit.service';
 import { can } from '../authz/can';
 import { hasRedactedSecrets, redactAutomationSecrets, restoreRedactedSecrets } from '../automations/automation-secrets';
@@ -465,8 +465,5 @@ function providerMessage(err: unknown): string {
 }
 
 function toInputSchema(schema: ZodTypeAny): Record<string, unknown> {
-    const convert = zodToJsonSchema as unknown as (s: ZodTypeAny, o: Record<string, unknown>) => Record<string, unknown>;
-    const json = convert(schema, { $refStrategy: 'none', target: 'jsonSchema7' });
-    delete json.$schema;
-    return json;
+    return zodToJson(schema);
 }

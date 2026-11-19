@@ -99,7 +99,7 @@ export const listSuggestionsResponseSchema = z.object({
     new_count: z.number().int().nonnegative(),
     suggestions: z.array(listSuggestionSchema),
     /** Lo aplicado y descartado de la lista, por clave (también las ideas del catálogo, que arma la pantalla). */
-    marks: z.record(z.enum(['applied', 'dismissed'])).default({}),
+    marks: z.record(z.string(), z.enum(['applied', 'dismissed'])).prefault({}),
     ai: listSuggestionsAiStateSchema,
     /** Sobre cuántos registros se calculó (los más recientes, hasta un tope). */
     sample: z.object({ total: z.number().int().nonnegative(), sampled: z.number().int().nonnegative() }),

@@ -73,7 +73,7 @@ type QuerySpec = z.infer<typeof querySpec>;
 
 const aggregateSpec = z.object({
     list: z.string().max(63),
-    metric: aggregateMetricSchema.default('count').describe(AGGREGATE_METRICS.join(' | ')),
+    metric: aggregateMetricSchema.prefault('count').describe(AGGREGATE_METRICS.join(' | ')),
     metric_field: fieldSlugSchema.optional().describe('Obligatorio para sum/avg/min/max/count_unique/count_empty/count_true/count_false'),
     group_by: fieldSlugSchema.optional().describe('Desglosar por este campo (select, user, checkbox, fecha…)'),
     time_bucket: timeBucketSchema.optional().describe(`Si group_by es fecha: ${TIME_BUCKETS.join(' | ')}`),
@@ -81,8 +81,7 @@ const aggregateSpec = z.object({
 });
 type AggregateSpec = z.infer<typeof aggregateSpec>;
 
-const valuesSpec = z
-    .record(z.unknown())
+const valuesSpec = z.record(z.string(), z.unknown())
     .describe('Mapa slug → valor. select/multi_select aceptan el value o la etiqueta; fechas AAAA-MM-DD; checkbox true/false; user = id numérico.');
 
 const createRecordsSpec = z.object({

@@ -708,7 +708,7 @@ export const whatsappTemplateSchema = z.object({
     category: z.string(),
     status: z.string(),
     parameter_format: z.enum(['POSITIONAL', 'NAMED']),
-    components: z.array(z.record(z.unknown())),
+    components: z.array(z.record(z.string(), z.unknown())),
     rejected_reason: z.string().nullable(),
     synced_at: isoDateTimeSchema,
 });
@@ -844,7 +844,7 @@ export const whatsappSendSchema = z
         kind: z.enum(['template', 'text', 'media']),
         template: z.string().trim().max(512).optional(),
         language: z.string().trim().max(16).optional(),
-        variables: z.record(z.string().max(2000)).default({}),
+        variables: z.record(z.string(), z.string().max(2000)).prefault({}),
         header_media: z.string().trim().max(2000).optional(),
         header_filename: z.string().trim().max(240).optional(),
         text: z.string().max(4096).optional(),
@@ -864,7 +864,7 @@ export const whatsappTestSendSchema = z
         /** v0.1.401 — Whats también manda una ubicación o una tarjeta de contacto. */
         kind: z.enum(['template', 'text', 'media', 'location', 'contact']),
         /** Los `values` de la acción tal cual se están editando (con variables). */
-        values: z.record(z.unknown()).default({}),
+        values: z.record(z.string(), z.unknown()).prefault({}),
         /** Registro para resolver las variables (default: el último de la lista). */
         record_id: z.number().int().positive().optional(),
     });

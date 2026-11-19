@@ -302,7 +302,7 @@ export const platformPaymentsViewSchema = z.object({
     }),
     paypal: z.object({ configured: z.boolean() }),
     /** v0.1.382 — la revisión de respaldo (frecuencia, si corre ahora y la última). */
-    reconcile: platformReconcileStatusSchema.default({ interval_minutes: DEFAULT_RECONCILE_INTERVAL, running: false, last: null, next_at: null }),
+    reconcile: platformReconcileStatusSchema.prefault({ interval_minutes: DEFAULT_RECONCILE_INTERVAL, running: false, last: null, next_at: null }),
 });
 export type PlatformPaymentsView = z.infer<typeof platformPaymentsViewSchema>;
 

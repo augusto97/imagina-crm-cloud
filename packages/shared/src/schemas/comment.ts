@@ -58,8 +58,8 @@ export const commentSchema = z.object({
     body: z.string(),
     kind: commentKindSchema,
     parent_id: idSchema.nullable(),
-    metadata: z.record(z.unknown()),
-    visibility: commentVisibilitySchema.default('internal'),
+    metadata: z.record(z.string(), z.unknown()),
+    visibility: commentVisibilitySchema.prefault('internal'),
     /** El autor es un cliente del portal (no un miembro del equipo). */
     from_client: z.boolean().default(false),
     /** Nombre del autor cuando no es miembro del equipo (el cliente del portal). */
@@ -80,14 +80,14 @@ export type CommentDto = z.infer<typeof commentSchema>;
 
 export const createCommentSchema = z.object({
     body: z.string().trim().min(1).max(10000),
-    kind: commentKindSchema.default('note'),
+    kind: commentKindSchema.prefault('note'),
     /**
      * Responder a un comentario (hilos de UN nivel): si el padre ya es una
      * respuesta, la respuesta cuelga de SU raíz. La visibilidad de una
      * respuesta la hereda del raíz (la que se mande aquí se ignora).
      */
     parent_id: idSchema.optional(),
-    metadata: z.record(z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
     /** Sin valor = `internal`. */
     visibility: commentVisibilitySchema.optional(),
 });
@@ -96,7 +96,7 @@ export type CreateCommentInput = z.infer<typeof createCommentSchema>;
 export const updateCommentSchema = z
     .object({
         body: z.string().trim().min(1).max(10000),
-        metadata: z.record(z.unknown()),
+        metadata: z.record(z.string(), z.unknown()),
         visibility: commentVisibilitySchema,
     })
     .partial()

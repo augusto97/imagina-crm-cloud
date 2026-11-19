@@ -90,8 +90,8 @@ const automationOut = z.object({
     name: z.string().trim().min(1).max(80),
     description: z.string().max(300).optional(),
     trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached']),
-    trigger_config: z.record(z.unknown()).optional(),
-    actions: z.array(z.record(z.unknown())).min(1).max(4),
+    trigger_config: z.record(z.string(), z.unknown()).optional(),
+    actions: z.array(z.record(z.string(), z.unknown())).min(1).max(4),
 });
 
 const sampleOut = z.object({
@@ -100,9 +100,8 @@ const sampleOut = z.object({
         .regex(/^[a-z0-9_]{1,30}$/)
         .optional()
         .describe('Para vincular desde otra lista (links)'),
-    values: z.record(z.unknown()).describe('slug → valor'),
-    links: z
-        .record(z.array(z.string().max(30)).max(10))
+    values: z.record(z.string(), z.unknown()).describe('slug → valor'),
+    links: z.record(z.string(), z.array(z.string().max(30)).max(10))
         .optional()
         .describe('slug del campo relation → keys de registros de ejemplo de la lista destino'),
 });

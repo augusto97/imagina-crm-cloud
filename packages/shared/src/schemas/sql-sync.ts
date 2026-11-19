@@ -169,15 +169,15 @@ const sqlSyncBase = {
 
 export const createSqlSyncSchema = z.object({
     ...sqlSyncBase,
-    columns: sqlSyncBase.columns.default([]),
-    create_missing: sqlSyncBase.create_missing.default(true),
-    null_clears: sqlSyncBase.null_clears.default(true),
-    on_missing: sqlSyncBase.on_missing.default('ignore'),
-    flag_field_id: sqlSyncBase.flag_field_id.default(null),
-    date_timezone: sqlSyncBase.date_timezone.default('UTC'),
-    timeout_seconds: sqlSyncBase.timeout_seconds.default(SQL_SYNC_DEFAULT_TIMEOUT),
-    schedule: sqlSyncBase.schedule.default({ kind: 'interval', minutes: 60 }),
-    enabled: sqlSyncBase.enabled.default(true),
+    columns: sqlSyncBase.columns.prefault([]),
+    create_missing: sqlSyncBase.create_missing.prefault(true),
+    null_clears: sqlSyncBase.null_clears.prefault(true),
+    on_missing: sqlSyncBase.on_missing.prefault('ignore'),
+    flag_field_id: sqlSyncBase.flag_field_id.prefault(null),
+    date_timezone: sqlSyncBase.date_timezone.prefault('UTC'),
+    timeout_seconds: sqlSyncBase.timeout_seconds.prefault(SQL_SYNC_DEFAULT_TIMEOUT),
+    schedule: sqlSyncBase.schedule.prefault({ kind: 'interval', minutes: 60 }),
+    enabled: sqlSyncBase.enabled.prefault(true),
 });
 export type CreateSqlSyncInput = z.infer<typeof createSqlSyncSchema>;
 

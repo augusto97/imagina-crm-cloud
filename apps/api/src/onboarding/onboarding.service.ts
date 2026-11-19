@@ -40,7 +40,7 @@ import { OnboardingAiService } from './onboarding-ai.service';
 /** Lo que la bienvenida deja en `tenants.settings.onboarding` (tolerante: un valor raro no rompe nada). */
 const registrySchema = z.object({
     /** id de lista → ids de los registros de ejemplo que creó la bienvenida. */
-    sample: z.record(z.array(z.number().int().positive())).catch({}).default({}),
+    sample: z.record(z.string(), z.array(z.number().int().positive())).catch({}).prefault({}),
     /** Automatizaciones que creó la bienvenida: no cuentan como «tu» automatización. */
     seeded_automations: z.array(z.number().int().positive()).catch([]).default([]),
 });

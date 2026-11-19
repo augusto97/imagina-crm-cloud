@@ -133,11 +133,11 @@ export type MarkNotificationsInput = z.infer<typeof markNotificationsSchema>;
 // v0.1.455 — `automation` también: quien armó la automatización eligió avisarte.
 export const PUSH_DEFAULT_KINDS: readonly NotificationKind[] = ['mention', 'assigned', 'approval', 'reminder', 'sla', 'shop', 'signature', 'automation'];
 
-/** `{ mention: z.boolean().default(…), … }` para TODOS los tipos (también los que se agreguen). */
+/** `{ mention: z.boolean().prefault(…), … }` para TODOS los tipos (también los que se agreguen). */
 function kindFlagsSchema(defaults: readonly NotificationKind[]) {
-    const shape = Object.fromEntries(NOTIFICATION_KINDS.map((k) => [k, z.boolean().default(defaults.includes(k))])) as Record<
+    const shape = Object.fromEntries(NOTIFICATION_KINDS.map((k) => [k, z.boolean().prefault(defaults.includes(k))])) as Record<
         NotificationKind,
-        z.ZodDefault<z.ZodBoolean>
+        z.ZodPrefault<z.ZodBoolean>
     >;
     return z.object(shape);
 }
@@ -195,12 +195,12 @@ export const notificationPrefsSchema = z.object({
              */
             automation: z.boolean().default(false),
         })
-        .default({}),
+        .prefault({}),
     /**
      * H1 — Qué tipos llegan TAMBIÉN como notificación push a los dispositivos
      * donde la persona la activó (Ajustes → Cuenta → Avisos).
      */
-    push: kindFlagsSchema(PUSH_DEFAULT_KINDS).default({}),
+    push: kindFlagsSchema(PUSH_DEFAULT_KINDS).prefault({}),
     /**
      * Resumen diario por correo (avisos sin leer + lo vencido y lo que vence
      * hoy). Apagado por defecto: un correo nuevo para todos al actualizar
@@ -210,7 +210,7 @@ export const notificationPrefsSchema = z.object({
     /** Hora LOCAL (zona de la empresa) del resumen. */
     digest_hour: z.number().int().min(0).max(23).default(8),
     /** Días del resumen (0 = domingo). Por defecto lunes a viernes. */
-    digest_days: z.array(z.number().int().min(0).max(6)).max(7).default([1, 2, 3, 4, 5]),
+    digest_days: z.array(z.number().int().min(0).max(6)).max(7).prefault([1, 2, 3, 4, 5]),
 });
 export type NotificationPrefs = z.infer<typeof notificationPrefsSchema>;
 

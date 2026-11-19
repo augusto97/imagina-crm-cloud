@@ -17380,6 +17380,50 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         destinatarios con el PDF, columnas apiladas en el celular, sin scroll
         lateral ni errores de JS).
 
+  - [x] **Migración a Zod 4 (v0.1.465, addendum ADR-S38, último ítem de la
+        tanda del 2026-11-19)**: la librería de validación de todo el
+        monorepo pasa de la 3.25 a la 4.6 (~90 archivos en shared, API y
+        front), hecha sin agentes en paralelo como estaba planeado. Sale
+        `GHSA-mrhx-c7xc-m3w5` de `pnpm.auditConfig.ignoreGhsas` (quedan las dos
+        de mssql); el tope de 100.000 elementos de array por cuerpo de
+        v0.1.308 se queda. (a) **Lo que cambió en Zod 4 y cómo se resolvió**
+        (codemods en el scratchpad de la sesión, revisados a mano): `.default`
+        de objetos y arreglos → `.prefault` (~325; en Zod 4 `.default` ya no
+        pasa el valor por el esquema), `z.record(V)` → `z.record(z.string(),
+        V)` (131), records con clave de enum → `z.partialRecord` (Zod 4 exige
+        todas las claves), `errorMap` → `error`, tipos que ya no existen
+        (`ZodTypeDef`, `AnyZodObject`), y el esquema recursivo de las acciones
+        de automatización con `z.ZodType<Salida, Entrada>`. (b) **JSON Schema
+        sin dependencia**: se fue `zod-to-json-schema`; las herramientas de la
+        IA (asistente, MCP, agentes, armar automatizaciones, importar,
+        sugerencias, primeros pasos) y el OpenAPI salen de `z.toJSONSchema`
+        por un solo lugar (`apps/api/src/common/zod-json-schema.ts`: esquema
+        de ENTRADA, `additionalProperties: false` en los objetos comunes como
+        antes, sin el `propertyNames` trivial de los records). Comparado
+        contra el OpenAPI anterior: sólo suma el rango de los enteros y el
+        formato de las fechas. Se fue también `@hookform/resolvers` (sin uso).
+        (c) **Encontrado en el camino**: en el navegador Zod 4 prueba
+        `new Function` para compilar validadores y la CSP de la app lo
+        prohíbe → una violación de la política por pantalla. Se apaga con
+        `z.config({ jitless: true })` en `apps/web/app/lib/zodSetup.ts`, que
+        es el PRIMER import de las tres entradas (app, portal, tablero
+        público): Zod decide al ARMAR cada esquema y los de shared se arman al
+        cargar. Las pruebas de pantallas (`scripts/e2e/smoke.mjs`) ahora
+        fallan con cualquier violación de CSP. En el servidor la compilación
+        sí se usa. (d) **Costo y ganancia, medidos**: el arranque del front
+        pesa ~14 KB gzip más (login 262 → 276, app 811 → 824; el presupuesto
+        de `check-bundle-size.mjs` pasó a 285/830 con el motivo escrito)
+        porque Zod 4 arma cada esquema con todos sus métodos y no se recorta;
+        en el servidor una automatización de 14 pasos se valida en 8 µs en vez
+        de 537 y la query del listado en 3 en vez de 17. Las páginas públicas
+        (formulario, widget, tienda) siguen sin cargar Zod. Sin cambios
+        visibles para quien usa la app (sin novedad en el catálogo). Tests:
+        shared 1139, front 1016 y la suite completa de la API en verde, sin
+        cambiar ninguna prueba.
+
+        **Con esto queda completa la tanda aprobada el 2026-11-19
+        (v0.1.455-465).**
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -274,8 +274,6 @@ Combinaciones que se pueden vender como solución completa, con su plantilla:
 
 ## 6. Pendientes técnicos (no urgentes)
 
-- **Migrar a Zod 4** (~100 archivos). Cierra la excepción de auditoría de zod
-  (ADR-S38, v0.1.308). Conviene hacerla sin agentes trabajando en paralelo.
 - Dependencias de desarrollo con versión mayor nueva (vite, vitest).
 - Rol de Postgres no superusuario para la conexión base (necesita BYPASSRLS y
   migrar cada instalación por consola).

@@ -76,12 +76,12 @@ const viewStateCommon = {
         .array(z.object({ field_id: idSchema, op: z.string(), value: z.unknown() }))
         .optional(),
     search: z.string().optional(),
-    sort: sortSchema.default([]),
+    sort: sortSchema.prefault([]),
     hidden_columns: z.array(z.string()).default([]),
-    column_widths: z.record(z.string(), z.number()).default({}),
+    column_widths: z.record(z.string(), z.number()).prefault({}),
     column_order: z.array(z.coerce.string()).default([]),
     collapsed_groups: z.array(z.string()).default([]),
-    footer_aggregates: z.record(z.string(), z.string()).default({}),
+    footer_aggregates: z.record(z.string(), z.string()).prefault({}),
     /** Filas de alto variable: el texto largo se muestra completo en vez
      * de recortarse con elipsis ("Ajustar texto" de ClickUp). */
     wrap_text: z.boolean().optional(),
@@ -123,7 +123,7 @@ export const tableViewConfigSchema = z.object({
     ...viewStateCommon,
     // Legacy del shell cloud viejo — se conservan para vistas ya guardadas.
     visible_field_ids: z.array(idSchema).default([]),
-    column_sizing: z.record(z.string(), z.number()).default({}),
+    column_sizing: z.record(z.string(), z.number()).prefault({}),
     group_by_field_id: idSchema.nullable().default(null),
     /**
      * v0.1.287 — Segundo nivel de agrupación («Agrupar por… y luego por…»):
@@ -297,7 +297,7 @@ export const viewSchema = z.object({
     list_id: idSchema,
     name: z.string().min(1).max(190),
     type: viewTypeSchema,
-    config: z.record(z.unknown()),
+    config: z.record(z.string(), z.unknown()),
     is_default: z.boolean(),
     position: z.number().int().nonnegative(),
     /**
@@ -323,7 +323,7 @@ export type View = z.infer<typeof viewSchema>;
 export const createViewSchema = z.object({
     name: z.string().trim().min(1).max(190),
     type: viewTypeSchema,
-    config: z.record(z.unknown()).optional(),
+    config: z.record(z.string(), z.unknown()).optional(),
     is_default: z.boolean().optional(),
     icon: z.string().max(64).nullable().optional(),
     color: z.string().max(32).nullable().optional(),
@@ -336,7 +336,7 @@ export type CreateViewInput = z.infer<typeof createViewSchema>;
 export const updateViewSchema = z
     .object({
         name: z.string().trim().min(1).max(190),
-        config: z.record(z.unknown()),
+        config: z.record(z.string(), z.unknown()),
         is_default: z.boolean(),
         position: z.number().int().nonnegative(),
         icon: z.string().max(64).nullable(),

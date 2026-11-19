@@ -195,7 +195,7 @@ export const publicBootSchema = z.object({
      * v0.1.327 — la marca de la plataforma (Plataforma → Marca). En el dominio
      * de una empresa no se usa (white-label); viaja igual porque es pública.
      */
-    platform: platformBrandSchema.default({}),
+    platform: platformBrandSchema.prefault({}),
     /**
      * v0.1.423 — El dominio es el de una TIENDA: la app del equipo nunca se
      * abre ahí. Si el servidor web todavía manda ese dominio al SPA, el SPA va

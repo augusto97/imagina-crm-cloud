@@ -124,7 +124,7 @@ export const createSignatureRequestSchema = z
         verify_template: signatureVerifyTemplateSchema.nullable().default(null),
         /** Cada cuántos días se le recuerda a quien no firmó (0 = nunca; máximo 3 recordatorios). */
         remind_days: z.number().int().min(0).max(30).default(3),
-        on_complete: signatureOnCompleteSchema.default({}),
+        on_complete: signatureOnCompleteSchema.prefault({}),
         /** false = no manda correos: se copian los enlaces y se mandan por otro medio. */
         send_email: z.boolean().default(true),
     })
@@ -179,7 +179,7 @@ export const submitSignatureSchema = z.object({
         .trim()
         .regex(/^\d{6}$/, 'El código tiene 6 números')
         .optional(),
-    consent: z.literal(true, { errorMap: () => ({ message: 'Para firmar tienes que aceptar' }) }),
+    consent: z.literal(true, { error: 'Para firmar tienes que aceptar' }),
 });
 export type SubmitSignatureInput = z.infer<typeof submitSignatureSchema>;
 

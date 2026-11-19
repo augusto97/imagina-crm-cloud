@@ -13,7 +13,7 @@ import { integrationPolicySchema } from './integration-stage';
 
 export const integrationsOverviewSchema = z.object({
     /** Proveedores OAuth que el operador ya configuró. */
-    providers: z.record(z.object({ configured: z.boolean() })),
+    providers: z.record(z.string(), z.object({ configured: z.boolean() })),
     /** Si puede conectar apps para todo el equipo (admin). */
     can_connect_workspace: z.boolean(),
     /** Si puede conectar apps sólo para sí (conexiones privadas habilitadas). */
@@ -24,21 +24,21 @@ export const integrationsOverviewSchema = z.object({
      * v0.1.438 — Por app: beta / probada / en retiro y si se ofrece para
      * conectar una nueva (lo decide el operador).
      */
-    catalog: z.record(integrationPolicySchema).default({}),
+    catalog: z.record(z.string(), integrationPolicySchema).prefault({}),
 });
 export type IntegrationsOverview = z.infer<typeof integrationsOverviewSchema>;
 
 /** Conectar una app por clave (o actualizar la clave de una ya conectada). */
 export const connectIntegrationKeySchema = z.object({
-    fields: z.record(z.string().max(4000)).default({}),
-    visibility: connectorVisibilitySchema.default('workspace'),
+    fields: z.record(z.string(), z.string().max(4000)).prefault({}),
+    visibility: connectorVisibilitySchema.prefault('workspace'),
     /** Si viene, se actualiza esa conexión en vez de crear otra. */
     connection_id: idSchema.nullish(),
 });
 export type ConnectIntegrationKeyInput = z.infer<typeof connectIntegrationKeySchema>;
 
 export const verifyIntegrationSchema = z.object({
-    fields: z.record(z.string().max(4000)).default({}),
+    fields: z.record(z.string(), z.string().max(4000)).prefault({}),
     /** Para reusar la clave ya guardada sin volver a pegarla. */
     connection_id: idSchema.nullish(),
     /**
@@ -58,7 +58,7 @@ export const verifyIntegrationResultSchema = z.object({
     /** Aviso no bloqueante (no se pudo comprobar, pero se puede guardar). */
     warning: z.string().nullable(),
     /** Valores posibles para los campos con `lookup` (cuentas de WhatsApp). */
-    options: z.record(z.array(z.object({ value: z.string(), label: z.string() }))),
+    options: z.record(z.string(), z.array(z.object({ value: z.string(), label: z.string() }))),
     /** Se pidió un mensaje de prueba y el servicio lo aceptó. */
     test_sent: z.boolean().default(false),
     /**
@@ -71,7 +71,7 @@ export type VerifyIntegrationResult = z.infer<typeof verifyIntegrationResultSche
 
 /** Autorizar una app OAuth (nueva conexión o reconectar una existente). */
 export const authorizeIntegrationSchema = z.object({
-    visibility: connectorVisibilitySchema.default('workspace'),
+    visibility: connectorVisibilitySchema.prefault('workspace'),
     connection_id: idSchema.nullish(),
 });
 export type AuthorizeIntegrationInput = z.infer<typeof authorizeIntegrationSchema>;

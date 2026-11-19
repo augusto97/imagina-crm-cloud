@@ -3213,6 +3213,40 @@ excepción se saca con la migración a Zod 4, después de la fase 3. Regla nueva
 **cuando un parche no cubre nuestro uso, el freno va en la entrada y se mide
 antes y después**.
 
+**Addendum (v0.1.465) — Zod 4: la excepción de zod se va.** Se migró todo el
+monorepo de Zod 3.25 a 4.6 (shared, API y front; ~90 archivos) y
+`GHSA-mrhx-c7xc-m3w5` sale de `ignoreGhsas` (quedan sólo las dos de mssql). El
+freno de 100.000 elementos de array por cuerpo de v0.1.308 se QUEDA: es la
+defensa que no depende de la versión. Lo que cambia de comportamiento en Zod 4
+y cómo se resolvió, para que nadie lo redescubra: (1) `.default(x)` ya no
+pasa el valor por el esquema (devuelve una copia tal cual) — los ~325 defaults
+de objetos y arreglos pasaron a `.prefault(x)`, que conserva lo de antes; los
+de texto, número y booleano quedan con `.default`. (2) `z.record(V)` de un
+argumento ya no existe → `z.record(z.string(), V)`; y un record con clave de
+enum ahora exige TODAS las claves → `z.partialRecord` donde antes se aceptaba
+una parte. (3) Un `.default()` dentro de un campo `.optional()` ahora SÍ se
+aplica cuando falta. (4) `z.number().int()` rechaza enteros fuera del rango
+seguro y `z.number()` rechaza `Infinity`. (5) Los mensajes por defecto
+cambiaron («Invalid input: expected string, received undefined» en vez de
+«Required»); la app no los mostraba traducidos antes tampoco. (6) El JSON
+Schema de las herramientas de la IA, el MCP, los agentes y el OpenAPI sale de
+`z.toJSONSchema` (se fue `zod-to-json-schema`), por un solo lugar
+(`common/zod-json-schema.ts`) que mantiene `additionalProperties: false` en
+los objetos comunes (la IA no inventa claves) y entrega el esquema de
+ENTRADA (un campo con valor por defecto es opcional). (7) **En el navegador
+Zod 4 prueba `new Function` para compilar validadores** y nuestra CSP no lo
+permite: la prueba falla en silencio pero el navegador registra una violación
+de la política. Se apaga con `z.config({ jitless: true })` en
+`apps/web/app/lib/zodSetup.ts`, que es el PRIMER import de cada entrada (Zod
+decide al ARMAR cada esquema, y los de shared se arman al cargar); las
+pruebas de pantallas del CI ahora fallan con cualquier violación de CSP. En
+el servidor la compilación sí se usa. **Costo y ganancia, medidos**: el
+arranque del front pesa ~14 KB gzip más (login 262 → 276, app 811 → 824; el
+presupuesto pasó a 285/830) porque Zod 4 arma cada esquema con todos sus
+métodos y no se recorta; a cambio, en el servidor una automatización de 14
+pasos se valida en 8 µs en vez de 537 y la query del listado en 3 en vez de
+17. Las páginas públicas (formulario, widget, tienda) siguen sin cargar Zod.
+
 ### ADR-S39 — Formularios públicos que crean registros (v0.1.275)
 
 **Contexto.** El pedido más común de quien arma una base de datos de clientes,

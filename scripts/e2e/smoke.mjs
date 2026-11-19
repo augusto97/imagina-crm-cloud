@@ -13,6 +13,9 @@
  *   · la pantalla de «Algo salió mal» o «Algo falló al mostrar esta parte»;
  *   · una respuesta 5xx del API;
  *   · un error de pantalla mandado a Diagnóstico (`/client-errors`);
+ *   · una violación de la política de seguridad (CSP) del navegador
+ *     (v0.1.465: Zod 4 prueba `new Function` si no se le apaga; con el build
+ *     de producción, la CSP lo prohíbe y el navegador lo registra);
  *   · (al final) una clave de caché con el SLUG de una lista: regla de oro
  *     nº 7 (`lib/queryKeyAudit.ts`).
  *
@@ -137,6 +140,12 @@ async function prepare() {
 function watch(page, label) {
     const state = { errors: [], http5xx: [], clientErrors: [] };
     page.on('pageerror', (e) => state.errors.push(e.message));
+    // Una violación de CSP atrapada (p.ej. un `new Function` en un try) no
+    // llega a la consola: sólo dispara `securitypolicyviolation`.
+    void page.addInitScript(() => {
+        window.__imcrmCsp = [];
+        document.addEventListener('securitypolicyviolation', (e) => window.__imcrmCsp.push(`${e.violatedDirective} ${e.blockedURI}`));
+    });
     page.on('response', (r) => {
         const u = r.url();
         if (u.includes('/api/') && r.status() >= 500) state.http5xx.push(`${r.status()} ${u.replace(/^https?:\/\/[^/]+/, '')}`);
@@ -146,6 +155,11 @@ function watch(page, label) {
     });
     state.label = label;
     return state;
+}
+
+/** Las violaciones de CSP desde la última lectura (y las vacía). */
+async function takeCsp(page) {
+    return page.evaluate(() => (Array.isArray(window.__imcrmCsp) ? window.__imcrmCsp.splice(0) : [])).catch(() => []);
 }
 
 async function settle(page) {
@@ -169,8 +183,15 @@ async function visit(page, state, hashRoute, name = hashRoute) {
     const errs = state.errors.slice(before.e);
     const http = state.http5xx.slice(before.h);
     const reported = state.clientErrors.slice(before.c);
-    const ok = crash === 0 && errs.length === 0 && http.length === 0 && reported.length === 0;
-    check(`${state.label} ${name}`, ok, [crash ? `pantalla de error (${crash})` : '', ...errs.map((e) => `JS: ${e}`), ...http, ...reported.map((r) => `reportado: ${r.slice(0, 200)}`)].filter(Boolean).join(' · '));
+    const csp = await takeCsp(page);
+    const ok = crash === 0 && errs.length === 0 && http.length === 0 && reported.length === 0 && csp.length === 0;
+    check(
+        `${state.label} ${name}`,
+        ok,
+        [crash ? `pantalla de error (${crash})` : '', ...errs.map((e) => `JS: ${e}`), ...http, ...reported.map((r) => `reportado: ${r.slice(0, 200)}`), ...csp.map((c) => `CSP: ${c}`)]
+            .filter(Boolean)
+            .join(' · '),
+    );
     if (!ok && SHOTS) await page.screenshot({ path: path.join(SHOTS, `${name.replace(/[^a-z0-9]+/gi, '-')}.png`) }).catch(() => undefined);
 }
 
@@ -270,8 +291,13 @@ try {
         await p.locator('button[type=submit]').last().click();
         await p.waitForTimeout(2500);
         const delta = (await data.api.total(data.form.listId)) - before;
-        const ok = delta === 1 && st.errors.length === 0;
-        check('[público] el formulario crea un registro', ok, `diferencia ${delta}${st.errors.length ? ` · JS: ${st.errors.join(' | ')}` : ''}`);
+        const csp = await takeCsp(p);
+        const ok = delta === 1 && st.errors.length === 0 && csp.length === 0;
+        check(
+            '[público] el formulario crea un registro',
+            ok,
+            `diferencia ${delta}${st.errors.length ? ` · JS: ${st.errors.join(' | ')}` : ''}${csp.length ? ` · CSP: ${csp.join(' | ')}` : ''}`,
+        );
         if (!ok && SHOTS) await p.screenshot({ path: path.join(SHOTS, 'formulario-publico.png') }).catch(() => undefined);
         await pub.close();
     }

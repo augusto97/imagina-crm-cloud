@@ -110,7 +110,7 @@ export type SubscriptionImportSample = z.infer<typeof subscriptionImportSampleSc
 export const subscriptionImportPreviewSchema = z.object({
     /** Suscripciones encontradas en Mercado Pago (todas). */
     total: z.number(),
-    by_status: z.record(z.enum(MP_PREAPPROVAL_STATUSES), z.number()),
+    by_status: z.partialRecord(z.enum(MP_PREAPPROVAL_STATUSES), z.number()),
     /** Las que ya están en la app (se crearon desde aquí o se importaron antes). */
     known: z.number(),
     /** Las que se van a traer con lo elegido. */

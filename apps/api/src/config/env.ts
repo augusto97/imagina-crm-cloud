@@ -25,7 +25,7 @@ const envSchema = z.object({
         .number()
         .int()
         .positive()
-        .default(60 * 60 * 24 * 30),
+        .prefault(60 * 60 * 24 * 30),
     COOKIE_SECURE: boolFromString,
     /**
      * SEC-27 (v0.1.226) — el SMTP PROPIO de una empresa (y el diagnóstico)
@@ -117,13 +117,13 @@ const envSchema = z.object({
         }),
     // Tope de tamaño de body (bytes). Acota payloads abusivos; con holgura para
     // imports por lotes.
-    BODY_LIMIT_BYTES: z.coerce.number().int().positive().default(2 * 1024 * 1024),
+    BODY_LIMIT_BYTES: z.coerce.number().int().positive().prefault(2 * 1024 * 1024),
     /**
      * v0.1.339 (ADR-S88) — tope del cuerpo de «Crear desde un archivo» (las
      * hojas viajan como texto). Sólo lo usan esas rutas, con su propio tipo de
      * contenido; el resto del API sigue con BODY_LIMIT_BYTES.
      */
-    FILE_IMPORT_BODY_LIMIT_BYTES: z.coerce.number().int().positive().default(24 * 1024 * 1024),
+    FILE_IMPORT_BODY_LIMIT_BYTES: z.coerce.number().int().positive().prefault(24 * 1024 * 1024),
     /** Directorio de archivos subidos (driver local de FileStorage — ADR-S16). */
     UPLOADS_DIR: z.string().default('./data/uploads'),
     /**
@@ -134,7 +134,7 @@ const envSchema = z.object({
      */
     WEB_DIST_DIR: z.string().default(''),
     /** Tamaño máximo por archivo subido (multipart). */
-    MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(20 * 1024 * 1024),
+    MAX_UPLOAD_BYTES: z.coerce.number().int().positive().prefault(20 * 1024 * 1024),
     /**
      * Secreto de las URLs firmadas de archivos (portal del cliente — ADR-S16).
      * Vacío = se genera uno aleatorio al bootear (las URLs mueren al reiniciar;
@@ -149,7 +149,7 @@ const envSchema = z.object({
     S3_ACCESS_KEY_ID: z.string().default(''),
     S3_SECRET_ACCESS_KEY: z.string().default(''),
     /** true para MinIO y providers path-style. */
-    S3_FORCE_PATH_STYLE: boolFromString.default('true'),
+    S3_FORCE_PATH_STYLE: boolFromString.prefault('true'),
     // Rate limit por IP/minuto: general y bucket estricto para auth/portal.
     RATE_LIMIT_MAX: z.coerce.number().int().positive().default(600),
     RATE_LIMIT_AUTH_MAX: z.coerce.number().int().positive().default(15),

@@ -323,12 +323,12 @@ export type CustomGuide = z.infer<typeof customGuideSchema>;
 const MAX_VIDEOS = 200;
 
 export const platformHelpSchema = z.object({
-    support: helpSupportSchema.default({}),
+    support: helpSupportSchema.prefault({}),
     /** Video por guía del sistema: id de la guía → enlace. */
     videos: z
         .record(helpIdSchema, helpVideoUrlSchema)
         .refine((v) => Object.keys(v).length <= MAX_VIDEOS, 'Demasiados videos')
-        .default({}),
+        .prefault({}),
     /** Guías del sistema que el operador ocultó. */
     hidden: z.array(helpIdSchema).max(200).default([]),
     /** Guías propias del operador. */

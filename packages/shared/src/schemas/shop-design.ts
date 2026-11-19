@@ -214,7 +214,7 @@ export const shopDesignSchema = z.object({
     /** La plantilla de la que se partió (sólo para marcarla en el editor). */
     preset: z.string().max(40).nullable().catch(null).default(null),
     mode: z.enum(SHOP_DESIGN_MODES).catch('light').default('light'),
-    colors: shopDesignColorsSchema.catch(() => shopDesignColorsSchema.parse({})).default({}),
+    colors: shopDesignColorsSchema.catch(() => shopDesignColorsSchema.parse({})).prefault({}),
     /** La letra del texto (null = la del sistema, como antes). */
     font,
     /** La de los títulos (null = la misma del texto). */
@@ -229,14 +229,14 @@ export const shopDesignSchema = z.object({
     buttons: z.enum(SHOP_BUTTON_STYLES).catch('solid').default('solid'),
     gap: z.enum(SHOP_GAPS).catch('normal').default('normal'),
     width: z.enum(SHOP_WIDTHS).catch('normal').default('normal'),
-    header: shopDesignHeaderSchema.catch(() => shopDesignHeaderSchema.parse({})).default({}),
-    hero: shopDesignHeroSchema.catch(() => shopDesignHeroSchema.parse({})).default({}),
+    header: shopDesignHeaderSchema.catch(() => shopDesignHeaderSchema.parse({})).prefault({}),
+    hero: shopDesignHeroSchema.catch(() => shopDesignHeroSchema.parse({})).prefault({}),
     /** v0.1.424 — La ficha del producto. */
-    product: shopDesignProductSchema.catch(() => shopDesignProductSchema.parse({})).default({}),
+    product: shopDesignProductSchema.catch(() => shopDesignProductSchema.parse({})).prefault({}),
     /** v0.1.425 — El pago. */
-    checkout: shopDesignCheckoutSchema.catch(() => shopDesignCheckoutSchema.parse({})).default({}),
+    checkout: shopDesignCheckoutSchema.catch(() => shopDesignCheckoutSchema.parse({})).prefault({}),
     /** v0.1.428 — Las fotos de los productos. */
-    images: shopDesignImagesSchema.catch(() => shopDesignImagesSchema.parse({})).default({}),
+    images: shopDesignImagesSchema.catch(() => shopDesignImagesSchema.parse({})).prefault({}),
     /** CSS propio (sólo lo cambia un administrador; se guarda limpio). */
     custom_css: z.string().max(SHOP_CUSTOM_CSS_MAX).catch('').default(''),
 });

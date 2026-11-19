@@ -270,8 +270,8 @@ const paramKeySchema = z
 export const connectorParamSchema = z.object({
     key: paramKeySchema,
     label: z.string().trim().min(1).max(120),
-    type: connectorParamTypeSchema.default('text'),
-    location: connectorParamLocationSchema.default('body'),
+    type: connectorParamTypeSchema.prefault('text'),
+    location: connectorParamLocationSchema.prefault('body'),
     required: z.boolean().default(false),
     /** Ayuda bajo el campo: para qué sirve, qué formato espera el servicio. */
     help: z.string().max(400).default(''),
@@ -307,10 +307,10 @@ export const connectorActionSchema = z.object({
     key: actionKeySchema,
     label: z.string().trim().min(1).max(120),
     description: z.string().max(400).default(''),
-    method: connectorActionMethodSchema.default('POST'),
+    method: connectorActionMethodSchema.prefault('POST'),
     /** Relativa a `base_url` (o absoluta). Admite `{clave}` de params `path`. */
     path: z.string().trim().max(2000).default(''),
-    content_type: connectorContentTypeSchema.default('json'),
+    content_type: connectorContentTypeSchema.prefault('json'),
     params: z.array(connectorParamSchema).max(30).default([]),
     /**
      * Cuerpo crudo para los tipos que no se arman por filas (xml/text/html).
@@ -325,7 +325,7 @@ export const connectorActionCallSchema = z.object({
     connection_id: idSchema,
     action_key: z.string().min(1),
     /** Valor por parámetro; admite merge tags. */
-    values: z.record(z.string().max(8000)).default({}),
+    values: z.record(z.string(), z.string().max(8000)).prefault({}),
 });
 export type ConnectorActionCall = z.infer<typeof connectorActionCallSchema>;
 
@@ -408,16 +408,16 @@ const secretsShape = {
 };
 
 export const createConnectionSchema = z.object({
-    provider: connectorProviderSchema.default('http'),
+    provider: connectorProviderSchema.prefault('http'),
     name: z.string().trim().min(1).max(120),
     base_url: z.string().trim().max(2000).default(''),
-    auth_type: connectorAuthTypeSchema.default('none'),
+    auth_type: connectorAuthTypeSchema.prefault('none'),
     auth_key: z.string().trim().max(120).default(''),
     headers: z.array(connectorPairSchema).max(20).default([]),
     query_params: z.array(connectorPairSchema).max(20).default([]),
     actions: z.array(connectorActionSchema).max(40).default([]),
     oauth: oauthConfigSchema.optional(),
-    visibility: connectorVisibilitySchema.default('workspace'),
+    visibility: connectorVisibilitySchema.prefault('workspace'),
     ...secretsShape,
 });
 export type CreateConnectionInput = z.infer<typeof createConnectionSchema>;
@@ -482,7 +482,7 @@ export const connectionTestResultSchema = z.object({
     ok: z.boolean(),
     status: z.number().int().nullable(),
     /** Cabeceras REALMENTE enviadas, con el secreto enmascarado. */
-    sent_headers: z.record(z.string()),
+    sent_headers: z.record(z.string(), z.string()),
     url: z.string(),
     body: z.string().nullable(),
     error: z.string().nullable(),
@@ -537,7 +537,7 @@ export const convertInlineSecretsSchema = z.object({
             z.object({
                 host: z.string().min(1),
                 name: z.string().trim().min(1).max(120),
-                visibility: connectorVisibilitySchema.default('workspace'),
+                visibility: connectorVisibilitySchema.prefault('workspace'),
             }),
         )
         .min(1)

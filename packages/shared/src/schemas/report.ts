@@ -51,7 +51,7 @@ export const reportDataWidgetSchema = z.object({
     type: z.enum(REPORT_DATA_TYPES),
     list_id: idSchema,
     title: z.string().max(300).default(''),
-    config: z.record(z.unknown()).default({}),
+    config: z.record(z.string(), z.unknown()).prefault({}),
 });
 export type ReportDataWidget = z.infer<typeof reportDataWidgetSchema>;
 
@@ -212,7 +212,7 @@ export type Report = z.infer<typeof reportSchema>;
 export const createReportSchema = z.object({
     name: z.string().trim().min(1, 'Ponle un nombre al informe.').max(190),
     description: z.string().max(2000).nullable().optional(),
-    blocks: reportBlocksSchema.default([]),
+    blocks: reportBlocksSchema.prefault([]),
     settings: reportSettingsSchema.partial().optional(),
     visibility: dashboardVisibilitySchema.optional(),
     allowed_roles: z.array(z.string().max(40)).max(10).optional(),

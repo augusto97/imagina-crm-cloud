@@ -267,7 +267,7 @@ export const aiProposalPreviewSchema = z.object({
     /** Fase 2 — cuántos registros toca (update/delete) o crea. */
     affected_count: z.number().int().nonnegative().default(0),
     /** Fase 2 — muestra de filas (etiqueta → valor legible), cap 5. */
-    rows: z.array(z.record(z.string())).default([]),
+    rows: z.array(z.record(z.string(), z.string())).default([]),
     /**
      * v0.1.195 — bloques de una plantilla (portal del cliente o ficha del
      * registro), en el orden en que se van a ver: tipo legible + detalle
@@ -457,7 +457,7 @@ export const personalTokenSchema = z.object({
     prefix: z.string(),
     scope: personalTokenScopeSchema,
     /** v0.1.441 — `mcp` (asistentes) o `api` (programas por la API REST). */
-    use: personalTokenUseSchema.default('mcp'),
+    use: personalTokenUseSchema.prefault('mcp'),
     tenant_id: z.number().int().positive(),
     created_at: z.string(),
     last_used_at: z.string().nullable(),
@@ -505,9 +505,9 @@ export type OauthDecision = z.infer<typeof oauthDecisionSchema>;
 
 export const createPersonalTokenSchema = z.object({
     name: z.string().trim().min(1).max(80),
-    scope: personalTokenScopeSchema.default('read'),
+    scope: personalTokenScopeSchema.prefault('read'),
     /** v0.1.441 — para qué es: asistentes (MCP) o programas (API REST). */
-    use: personalTokenUseSchema.default('mcp'),
+    use: personalTokenUseSchema.prefault('mcp'),
     /** Vencimiento en días; `null` = no vence. */
     expires_in_days: z.union([z.literal(7), z.literal(30), z.literal(90), z.literal(365)]).nullable().default(90),
 });

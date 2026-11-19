@@ -42,7 +42,7 @@ const storedSchema = z.object({
             access_token_enc: z.string().nullable().default(null),
             webhook_secret_enc: z.string().nullable().default(null),
         })
-        .default({}),
+        .prefault({}),
     /** v0.1.382 — cada cuántos minutos se revisan los cobros (0 = sólo los avisos). */
     reconcile_interval_minutes: z.number().optional().catch(undefined),
 });

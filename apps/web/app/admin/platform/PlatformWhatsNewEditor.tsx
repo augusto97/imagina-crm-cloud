@@ -204,10 +204,10 @@ function mediaProblem(errors: Record<string, string>): string | null {
 }
 
 /** Mensaje del primer error de validación por campo (para pintarlo junto al campo). */
-function fieldErrors(issues: Array<{ path: Array<string | number>; message: string; code: string }>): Record<string, string> {
+function fieldErrors(issues: Array<{ path: ReadonlyArray<PropertyKey>; message: string; code: string }>): Record<string, string> {
     const out: Record<string, string> = {};
     for (const i of issues) {
-        const key = i.path.join('.');
+        const key = i.path.map(String).join('.');
         if (key in out) continue;
         out[key] = i.code === 'too_small' && REQUIRED_MESSAGES[key] ? __(REQUIRED_MESSAGES[key]!) : i.message;
     }

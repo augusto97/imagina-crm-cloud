@@ -46,7 +46,7 @@ export type RolePermissions = z.infer<typeof rolePermissionsSchema>;
 
 /** Documento de permisos por lista. `permissions` mapea rol → RolePermissions. */
 export const listPermissionsSchema = z.object({
-    permissions: z.record(rolePermissionsSchema),
+    permissions: z.record(z.string(), rolePermissionsSchema),
     /** Campo (tipo user) usado por el scope `assigned`. */
     assignment_field_id: idSchema.nullable().default(null),
     /**
@@ -55,13 +55,13 @@ export const listPermissionsSchema = z.object({
      * workspace. Pisa lo que diga su rol para ESTA lista (puede dar más o
      * menos); `admin` no se ve afectado, siempre tiene acceso total.
      */
-    users: z.record(rolePermissionsSchema).default({}),
+    users: z.record(z.string(), rolePermissionsSchema).prefault({}),
     /**
      * C1 — Acceso POR EQUIPO: `team_id` → permisos. Prioridad: persona >
      * equipo > rol. Si alguien está en varios equipos con acceso, vale lo MÁS
      * permisivo de cada eje y un campo se oculta sólo si TODOS lo ocultan.
      */
-    teams: z.record(rolePermissionsSchema).default({}),
+    teams: z.record(z.string(), rolePermissionsSchema).prefault({}),
     /**
      * C1 — Campo «Equipo» que también cuenta para el alcance «los asignados»:
      * un registro es de la persona si el campo Persona (`assignment_field_id`)
@@ -73,12 +73,12 @@ export type ListPermissions = z.infer<typeof listPermissionsSchema>;
 
 /** Body del PATCH de permisos (parcial: solo lo que cambia). */
 export const updateListPermissionsSchema = z.object({
-    permissions: z.record(rolePermissionsSchema).optional(),
+    permissions: z.record(z.string(), rolePermissionsSchema).optional(),
     assignment_field_id: idSchema.nullable().optional(),
     /** Mapa completo de accesos por persona (reemplaza el guardado). */
-    users: z.record(rolePermissionsSchema).optional(),
+    users: z.record(z.string(), rolePermissionsSchema).optional(),
     /** C1 — mapa completo de accesos por equipo (reemplaza el guardado). */
-    teams: z.record(rolePermissionsSchema).optional(),
+    teams: z.record(z.string(), rolePermissionsSchema).optional(),
     assignment_team_field_id: idSchema.nullable().optional(),
     /**
      * C2 — filas de roles PROPIOS (`custom:12`) que vuelven a heredar la de

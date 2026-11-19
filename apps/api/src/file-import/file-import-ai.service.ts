@@ -3,8 +3,8 @@ import { incrWithTtl } from '../redis/redis.util';
 import type { ContentBlockParam, Message, MessageParam } from '@anthropic-ai/sdk/resources/messages';
 import { resolveFileImportPlan, type FileImportAiInfo, type FileImportAiJob, type FileImportAiStage, type FileImportPlan } from '@imagina-base/shared';
 import type Redis from 'ioredis';
-import type { ZodTypeAny } from 'zod';
-import { zodToJsonSchema } from 'zod-to-json-schema';
+import type { ZodType as ZodTypeAny } from 'zod';
+import { zodToJson } from '../common/zod-json-schema';
 import { AiSettingsService, AiUnavailableError, type ResolvedAiAccess } from '../ai/ai-settings.service';
 import { AI_CLIENT_FACTORY, defaultClientFactory, type AiClientFactory } from '../ai/assistant.service';
 import { assistantModelParams } from '../ai/model-params';
@@ -322,8 +322,5 @@ export function quotaKey(tenantId: number, now: Date = new Date()): string {
 }
 
 function toInputSchema(schema: ZodTypeAny): Record<string, unknown> {
-    const convert = zodToJsonSchema as unknown as (s: ZodTypeAny, o: Record<string, unknown>) => Record<string, unknown>;
-    const json = convert(schema, { $refStrategy: 'none', target: 'jsonSchema7' });
-    delete json.$schema;
-    return json;
+    return zodToJson(schema);
 }
