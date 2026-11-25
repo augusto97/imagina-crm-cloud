@@ -324,7 +324,8 @@ export class AutomationDispatcher {
      * el aviso no los trae.
      */
     private async onComment(ev: Extract<NotifyEvent, { type: 'comment' }>): Promise<void> {
-        if (ev.fromAgent || !ev.commentId || !this.db) return;
+        // Lo que comenta un agente de IA o una automatización nunca dispara (evita bucles).
+        if (ev.fromAgent || ev.fromAutomation || !ev.commentId || !this.db) return;
         if (!(await this.listensTo(ev.tenantId, ev.listId, 'comment_added'))) return;
         const [rec] = await this.db
             .select({ data: recordsTable.data })

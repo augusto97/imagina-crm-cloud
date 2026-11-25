@@ -430,7 +430,13 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.465**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.466**
+(**automatizaciones: «Comprobar y detener» y «Agregar un comentario»** — un
+paso que corta la corrida si el registro no cumple unas reglas (sin ser una
+falla; en un bucle corta sólo ese vinculado) y una acción que deja una nota
+interna o visible para el cliente firmada «Automatización «<nombre>»», que
+nunca dispara «Cuando se agrega un comentario»; sin migración; addendum
+ADR-S47). Antes **v0.1.465**
 (**migración a Zod 4** — la librería de validación de todo el monorepo pasa de
 la 3.25 a la 4.6: sale la última excepción de auditoría que no era de mssql,
 el servidor valida mucho más rápido —una automatización de 14 pasos en 8 µs en
@@ -2366,6 +2372,25 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-25 · v0.1.466** — **Automatizaciones: «Comprobar y detener» y
+  «Agregar un comentario»** (ideas E9 y E10; addendum ADR-S47; sin migración).
+  (1) `stop_unless`: reglas por slug como el «Si / sino», sobre el registro
+  como lo dejaron los pasos anteriores; si no se cumplen la corrida termina sin
+  ser una falla (éxito, sin Problema, el historial dice qué regla no se
+  cumplió); en un bucle corta sólo ese vinculado y en una rama detiene todo;
+  exento de «Si este paso falla». (2) `add_comment`: texto con variables y
+  menciones, nota interna o visible para el cliente, en el registro o en el
+  vinculado; queda firmado «Automatización «<nombre>»» (`user_id` 0 + la
+  marca `metadata.automation`, reservada al servidor), no se edita, lo borra
+  un administrador o quien puede editar el registro, y **nunca dispara
+  «Cuando se agrega un comentario»**. Asistente/MCP con los dos pasos.
+  **Encontrado en el camino**: migrar una empresa le ponía la persona de
+  respaldo a los comentarios sin persona (también las respuestas automáticas
+  de la mesa de ayuda); ahora siguen sin persona y la marca apunta a la
+  automatización nueva. De paso, el número de los filtros ganó su
+  `aria-label` («Valor»). E9 y E10 salen de `docs/ideas.md`. En el
+  E2E la empresa 1 del slot 1 estaba en trial (tope de 3 automatizaciones) y
+  se pasó a `enterprise` para la prueba.
 - **2026-11-25 · conversación** — Publicada y verificada **v0.1.465** (Zod 4):
   zip, sha256, `install.sh` y el paquete de n8n; queda completa la tanda del
   2026-11-19 y se le mandó el reporte de v0.1.458 a v0.1.465. El usuario mostró
@@ -2379,8 +2404,8 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   **E9** paso «Comprobar y detener», **E10** acción «Agregar un comentario» y
   **J4** estado de cuenta (plantilla + filtro en la tabla de ítems). «Enviar
   mensaje a una bandeja de entrada» no se propone (ADR-S69: la app no es un
-  chat). **Esperando** que el usuario diga si se hacen.
-
+  chat). El usuario respondió «Sí, hazlas todas»: se reparten en v0.1.466
+  (E9 + E10), v0.1.467 (E8) y v0.1.468 (J4).
 - **2026-11-19 · v0.1.465** — **Migración a Zod 4** (último ítem de la tanda
   aprobada el 2026-11-19; addendum ADR-S38; sin migración de base). Zod 3.25 →
   4.6 en shared, API y front (~90 archivos; se hizo SIN agentes en paralelo,

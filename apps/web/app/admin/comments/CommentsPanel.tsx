@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, MessageSquare, Pencil, Send, Trash2 } from 'lucide-react';
+import { Loader2, MessageSquare, Pencil, Send, Trash2, Zap } from 'lucide-react';
 
 import { CommentContent } from '@/admin/comments/CommentContent';
 import { CommentThreadFooter, DeletedCommentPlaceholder } from '@/admin/comments/CommentThread';
@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Textarea } from '@/components/ui/textarea';
 import {
+    isAutomationComment,
     useCommentAuthors,
     useComments,
     useCreateComment,
@@ -303,7 +304,9 @@ function CommentItem({
 }: CommentItemProps): JSX.Element {
     // Un raíz eliminado (con respuestas vivas) ya no se edita ni se borra.
     // D2 — un correo (recibido o enviado) tampoco se edita: es lo que se mandó.
-    const canEdit = canEditRaw && !comment.deleted && emailOf(comment) === null;
+    // v0.1.466 — un comentario de una automatización tampoco se edita (sólo se borra).
+    const fromAutomation = isAutomationComment(comment);
+    const canEdit = canEditRaw && !comment.deleted && emailOf(comment) === null && !fromAutomation;
     const canDelete = canDeleteRaw && !comment.deleted;
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(comment.content);
@@ -356,9 +359,9 @@ function CommentItem({
                         aria-hidden
                         className="imcrm-flex imcrm-h-6 imcrm-w-6 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-primary/10 imcrm-text-[10px] imcrm-text-primary imcrm-font-semibold"
                     >
-                        {initialsOf(authorName)}
+                        {fromAutomation ? <Zap className="imcrm-h-3 imcrm-w-3" /> : initialsOf(authorName)}
                     </span>
-                    <span className="imcrm-font-medium">{authorName}</span>
+                    <span className="imcrm-font-medium" data-testid={fromAutomation ? 'imcrm-comment-automation-author' : undefined}>{authorName}</span>
                     <ClientVisibleBadge comment={comment} />
                     <span className="imcrm-text-muted-foreground">
                         {formatDateTime(parseUtcDate(comment.created_at))}

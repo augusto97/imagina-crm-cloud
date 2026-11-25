@@ -212,6 +212,7 @@ export function FilterValueInput({
                 <Input
                     type="number"
                     step="any"
+                    aria-label={__('Valor')}
                     value={value === null || value === undefined ? '' : String(value)}
                     onChange={(e) => onChange(e.target.value === '' ? '' : Number(e.target.value))}
                 />

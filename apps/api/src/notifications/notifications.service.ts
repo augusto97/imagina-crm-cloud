@@ -3,6 +3,7 @@ import { incrWithTtl } from '../redis/redis.util';
 import {
     FALLBACK_TIME_ZONE,
     addDaysYmd,
+    automationCommentAuthor,
     dueBucket,
     isDoneOptionLabel,
     jsonbKeyForField,
@@ -212,15 +213,24 @@ export class NotificationsService implements OnModuleInit {
         if (!ctx) return;
         // Lo que hace el CLIENTE desde su portal se nombra como tal: el equipo
         // tiene que distinguir de un vistazo «el cliente comentó».
-        const actorName = e.type === 'comment' && e.fromClient ? clientLabel(e.clientName) : await this.userName(e.actorId);
+        const actorName =
+            e.type === 'comment' && e.fromClient
+                ? clientLabel(e.clientName)
+                : e.type === 'comment' && e.fromAutomation
+                  ? `La ${automationCommentAuthor(e.fromAutomation.name).replace(/^A/, 'a')}`
+                  : await this.userName(e.actorId);
         if (e.type === 'comment') {
+            // v0.1.466 — un comentario de una automatización no tiene persona
+            // detrás (`actorId` = 0): el aviso no lleva actor (la columna
+            // apunta a una cuenta) y nadie queda «siguiendo» por él.
+            const commentActor = e.actorId > 0 ? e.actorId : null;
             // Al cliente no se lo pone a seguir: no es del equipo, no recibe avisos.
             if (!e.fromClient) await this.follow(e.tenantId, e.listId, e.recordId, [e.actorId]);
             const snippet = e.body.replace(/\s+/g, ' ').trim().slice(0, 240);
             await this.deliver(e.tenantId, 'mention', e.mentioned, {
                 listId: e.listId,
                 recordId: e.recordId,
-                actorId: e.actorId,
+                actorId: commentActor,
                 title: (recordTitle: string) => notificationTitle('mention', { actorName, recordTitle, source: 'comment' }),
                 ctx,
                 body: snippet,
@@ -234,7 +244,7 @@ export class NotificationsService implements OnModuleInit {
                 await this.deliver(e.tenantId, 'mention', to, {
                     listId: e.listId,
                     recordId: e.recordId,
-                    actorId: e.actorId,
+                    actorId: commentActor,
                     title: (recordTitle: string) => teamMentionTitle(actorName, recordTitle, t.name, 'comment'),
                     ctx,
                     body: snippet,
@@ -249,7 +259,7 @@ export class NotificationsService implements OnModuleInit {
                 await this.deliver(e.tenantId, 'reply', replied, {
                     listId: e.listId,
                     recordId: e.recordId,
-                    actorId: e.actorId,
+                    actorId: commentActor,
                     title: (recordTitle: string) => notificationTitle('reply', { actorName, recordTitle }),
                     ctx,
                     body: snippet,
@@ -263,7 +273,7 @@ export class NotificationsService implements OnModuleInit {
                 {
                     listId: e.listId,
                     recordId: e.recordId,
-                    actorId: e.actorId,
+                    actorId: commentActor,
                     title: (recordTitle: string) => notificationTitle('comment', { actorName, recordTitle }),
                     ctx,
                     body: snippet,

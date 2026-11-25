@@ -1249,6 +1249,24 @@ describe('PortalService (Postgres + Redis reales)', () => {
             expect(internal.visibility).toBe('internal');
         });
 
+        it('v0.1.466 — lo que comenta una automatización: la nota interna no llega; la visible sí, firmada por la empresa (no por la automatización)', async () => {
+            const rec = (await recordsService.create(tenantId, admin, 'contratos', { data: { [`f${nombreId}`]: 'Con automatización' } })).id;
+            const uid = await contratoSession('auto466@cliente.test', rec);
+            const listId = (await listsService.get(tenantId, 'contratos')).id;
+            const mark = { id: 9_466, name: 'Aviso de pago' };
+            await comments.createFromAutomation(tenantId, { listId, recordId: rec, body: 'Nota interna del robot', visibility: 'internal', automation: mark });
+            await comments.createFromAutomation(tenantId, { listId, recordId: rec, body: 'Recibimos tu pago, gracias', visibility: 'client', automation: mark });
+            const seen = await portal.myComments(actor(uid));
+            expect(seen.map((c) => c.body)).toEqual(['Recibimos tu pago, gracias']);
+            expect(seen[0]!.from_team).toBe(true);
+            expect(seen[0]!.mine).toBe(false);
+            expect(seen[0]!.author_name).not.toMatch(/Automatizaci|Aviso de pago|Cliente/);
+            expect(seen[0]!.author_name.length).toBeGreaterThan(0);
+            // Para el equipo, en cambio, lo firma la automatización.
+            const team = await comments.list(tenantId, admin, 'contratos', rec);
+            expect(team.map((c) => c.user_name)).toEqual(['Automatización «Aviso de pago»', 'Automatización «Aviso de pago»']);
+        });
+
         it('v0.1.291 — hilos y reacciones: el hilo interno jamás llega; el visible sí, con respuestas y reacciones sin nombres', async () => {
             const hilo = (await recordsService.create(tenantId, admin, 'contratos', { data: { [`f${nombreId}`]: 'Con hilos' } })).id;
             const uid = await contratoSession('hilos@cliente.test', hilo);

@@ -69,6 +69,7 @@ import {
     type PortalCommentDto,
     type PortalCreatableList,
     type PortalConsentDto,
+    readAutomationCommentMark,
 } from '@imagina-base/shared';
 import * as argon2 from 'argon2';
 import { and, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
@@ -1436,7 +1437,13 @@ export class PortalService implements OnModuleInit {
         );
         return rows.map((r) => {
             const a = byId.get(r.userId);
-            const fromTeam = a?.role !== undefined && a.role !== null && a.role !== 'client';
+            // v0.1.466 — sin persona detrás (`user_id` 0): lo escribió una
+            // automatización o es la respuesta automática de la mesa de ayuda.
+            // Para el cliente es del equipo (con el nombre de la empresa: el
+            // portal no muestra el nombre interno de la automatización).
+            const mail = (r.metadata as { email?: { direction?: unknown } } | null)?.email;
+            const systemTeam = r.userId <= 0 && (readAutomationCommentMark(r.metadata) !== null || mail?.direction === 'out');
+            const fromTeam = systemTeam || (a?.role !== undefined && a.role !== null && a.role !== 'client');
             const mine = r.userId === viewerId;
             const deleted = r.deletedAt !== null;
             return {

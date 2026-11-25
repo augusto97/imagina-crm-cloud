@@ -58,6 +58,7 @@ export * from './schemas/automation-flow';
 export * from './schemas/automation-records';
 export * from './schemas/automation-extras';
 export * from './schemas/automation-control';
+export * from './schemas/automation-steps';
 export * from './schemas/automation-ai-draft';
 export * from './schemas/duplicates';
 export * from './schemas/signatures';

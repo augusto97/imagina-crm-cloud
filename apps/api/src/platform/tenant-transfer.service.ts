@@ -1259,7 +1259,10 @@ export class TenantTransferService {
                     tenantId,
                     listId: maps.list.get(Number(c.listId))!,
                     recordId: maps.record.get(Number(c.recordId))!,
-                    userId: mapId(maps.user, c.userId) ?? fallbackUser ?? 0,
+                    // v0.1.466 — un comentario sin persona (una automatización, la
+                    // respuesta automática de la mesa de ayuda) sigue sin persona:
+                    // con la persona de respaldo quedaría firmado por alguien.
+                    userId: Number(c.userId) <= 0 ? 0 : (mapId(maps.user, c.userId) ?? fallbackUser ?? 0),
                     body: String(c.body ?? ''),
                     kind: String(c.kind ?? 'note'),
                     parentId: null,
@@ -1745,6 +1748,32 @@ export class TenantTransferService {
             }
         }
         counts.automations = autoMap.size;
+
+        // v0.1.466 — los comentarios que dejó una automatización llevan su id en
+        // `metadata.automation`: se apunta a la automatización nueva (la empresa
+        // es nueva, así que todo comentario de este tenant vino del archivo).
+        // Un id viejo puede coincidir con uno nuevo ya asignado (otra
+        // instalación): la marca `remapped` evita traducir dos veces. Si la
+        // automatización no viajó, la marca queda como estaba (el id sólo
+        // informa; la ficha la nombra por su nombre).
+        for (const [oldId, newId] of autoMap) {
+            await tx.execute(sql`
+                UPDATE comments
+                   SET metadata = jsonb_set(
+                           jsonb_set(metadata, '{automation,id}', to_jsonb(${newId}::bigint)),
+                           '{automation,remapped}', 'true'::jsonb)
+                 WHERE tenant_id = ${tenantId}
+                   AND user_id = 0
+                   AND metadata ? 'automation'
+                   AND metadata->'automation'->>'id' = ${String(oldId)}
+                   AND NOT (metadata->'automation' ? 'remapped')
+            `);
+        }
+        await tx.execute(sql`
+            UPDATE comments
+               SET metadata = metadata #- '{automation,remapped}'
+             WHERE tenant_id = ${tenantId} AND metadata->'automation' ? 'remapped'
+        `);
 
         // Campo «Botón»: su plantilla de PDF y su automatización recién existen
         // ahora (la segunda pasada de los campos las dejó en null).

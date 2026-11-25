@@ -149,6 +149,8 @@ export function useCommentAuthors(comments: readonly CommentEntity[] | undefined
         (c: CommentEntity): string =>
             // E6 — una nota de un agente de IA lleva su nombre (el autor real es su dueño).
             (c.metadata?.agent?.name ? sprintf(/* translators: %s: agente */ __('%s (agente de IA)'), c.metadata.agent.name) : null)
+            // v0.1.466 — un comentario que dejó una automatización lleva su nombre.
+            ?? (isAutomationComment(c) ? automationAuthorName(c) : null)
             ?? (c.user_name !== undefined && c.user_name !== null && c.user_name !== '' ? c.user_name : null)
             ?? (c.from_client ? c.author_name || __('Cliente') : null)
             ?? map?.get(c.user_id)
@@ -212,6 +214,17 @@ export function useToggleCommentReaction(listId: string | number, recordId: numb
             markLocalRecordsChange(qc, listId);
         },
     });
+}
+
+/** v0.1.466 — ¿Lo dejó la acción «Agregar un comentario» de una automatización? */
+export function isAutomationComment(c: CommentEntity): boolean {
+    const a = c.metadata?.automation;
+    return c.user_id <= 0 && !!a && typeof a === 'object' && Number(a.id) > 0;
+}
+
+function automationAuthorName(c: CommentEntity): string {
+    const name = (c.metadata?.automation?.name ?? '').trim();
+    return name === '' ? __('Automatización') : sprintf(/* translators: %s: automatización */ __('Automatización «%s»'), name);
 }
 
 /** D2 — un comentario sin persona (la respuesta automática de la mesa de ayuda). */

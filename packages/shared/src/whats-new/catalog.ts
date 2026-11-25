@@ -3903,4 +3903,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a Informes', href: '/dashboards?tab=informes' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.466-comprobar-y-comentar',
+        version: '0.1.466',
+        date: '2026-11-25',
+        kind: 'feature',
+        title: 'Automatizaciones que se detienen solas y dejan comentarios',
+        summary:
+            'Dos pasos nuevos: «Comprobar y detener» sigue sólo si el registro cumple una condición, y «Agregar un comentario» deja una nota (interna o para el cliente) firmada por la automatización.',
+        media: {
+            slides: [
+                {
+                    title: 'Comprobar y detener',
+                    text: 'Revisa el registro como quedó después de los pasos de arriba. Si no cumple la condición, la automatización termina ahí sin fallar, y el historial dice qué regla no se cumplió.',
+                    illustration: 'auto-flujo',
+                },
+                {
+                    title: 'Agregar un comentario',
+                    text: 'Escribe la nota con variables y menciona con @ a quien tenga que enterarse. Aparece en la ficha firmada por la automatización y no dispara «Cuando se agrega un comentario».',
+                    illustration: 'ficha-comentarios',
+                },
+            ],
+        },
+        body: [
+            '- Dentro de «Repetir por cada registro vinculado», **Comprobar y detener** sólo deja de lado ese vinculado y sigue con el próximo.',
+            '- Un comentario **visible para el cliente** aparece en su portal con el nombre de la empresa.',
+            '- **Probar** te dice si la automatización seguiría o se detendría, y el texto exacto del comentario, sin escribir nada.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists', tour: 'automation-basics' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

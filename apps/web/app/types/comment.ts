@@ -11,6 +11,8 @@ export interface CommentMetadata {
     kind?: CommentKind;
     /** E6 — lo escribió un agente de IA (con el acceso de su dueño). */
     agent?: { id: number; name: string };
+    /** v0.1.466 — lo escribió una automatización (marca del servidor: nadie la puede fabricar). */
+    automation?: { id: number; name: string };
     /** call: minutos. */
     duration_minutes?: number;
     /** call: 'connected' | 'voicemail' | 'no_answer' | 'busy'. */

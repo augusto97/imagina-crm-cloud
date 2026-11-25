@@ -27,6 +27,7 @@ import {
     duplicateAt,
     getNode,
     insertAt,
+    insideLoop,
     pathKey,
     removeAt,
     updateNode,
@@ -779,14 +780,20 @@ export function AutomationCanvas({
                     const isIf = spec.type === 'if_else';
                     const isSwitch = spec.type === 'switch';
                     const isLoop = spec.type === 'for_each_linked';
+                    // v0.1.466 — «Comprobar y detener»: el nodo dice que la corrida puede terminar ahí.
+                    const isStop = spec.type === 'stop_unless';
                     const condCount = actionConditionCount(spec);
-                    const failBadge = onErrorBadge(spec);
+                    const failBadge = isStop
+                        ? insideLoop(n.path!.slice(0, -1))
+                            ? __('Si no: pasa al próximo')
+                            : __('Si no: termina aquí')
+                        : onErrorBadge(spec);
                     return (
                         <CanvasNode
                             key={n.id}
                             node={n}
-                            tone={isIf || isSwitch || isLoop ? 'branch' : 'neutral'}
-                            overline={isIf ? __('Condición') : isSwitch ? __('Según el valor') : isLoop ? __('Repetir') : __(meta.title)}
+                            tone={isIf || isSwitch || isLoop || isStop ? 'branch' : 'neutral'}
+                            overline={isIf ? __('Condición') : isSwitch ? __('Según el valor') : isLoop ? __('Repetir') : isStop ? __('Comprobar') : __(meta.title)}
                             icon={<meta.icon className="imcrm-h-4 imcrm-w-4" />}
                             title={summarizeAction(spec, fields, lists, actionsCatalog, relationPaths)}
                             badge={condCount > 0 ? sprintf(__('%d cond.'), condCount) : failBadge ?? undefined}

@@ -17,7 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
 import { useRecordActivity } from '@/hooks/useActivity';
-import { useCommentAuthors, useComments, useCreateComment, useDeleteComment, useUpdateComment } from '@/hooks/useComments';
+import { isAutomationComment, useCommentAuthors, useComments, useCreateComment, useDeleteComment, useUpdateComment } from '@/hooks/useComments';
 import { useFields } from '@/hooks/useFields';
 import { useGuestCanComment } from '@/hooks/useGuests';
 import { useIsGuest } from '@/lib/guest';
@@ -550,6 +550,8 @@ function CommentRow({
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(comment.content);
     const meta = comment.metadata ?? {};
+    // v0.1.466 — lo dejó una automatización: no se edita (lo que escribió es su texto), sólo se borra.
+    const fromAutomation = isAutomationComment(comment);
     const kind = MODES.find((m) => m.kind === (meta.kind ?? 'note'));
     const KindIcon = kind?.icon ?? MessageSquare;
 
@@ -578,12 +580,12 @@ function CommentRow({
     return (
         <li className="imcrm-group imcrm-relative imcrm-flex imcrm-gap-2.5 imcrm-py-1.5">
             <span className="imcrm-relative imcrm-z-[1]">
-                <Avatar name={name} size={24} />
+                {fromAutomation ? <AutomationAvatar size={24} /> : <Avatar name={name} size={24} />}
             </span>
             <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-1">
                 <div className="imcrm-flex imcrm-items-baseline imcrm-justify-between imcrm-gap-2">
                     <p className="imcrm-flex imcrm-min-w-0 imcrm-flex-wrap imcrm-items-center imcrm-gap-x-1.5 imcrm-text-[13px]">
-                        <span className="imcrm-font-medium imcrm-text-foreground">{name}</span>
+                        <span className="imcrm-font-medium imcrm-text-foreground" data-testid={fromAutomation ? 'imcrm-comment-automation-author' : undefined}>{name}</span>
                         <ClientVisibleBadge comment={comment} />
                         {meta.kind && meta.kind !== 'note' && !emailOf(comment) && (
                             <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-text-xs imcrm-text-muted-foreground">
@@ -613,7 +615,7 @@ function CommentRow({
                 {canEdit && !editing && !comment.deleted && (
                     <div className="imcrm-flex imcrm-gap-3 imcrm-text-xs imcrm-text-muted-foreground imcrm-opacity-0 imcrm-transition-opacity focus-within:imcrm-opacity-100 group-hover:imcrm-opacity-100">
                         {/* D2 — un correo no se edita: es lo que se mandó o recibió. */}
-                        {!emailOf(comment) && <button type="button" onClick={() => setEditing(true)} className="hover:imcrm-text-foreground">{__('Editar')}</button>}
+                        {!emailOf(comment) && !fromAutomation && <button type="button" onClick={() => setEditing(true)} className="hover:imcrm-text-foreground">{__('Editar')}</button>}
                         <button type="button" onClick={() => void del()} className="hover:imcrm-text-destructive">{__('Eliminar')}</button>
                     </div>
                 )}
@@ -655,6 +657,19 @@ function Time({ iso }: { iso: string }): JSX.Element {
         <time dateTime={iso} title={formatDateTimeStr(iso)} className="imcrm-shrink-0 imcrm-whitespace-nowrap imcrm-text-[11px] imcrm-tabular-nums imcrm-text-muted-foreground">
             {Number.isNaN(d.getTime()) ? '' : formatTimeOfDay(d)}
         </time>
+    );
+}
+
+/** v0.1.466 — El «avatar» de un comentario que dejó una automatización (un rayo, no iniciales). */
+export function AutomationAvatar({ size = 24 }: { size?: number }): JSX.Element {
+    return (
+        <span
+            aria-hidden
+            className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-primary/10 imcrm-text-primary imcrm-ring-1 imcrm-ring-primary/25"
+            style={{ width: size, height: size }}
+        >
+            <Zap style={{ width: Math.round(size * 0.5), height: Math.round(size * 0.5) }} />
+        </span>
     );
 }
 

@@ -65,6 +65,8 @@ const ACTIONS: ActionMeta[] = [
     { slug: 'copy_record', label: 'Copiar a otra lista', config_schema: {} },
     { slug: 'assign_round_robin', label: 'Asignar por turno', config_schema: {} },
     { slug: 'notify_in_app', label: 'Avisar en la app', config_schema: {} },
+    // v0.1.466 — un comentario en el registro, firmado por la automatización.
+    { slug: 'add_comment', label: 'Agregar un comentario', config_schema: {} },
     { slug: 'bulk_edit', label: 'Editar en lote', config_schema: {} },
     // v0.1.266 — un PDF con una plantilla de documento (cuenta de cobro, recibo).
     { slug: 'generate_pdf', label: 'Generar un PDF', config_schema: {} },
@@ -73,6 +75,8 @@ const ACTIONS: ActionMeta[] = [
     { slug: 'if_else', label: 'Si / sino (condicional)', config_schema: {} },
     // v0.1.460 — varias ramas según el valor de un campo o una variable.
     { slug: 'switch', label: 'Según el valor de…', config_schema: {} },
+    // v0.1.466 — seguir sólo si se cumple una condición; si no, termina ahí.
+    { slug: 'stop_unless', label: 'Comprobar y detener', config_schema: {} },
     // v0.1.460 — pedirle algo a la IA y usar su respuesta en los pasos siguientes.
     { slug: 'ask_ai', label: 'Preguntarle a la IA', config_schema: {} },
     // v0.1.288 — esperar un tiempo o hasta una fecha, y repetir por cada vinculado.

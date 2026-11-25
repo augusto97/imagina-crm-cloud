@@ -8,6 +8,7 @@ import { WHATS_EVENT_TRIGGER, readWhatsTriggerConfig } from './whats-triggers';
 import { automationRecordActionIssues, recordActionResponseName } from './automation-records';
 import { REQUEST_SIGNATURE_ACTION, requestSignatureIssues } from './signature-automations';
 import { automationExtraActionIssues, automationExtraTriggerIssues, extraActionResponseName } from './automation-extras';
+import { ADD_COMMENT_ACTION, STOP_UNLESS_ACTION, addCommentIssues, stopUnlessIssues } from './automation-steps';
 import {
     ASK_AI_ACTION,
     ON_ERROR_FORBIDDEN_INSIDE,
@@ -122,6 +123,9 @@ export const AUTOMATION_ACTIONS = [
     // v0.1.460 — preguntarle a la IA y varias ramas por el valor de algo.
     'ask_ai',
     'switch',
+    // v0.1.466 — comprobar y detener si no se cumple, y agregar un comentario.
+    'stop_unless',
+    'add_comment',
 ] as const;
 
 export interface ActionSpec {
@@ -732,6 +736,14 @@ function actionIssues(actions: unknown, base: string, depth: number, out: Automa
                 actionIssues(inner, `${at}.config.actions`, depth + 1, out, { ...scope, inLoop: true });
                 break;
             }
+            // v0.1.466 — «Comprobar y detener» necesita al menos una regla.
+            case STOP_UNLESS_ACTION:
+                out.push(...stopUnlessIssues(cfg, at));
+                break;
+            // v0.1.466 — «Agregar un comentario»: el texto, y el vinculado sólo dentro de una repetición.
+            case ADD_COMMENT_ACTION:
+                out.push(...addCommentIssues(cfg, at, scope.inLoop));
+                break;
             case 'if_else':
                 actionIssues(cfg.then_actions, `${at}.config.then_actions`, depth + 1, out, scope);
                 actionIssues(cfg.else_actions, `${at}.config.else_actions`, depth + 1, out, scope);

@@ -3,6 +3,13 @@ import type Redis from 'ioredis';
 import { REDIS } from '../redis/redis.module';
 import { ModuleRef } from '@nestjs/core';
 import {
+    ADD_COMMENT_ACTION,
+    STOP_UNLESS_ACTION,
+    automationCommentAuthor,
+    conditionRuleText,
+    readAutomationCommentMark,
+    readAddCommentConfig,
+    readStopUnlessRules,
     MEETING_SAVE_FIELD_TYPES,
     MEETING_SAVE_KEYS,
     meetingActionKind,
@@ -181,6 +188,7 @@ import { subscriptionPlans, subscriptions as subscriptionsTable } from '../db/sc
 import { attachments, automationRuns, comments, documentTemplates, forms, lists, memberships, records, teamMembers, teams, tenants, users } from '../db/schema';
 import { enterMatch, leaveMatch, matchesNow, seedBaseline, sweepMatches } from './automation-matches';
 import { NotificationsService } from '../notifications/notifications.service';
+import { CommentsService } from '../comments/comments.service';
 import { editLinkFormId, editLinkMaker, readEditLinks, type EditLinkForm } from '../forms/form-edit-links';
 import { connectionModuleStepError, moduleForIntegration, planModuleOff, planModuleStepError } from '../billing/plan-module-gate';
 import { tenantIsReadOnly } from '../tenancy/read-only';
@@ -614,6 +622,8 @@ const ACTION_NAMES: Record<string, string> = {
     request_signature: 'Pedir firma',
     ask_ai: 'Preguntarle a la IA',
     switch: 'Según el valor de…',
+    stop_unless: 'Comprobar y detener',
+    add_comment: 'Agregar un comentario',
     engine: 'Motor de automatizaciones',
 };
 
@@ -2901,6 +2911,18 @@ export class AutomationEngine {
         // v0.1.460 — «Según el valor de…»: varias ramas por el valor de un campo o una variable.
         if (spec.type === SWITCH_ACTION) return this.executeSwitch(ctx, spec.config ?? {}, path, depth);
         if (spec.type === 'for_each_linked') return this.executeLoop(ctx, spec.config ?? {}, path, depth);
+        // v0.1.466 — «Comprobar y detener si no se cumple»: sobre el registro
+        // tal como quedó; si no se cumple, termina ahí (no es una falla).
+        if (spec.type === STOP_UNLESS_ACTION) return this.executeStopUnless(ctx, spec.config ?? {}, path);
+        // v0.1.466 — «Agregar un comentario»: por el servicio de comentarios
+        // (su propia transacción, menciones, avisos y tiempo real).
+        if (spec.type === ADD_COMMENT_ACTION) {
+            try {
+                return { log: tag([await this.addComment(ctx, spec.config ?? {})]) };
+            } catch (err) {
+                return { log: tag([fail(ADD_COMMENT_ACTION, explainError(err))]) };
+            }
+        }
         // v0.1.460 — «Preguntarle a la IA»: su propio pedido (fuera de una
         // transacción del motor: el proveedor puede tardar varios segundos).
         if (spec.type === ASK_AI_ACTION) {
@@ -3054,6 +3076,105 @@ export class AutomationEngine {
             }
         }
         return { log: tag([out!]) };
+    }
+
+    /**
+     * v0.1.466 — «Comprobar y detener si no se cumple». Las reglas son las de
+     * un si/sino (mismo evaluador, mismas variables) y se miran sobre el
+     * registro TAL COMO QUEDÓ después de los pasos anteriores (`ctx.data` ya
+     * tiene lo que escribió «Actualizar campo»). Si no se cumplen, la corrida
+     * termina como la espera con «Continuar sólo si…»: un paso omitido con el
+     * motivo, sin falla ni Problema. Dentro de «Repetir por cada vinculado»
+     * el corte es sólo de ese vinculado (la repetición ignora el `stop` de sus
+     * pasos y sigue con el próximo); en cualquier otro lugar —también dentro
+     * de una rama— detiene toda la automatización.
+     */
+    private executeStopUnless(ctx: RunContext, config: Record<string, unknown>, path: FlowPath): Flow {
+        const A = STOP_UNLESS_ACTION;
+        const pathKey = flowPathKey(path);
+        const rules = readStopUnlessRules(config);
+        if (rules.length === 0) {
+            return { log: [ok(A, 'No tiene reglas que comprobar: siguió con los pasos siguientes.', { path: pathKey, ...(ctx.sim ? { _sim: 'info' } : {}) })] };
+        }
+        const ex = explainCondition(rules as unknown as ConditionData, this.accessor(ctx), this.condOpts(ctx));
+        const checks = this.labelChecks(ctx, ex.checks);
+        if (ex.matched) {
+            const message = ctx.sim ? 'Se cumple: seguiría con los pasos siguientes.' : 'Se cumplió: siguió con los pasos siguientes.';
+            return { log: [ok(A, message, { path: pathKey, ...(ctx.sim ? { _sim: 'info', checks } : {}) })] };
+        }
+        const failed = checks.filter((c) => !c.ok).map((c) => conditionRuleText(c.label, c.op, this.ruleValueText(ctx, c.field, c.expected)));
+        const extra = failed.length - 2;
+        const what = `No se cumplía ${failed.slice(0, 2).join(' ni ')}${extra > 0 ? ` (ni ${extra} regla${extra === 1 ? '' : 's'} más)` : ''}`;
+        const where = ctx.item
+            ? ctx.sim
+                ? 'no seguiría con este registro vinculado (la repetición sigue con el próximo)'
+                : 'no siguió con este registro vinculado'
+            : ctx.sim
+              ? 'la automatización se detendría aquí'
+              : 'la automatización no siguió';
+        const entry = skip(A, `${what}: ${where}.`);
+        entry.details = { path: pathKey, failed, ...(ctx.sim ? { checks } : {}) };
+        return { log: [entry], stop: true };
+    }
+
+    /** El valor esperado de una regla, legible (la etiqueta de la opción, no su valor interno). */
+    private ruleValueText(ctx: RunContext, field: string, expected: unknown): string {
+        const def = withItemFields(ctx).get(field.replace(/^before\./, ''));
+        const labels = def && (def.type === 'select' || def.type === 'multi_select') ? optionLabelsOf(def) : null;
+        const vals = (Array.isArray(expected) ? expected : [expected]).filter((v) => v !== null && v !== undefined && v !== '');
+        return vals.map((v) => (typeof v === 'object' ? JSON.stringify(v) : (labels?.get(String(v)) ?? String(v)))).join(', ');
+    }
+
+    /** v0.1.466 — Los comentarios (viven en su propio módulo: se resuelve al usarlo). */
+    private commentsSvc: CommentsService | null | undefined;
+    private commentsService(): CommentsService | null {
+        if (this.commentsSvc === undefined) {
+            try {
+                this.commentsSvc = this.moduleRef?.get(CommentsService, { strict: false }) ?? null;
+            } catch {
+                this.commentsSvc = null;
+            }
+        }
+        return this.commentsSvc;
+    }
+
+    /**
+     * v0.1.466 — «Agregar un comentario». El texto se arma con las variables
+     * del registro (o del vinculado de la vuelta, dentro de una repetición) y
+     * lo firma la automatización. «Probar» muestra el texto armado y no comenta.
+     */
+    private async addComment(ctx: RunContext, cfg: Record<string, unknown>): Promise<ActionLogEntry> {
+        const A = ADD_COMMENT_ACTION;
+        const c = readAddCommentConfig(cfg);
+        const onItem = c.target === 'item';
+        if (onItem && !ctx.item) return fail(A, '«El registro vinculado» sólo existe dentro de «Repetir por cada registro vinculado».');
+        const recordId = onItem ? ctx.item!.recordId : ctx.recordId;
+        const listId = onItem ? ctx.item!.listId : ctx.listId;
+        if (recordId === null) return skip(A, 'Sin registro en contexto: el comentario va en un registro.');
+        if (c.body.trim() === '') return fail(A, 'La acción no tiene el texto del comentario.');
+        const body = this.mergers(ctx, this.accessor(ctx)).merge(c.body).trim().slice(0, 10000);
+        if (body === '') return skip(A, 'El comentario quedó vacío con los datos de este registro: no se agregó.');
+        const where = onItem ? `al registro vinculado #${recordId}` : 'al registro';
+        const kind = c.visibility === 'client' ? 'un comentario visible para el cliente' : 'una nota interna';
+        if (ctx.sim) {
+            return ok(A, `Agregaría ${kind} ${where}: «${body.length > 160 ? `${body.slice(0, 159)}…` : body}».`, {
+                _sim: 'would_run',
+                body,
+                visibility: c.visibility,
+                record_id: recordId,
+            });
+        }
+        const svc = this.commentsService();
+        if (!svc) return fail(A, 'Los comentarios no están disponibles en este servidor.');
+        if (!ctx.automation) return fail(A, 'No se sabe qué automatización comenta.');
+        const created = await svc.createFromAutomation(ctx.tenantId, {
+            listId,
+            recordId,
+            body,
+            visibility: c.visibility,
+            automation: { id: ctx.automation.id, name: ctx.automation.name },
+        });
+        return ok(A, `Agregó ${kind} ${where}.`, { comment_id: created.id, visibility: c.visibility, record_id: recordId });
     }
 
     private async executeIfElse(ctx: RunContext, config: Record<string, unknown>, path: FlowPath, depth: number): Promise<Flow> {
@@ -6095,7 +6216,13 @@ export class AutomationEngine {
             const meta = (c.metadata ?? {}) as { email?: { direction?: unknown; from_name?: unknown; from?: unknown } };
             const byEmail = meta.email?.direction === 'in';
             const fromClient = byEmail || c.role === 'client';
-            const name = byEmail ? String(meta.email?.from_name ?? meta.email?.from ?? '') : (c.name || c.email || '');
+            // v0.1.466 — lo dejó «Agregar un comentario» de una automatización.
+            const auto = c.userId <= 0 ? readAutomationCommentMark(c.metadata) : null;
+            const name = byEmail
+                ? String(meta.email?.from_name ?? meta.email?.from ?? '')
+                : auto
+                  ? automationCommentAuthor(auto.name)
+                  : (c.name || c.email || '');
             return {
                 id: c.id,
                 text: c.body,

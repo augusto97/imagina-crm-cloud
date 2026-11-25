@@ -133,8 +133,6 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 | E3 · Subflujos (una automatización que llama a otra, con sus datos) | medio · M | **Lo demás de E3 salió en v0.1.460**: «Según el valor de…» (varias ramas) y «Si este paso falla» (detener, seguir, reintentar hasta 3 veces u otros pasos). E2 salió completa: «Preguntarle a la IA» también en v0.1.460. |
 | E4 · Scripts en JavaScript aislado | medio-bajo · L | Necesita un sandbox serio. |
 | E8 · Horario laboral de la empresa + «Esperar hasta un día laborable» y «Esperar hasta el horario laboral» | alto · M | Visto en otra app (2026-11-25). Hoy «Esperar» sólo cuenta tiempo o espera una fecha del registro. Falta un horario de la empresa (días, horas y festivos del país; los festivos por país ya existen en la agenda) que también podría servir de base al SLA de la mesa de ayuda. |
-| E9 · Paso «Comprobar y detener si no se cumple» | medio · S | Visto en otra app (2026-11-25). Hoy sólo la espera tiene «Continuar sólo si…» y la condición de cada paso salta ESE paso, no detiene el resto. |
-| E10 · Acción «Agregar un comentario» (nota interna o visible para el cliente) | alto · S | Visto en otra app (2026-11-25). No existe como acción; sólo los agentes de IA comentan. Cuidar que no dispare «Cuando se agrega un comentario» en bucle. |
 
 ### F. Inteligencia artificial
 | Idea | Valor · esfuerzo | Nota |
