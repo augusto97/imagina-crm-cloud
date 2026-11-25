@@ -3933,4 +3933,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists', tour: 'automation-basics' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.467-horario-laboral',
+        version: '0.1.467',
+        date: '2026-11-25',
+        kind: 'feature',
+        title: 'Horario laboral de la empresa y esperas en horario laboral',
+        summary:
+            'Dile a la app qué días y a qué horas trabajas, y haz que una automatización espere hasta un día laborable o hasta el horario laboral: nada sale de noche, un domingo ni un festivo.',
+        media: {
+            slides: [
+                {
+                    title: 'Tu horario, una vez',
+                    text: 'En Ajustes → Horario laboral eliges los días, uno o varios tramos por día (con el almuerzo) y de qué país son los festivos que no se trabajan. Arriba ves si ahora está abierto.',
+                    illustration: 'widget-horario',
+                },
+                {
+                    title: 'Esperar hasta el horario laboral',
+                    text: 'En el paso «Esperar» elige «Hasta el horario laboral» o «Hasta un día laborable»: si ya es momento, sigue en el acto; si no, espera a que la empresa abra.',
+                    illustration: 'auto-espera',
+                },
+            ],
+        },
+        body: [
+            '- Si cambias el horario o la zona horaria, las automatizaciones que ya estaban esperando se acomodan solas.',
+            '- **Probar** te dice si seguiría en el acto o hasta cuándo esperaría.',
+            '- El horario lo cambia un administrador; el resto del equipo lo ve.',
+        ].join('\n'),
+        action: { label: 'Ver el horario laboral', href: '/settings?s=horario', tour: 'automation-basics' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

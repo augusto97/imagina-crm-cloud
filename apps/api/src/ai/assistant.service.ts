@@ -18,6 +18,7 @@ import { ConversationsStore, dropLastTurn, prepareHistoryForNewTurn, type ApiMes
 import { assistantMaxTokens, assistantModelParams } from './model-params';
 import { AiToolRegistry, type AiToolContext } from './tools/registry';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
+import { CompanyHoursService } from '../company-hours/company-hours.service';
 import { can } from '../authz/can';
 
 /** Vueltas máximas del bucle de herramientas por mensaje (cada una = 1 llamada al modelo). */
@@ -44,6 +45,8 @@ export class AssistantService {
         @Optional() @Inject(AI_CLIENT_FACTORY) clientFactory?: AiClientFactory,
         // v0.1.263 — "hoy" y los horarios en la zona de la empresa.
         @Optional() private readonly timeZones?: TenantTimeZones,
+        // v0.1.467 (E8) — el horario laboral (las esperas «hasta el horario laboral»).
+        @Optional() private readonly companyHours?: CompanyHoursService,
     ) {
         this.clientFactory = clientFactory ?? defaultClientFactory;
     }
@@ -153,7 +156,8 @@ export class AssistantService {
         const client = this.clientFactory(access.apiKey);
         const tools = this.registry.toAnthropicTools(ctx);
         const timeZone = this.timeZones ? await orRelease(this.timeZones.get(toolCtx.tenantId)) : null;
-        const system = buildSystemPrompt(toolCtx, this.registry, timeZone, { recordId: req.context?.record_id });
+        const businessHours = this.companyHours ? await orRelease(this.companyHours.summaryLine(toolCtx.tenantId)) : null;
+        const system = buildSystemPrompt(toolCtx, this.registry, timeZone, { recordId: req.context?.record_id, businessHours });
         const textParts: string[] = [];
         const proposals: AiProposal[] = [];
         const steps: AiStep[] = [];
@@ -345,7 +349,7 @@ export function buildSystemPrompt(
     ctx: AiToolContext,
     registry: AiToolRegistry,
     timeZone: string | null = null,
-    screen: { recordId?: number } = {},
+    screen: { recordId?: number; businessHours?: string | null } = {},
 ): string {
     const caps = (['manage_lists', 'manage_fields', 'manage_views', 'manage_dashboards', 'manage_automations'] as const).filter((c) =>
         can(ctx, c),
@@ -355,6 +359,8 @@ export function buildSystemPrompt(
     const zoneLine = timeZone
         ? ` Zona horaria de la empresa: ${timeZone} (los horarios de las automatizaciones corren en ella salvo que les pongas otra en trigger_config.tz).`
         : ' La empresa todavía no eligió zona horaria (Ajustes → Formato regional): si programas algo a una hora, pregunta en qué zona y ponla en trigger_config.tz.';
+    // v0.1.467 (E8) — lo que usan las esperas business_hours / business_day.
+    const hoursLine = screen.businessHours ? ` Horario laboral de la empresa: ${screen.businessHours} (lo usan las esperas business_hours y business_day; se cambia en Ajustes → Horario laboral).` : '';
     return [
         'Eres el asistente de Imagina Base, una app para armar bases de datos flexibles (listas con campos, vistas guardadas, tableros y automatizaciones — estilo Airtable/ClickUp). Ayudas a la persona a construir y modificar la ESTRUCTURA de su workspace pidiéndotelo en lenguaje natural.',
         '',
@@ -383,7 +389,7 @@ export function buildSystemPrompt(
         '22. Suscripciones con débito automático (Mercado Pago o PayPal; PayPal cobra en USD u otra moneda que acepte, nunca en COP): para saber quién está al día, en mora o vencido (a quién hay que cortarle el servicio) usa list_subscriptions; los planes están en `subscription_plans` de get_list_schema. Para armar o cambiar un plan, propose_configure_subscription_plan; para guardar el estado en columnas y llevar cada cobro a su propia lista (con tablero), propose_configure_subscription_columns; para suscribir, pausar, reanudar, cancelar o cambiar el valor de un cliente, propose_manage_subscription. Al suscribir, el link para el cliente aparece en el resultado de la propuesta: compártelo tal cual.',
         '23. Firma electrónica: para pedir que alguien firme un documento de un registro (un contrato, una cotización), usa propose_request_signature con una plantilla de `document_templates` o el PDF de un campo Archivo, y los correos REALES de quienes firman (del registro o de un miembro: nunca los inventes). Para ver quién firmó, quién falta o qué venció, list_signature_requests. Si la firma tiene que pedirse sola cada vez que pasa algo (al aprobar una cotización, al crear un cliente), es una automatización con la acción request_signature; para reaccionar a una firma (al firmar todos, cambiar el estado o avisar), el disparador signature_event.',
         '',
-        `Contexto: hoy es ${today}.${zoneLine} Rol de la persona: ${ctx.role}. Puede: ${caps.length ? caps.join(', ') : 'sólo consultar'}. Herramientas disponibles: ${toolNames.join(', ')}.` +
+        `Contexto: hoy es ${today}.${zoneLine}${hoursLine} Rol de la persona: ${ctx.role}. Puede: ${caps.length ? caps.join(', ') : 'sólo consultar'}. Herramientas disponibles: ${toolNames.join(', ')}.` +
             (ctx.listSlug ? ` La persona tiene abierta la lista «${ctx.listSlug}»: si no dice otra cosa, se refiere a esa.` : '') +
             (ctx.listSlug && screen.recordId ? ` Está mirando el registro #${screen.recordId} de esa lista: «este registro» es ése (léelo con query_records con ids [${screen.recordId}]).` : ''),
     ].join('\n');

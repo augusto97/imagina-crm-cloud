@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, Optional, type OnModuleInit } from '@nestjs
 import { waitResumeAt } from '@imagina-base/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { ApprovalHub, type ApprovalResolvedEvent } from '../approvals/approval-hub';
+import { CompanyHoursService } from '../company-hours/company-hours.service';
 import { DRIZZLE, type Db } from '../db/client';
 import { automationRuns, automations } from '../db/schema';
 import { IncidentHub, errorText } from '../incidents/incident-hub';
@@ -43,10 +44,15 @@ export class AutomationWaitsService implements OnModuleInit {
         @Optional() private readonly incidents?: IncidentHub,
         // C5 — una aprobación que se resuelve despierta a quien la esperaba.
         @Optional() private readonly approvals?: ApprovalHub,
+        // v0.1.467 (E8) — cambiar el horario laboral (o la zona) mueve las esperas.
+        @Optional() private readonly companyHours?: CompanyHoursService,
     ) {}
 
     onModuleInit(): void {
         this.changes?.subscribe((change) => this.onRecordChange(change));
+        this.companyHours?.onChange(async (tenantId) => {
+            await this.onCompanyHoursChanged(tenantId);
+        });
         this.approvals?.subscribe(async (event) => {
             await this.onApprovalResolved(event);
         });
@@ -156,6 +162,49 @@ export class AutomationWaitsService implements OnModuleInit {
                 });
             }
         }
+    }
+
+    /**
+     * v0.1.467 (E8) — La empresa cambió su horario laboral (o su zona): las
+     * corridas que esperan «hasta un día laborable» o «hasta el horario laboral» se
+     * RECALCULAN desde ahora con el horario nuevo (si ahora ya es horario
+     * laboral, siguen en el próximo tick). Se agrupan por (modo, hora): las de
+     * la misma configuración caen en el mismo instante — un UPDATE por grupo.
+     * El momento de reanudar vuelve a mirar el horario igual (por si cambia
+     * otra vez mientras tanto).
+     */
+    async onCompanyHoursChanged(tenantId: number, now: Date = new Date()): Promise<number> {
+        if (!this.companyHours) return 0;
+        const groups = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx.execute<{ mode: string; at_time: string | null; n: number | string }>(sql`
+                SELECT resume_state -> 'wait' ->> 'mode' AS mode,
+                       resume_state -> 'wait' ->> 'at_time' AS at_time,
+                       count(*) AS n
+                  FROM automation_runs
+                 WHERE tenant_id = ${tenantId}
+                   AND status = 'waiting'
+                   AND resume_state -> 'wait' ->> 'mode' IN ('business_day', 'business_hours')
+                 GROUP BY 1, 2`),
+        );
+        if (groups.rows.length === 0) return 0;
+        const { calendar } = await this.companyHours.calendar(tenantId);
+        let moved = 0;
+        for (const g of groups.rows) {
+            const wait = { mode: g.mode, ...(g.at_time ? { at_time: g.at_time } : {}) };
+            const target = waitResumeAt(wait, { now, timeZone: calendar.timeZone, business: calendar });
+            const at = target.ok ? target.at : now;
+            const res = await this.tenantDb.withTenant(tenantId, (tx) =>
+                tx.execute(sql`
+                    UPDATE automation_runs
+                       SET resume_at = ${at}
+                     WHERE tenant_id = ${tenantId}
+                       AND status = 'waiting'
+                       AND resume_state -> 'wait' ->> 'mode' = ${g.mode}
+                       AND (resume_state -> 'wait' ->> 'at_time') IS NOT DISTINCT FROM ${g.at_time}`),
+            );
+            moved += res.rowCount ?? 0;
+        }
+        return moved;
     }
 
     /**

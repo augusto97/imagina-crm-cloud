@@ -18,6 +18,7 @@ import { randomBytes } from 'node:crypto';
 import type { ZodType as ZodTypeAny } from 'zod';
 import { zodToJson } from '../common/zod-json-schema';
 import { AuditService } from '../audit/audit.service';
+import { CompanyHoursService } from '../company-hours/company-hours.service';
 import { can } from '../authz/can';
 import { hasRedactedSecrets, redactAutomationSecrets, restoreRedactedSecrets } from '../automations/automation-secrets';
 import { FieldsService } from '../fields/fields.service';
@@ -106,6 +107,8 @@ export class AutomationDraftService {
         @Inject(REDIS) private readonly redis: Redis,
         @Optional() @Inject(AI_CLIENT_FACTORY) clientFactory?: AiClientFactory,
         @Optional() private readonly timeZones?: TenantTimeZones,
+        // v0.1.467 (E8) — el horario laboral en el prompt (esperas business_*).
+        @Optional() private readonly companyHours?: CompanyHoursService,
     ) {
         this.clientFactory = clientFactory ?? defaultClientFactory;
     }
@@ -241,7 +244,8 @@ export class AutomationDraftService {
                 description: automationDraftToolDescription(base),
                 input_schema: toInputSchema(automationDraftToolSchema),
             };
-            const system = buildDraftSystemPrompt({ today: zonedToday(timeZone ?? FALLBACK_TIME_ZONE), timeZone, mode });
+            const businessHours = this.companyHours ? await this.companyHours.summaryLine(ctx.tenantId) : null;
+            const system = buildDraftSystemPrompt({ today: zonedToday(timeZone ?? FALLBACK_TIME_ZONE), timeZone, mode, businessHours });
             const client = this.clientFactory(access.apiKey);
             const messages: MessageParam[] = [{ role: 'user', content: buildDraftUserContent({ schema, current, description: input.description }) }];
 

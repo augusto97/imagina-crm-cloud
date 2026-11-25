@@ -17484,6 +17484,75 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         `tenant-transfer.spec`, `stepsMeta.test` en el front — E2E navegador
         24/24 en escritorio claro y celular 390×844 oscuro.
 
+  - [x] **Horario laboral de la empresa + esperar hasta un día laborable o
+        el horario laboral (v0.1.467, addendum ADR-S47, idea E8 del banco,
+        vista en otra app por el usuario)**. Sin migración.
+        (a) **Ajustes → Horario laboral** (sección nueva del grupo Empresa,
+        `CompanyHoursPanel` en su propio chunk; `data-tour`
+        `business-hours-status|week|holidays`): los días con uno o varios
+        tramos (el almuerzo), «Copiar a lun–vie», de qué país son los festivos
+        que no se trabajan (los 33 de la agenda) y si cuentan los regionales,
+        la lista de festivos del año (este y el que viene) y una vista previa
+        en vivo con la hora REAL de la empresa («Ahora: abierto, cierra a las
+        17:00» / «Ahora: cerrado, abre el lunes a las 8:00»). Lo ve todo el
+        equipo y lo cambia el admin (`GET/PUT /workspaces/current/
+        business-hours`, `GET …/holidays`; bitácora
+        `workspace.business_hours_change`); vive en
+        `tenants.settings.business_hours` con lectura tolerante. **De
+        fábrica**: lunes a viernes de 8:00 a 17:00 y los festivos del país de
+        la zona horaria de la empresa (Colombia si la zona no dice un país).
+        El editor de la semana se separó de la agenda
+        (`admin/booking/WeekHoursEditor.tsx`, ahora con sólo lectura y que
+        entra en un celular de 390 px; la agenda y el widget lo siguen usando).
+        (b) **Reglas puras en shared** (`schemas/company-hours.ts` +
+        `company-hours-input.ts`): `companyCalendar` con los festivos ya
+        resueltos, `isCompanyOpen`, `isCompanyWorkday`, `nextCompanyOpening`
+        (tramos contiguos o que cruzan la medianoche se juntan; llegar justo al
+        cierre es cerrado), `nextCompanyWorkdayStart`, `describeCompanyStatus`
+        y `describeCompanyHours`. El servidor (`CompanyHoursService`, global)
+        resuelve los festivos con el servicio de la agenda y, si no los puede
+        saber, calcula sin ellos y lo anota: nunca traba una corrida.
+        (c) **«Esperar»** suma **Hasta un día laborable** (`business_day`: si
+        hoy lo es sigue en el acto; si es fin de semana o festivo, al próximo
+        día laborable a la hora en que abre o a una hora elegida) y **Hasta el
+        horario laboral** (`business_hours`: si la empresa trabaja sigue en el
+        acto; si no, a la próxima apertura). `waitResumeAt` los calcula para el
+        editor, «Probar» («Esperaría hasta …, cuando vuelve el horario
+        laboral») y el motor; el historial dice «En espera hasta…
+        (cuando vuelve el horario laboral)». Editor con los cuatro modos, la
+        explicación de cada uno y el horario de la empresa en una línea con
+        «Cambiarlo en Ajustes → Horario laboral» (en otra pestaña: el editor
+        tiene cambios sin guardar); `data-tour` `automation-wait-mode` y
+        `automation-wait-business`.
+        (d) **Cambiar el horario o la zona recalcula las esperas en curso**
+        (`AutomationWaitsService.onCompanyHoursChanged`, agrupadas por modo y
+        hora) y al reanudar la espera se vuelve a revisar con el horario de
+        ahora, leído sin caché: si todavía no es momento, vuelve a esperar
+        hasta la apertura correcta.
+        (e) **Bug de paso**: cuando una espera no hacía falta (la hora ya había
+        pasado), «Continuar sólo si…» se salteaba y la automatización seguía con
+        un registro que ya no cumplía; ahora decide también ahí, en los cuatro
+        modos.
+        (f) El asistente, el MCP y «Describir con IA» reciben el horario de la
+        empresa en una línea (como la zona) y aceptan los dos modos.
+        Ayuda: guía nueva `business-hours`, la de esperas al día, Aprende →
+        Automatizaciones (filas nuevas en «Esperar» y un párrafo del horario,
+        con la ilustración `auto-espera`) y novedad con carrusel. **Queda
+        afuera**: que el SLA de la mesa de ayuda use este horario (anotado en
+        `docs/ideas.md`, G15). Tests: shared 1158 (`company-hours.test`:
+        almuerzo, sábado medio día, festivo, cambio de mes, zona que no es UTC,
+        llegar justo al cierre, textos y el schema), API `company-hours.spec`
+        7/7 con Postgres real y el reloj de JS fijado (un sábado espera al lunes
+        8:00 y el reloj la reanuda, antes de abrir no la toma, en horario sigue
+        en el acto, «Continuar sólo si…» sin esperar, el festivo del 8-dic,
+        cambiar el horario la recalcula y «Probar», tomada antes de tiempo
+        vuelve a esperar) + specs de automatizaciones, aprobaciones y asistente
+        108/108, front 1019 — E2E navegador 24/24 contra el slot (escritorio
+        claro: configurar con almuerzo y sábado, vista previa, festivos,
+        guardar, tramo inválido, bitácora, la espera en el editor; corrida real
+        en espera hasta la próxima apertura y reanudada al abrir; en horario sin
+        pausar; celular 390×844 oscuro sin scroll lateral).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

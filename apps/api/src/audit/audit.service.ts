@@ -96,6 +96,8 @@ export type AuditAction =
     // v0.1.338 (ADR-S87) — no renovó: pasó al plan de prueba.
     | 'billing.lapse_to_trial'
     | 'workspace.smtp_change'
+    // v0.1.467 (E8) — el horario laboral de la empresa.
+    | 'workspace.business_hours_change'
     | 'workspace.mobile_nav_change'
     | 'workspace.mail_account_change'
     | 'workspace.storage_change'

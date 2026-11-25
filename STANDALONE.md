@@ -2831,6 +2831,10 @@ verían «hoy» distinto en el mismo tablero, y una automatización no tiene
 usuario); seguir en UTC y convertir sólo en la interfaz (el error real es del
 servidor, que es el que dispara).
 
+*v0.1.467*: el horario laboral de la empresa (ADR-S47, addendum v0.1.467) no
+tiene zona propia: usa ésta. Cambiarla recalcula las esperas «hasta un día
+laborable» / «hasta el horario laboral» que están en curso.
+
 ---
 
 ### ADR-S34 — Correos diseñados por bloques, compatibles con Gmail y Outlook (v0.1.265)
@@ -4344,6 +4348,54 @@ del asistente (ADR-S21):
 - **Migrar una empresa** conserva `user_id` 0 en los comentarios sin persona (antes
   tomaban la persona de respaldo) y traduce `metadata.automation.id` a la
   automatización nueva.
+
+**Addendum v0.1.467 — Horario laboral de la empresa y esperas por día
+laborable u horario laboral (E8).**
+
+- **El horario es de la empresa** y vive en `tenants.settings.business_hours`
+  (sin migración): `week` (7 días, domingo primero, hasta 6 tramos `HH:MM` por
+  día; `24:00` cierra el día), `holiday_country` (ISO2 de la lista de festivos
+  de la agenda, o `null` = se trabaja los festivos) y `regional_holidays`. Se lee
+  con tolerancia (`readCompanyHours`): una semana vacía o rota vuelve a la de
+  fábrica. **De fábrica**: lunes a viernes de 8:00 a 17:00 y los festivos del
+  país de la zona de la empresa (`holidayCountryForTimeZone`; si la zona no
+  corresponde a un país conocido, Colombia). La zona es la de la empresa
+  (ADR-S33): el horario no tiene zona propia. Lo ve todo el equipo y lo cambia
+  el admin (`PUT /workspaces/current/business-hours`, bitácora
+  `workspace.business_hours_change`); `GET …/holidays` da los festivos de un
+  año con si cierran.
+- **Reglas puras en shared** (`company-hours.ts`): `companyCalendar` arma el
+  horario con los festivos ya resueltos (un `Set` de `YYYY-MM-DD`: shared no
+  hace red), y sobre él `isCompanyOpen`, `isCompanyWorkday`,
+  `nextCompanyOpening` (tramos contiguos o que cruzan la medianoche se
+  juntan; llegar justo al cierre es cerrado) y `nextCompanyWorkdayStart`. El
+  servidor resuelve los festivos con el MISMO servicio de la agenda
+  (`BookingHolidaysService`: calendario oficial de Google con caché y respaldo
+  para Colombia); si no se pueden saber, **se calcula sin ellos** y el historial
+  lo anota: una espera nunca se traba por eso.
+- **Dos modos de «Esperar»**: `business_hours` (si la empresa está trabajando
+  sigue en el acto; si no, espera a la próxima apertura) y `business_day` (si
+  hoy es día laborable sigue en el acto; si no, espera al próximo día laborable
+  a la hora en que abre o a `at_time`). `waitResumeAt` los calcula con el mismo
+  tope de un año que el resto, así el editor, «Probar» y el motor dicen lo mismo.
+  Si no hace falta esperar, la espera no pausa.
+- **«Continuar sólo si…» decide también cuando no hace falta esperar** (antes,
+  una espera cuya hora ya había pasado seguía sin mirar la condición): vale
+  para los cuatro modos.
+- **Un cambio de horario (o de zona) recalcula las esperas en curso**: el
+  servicio avisa por `onChange` y `AutomationWaitsService` re-calcula
+  `resume_at` de las corridas en espera de esos dos modos (agrupadas por modo y
+  hora). Además, al reanudar, la espera se vuelve a revisar con el horario de
+  AHORA leído sin caché (con dos procesos, el de los trabajos no se entera al
+  instante de un cambio hecho en el otro): si todavía no es momento, vuelve a
+  esperar hasta la apertura correcta. Se eligió recalcular (y no dejar la hora
+  vieja) porque quien cambia el horario espera que las automatizaciones lo
+  respeten desde ya.
+- **El asistente, el MCP y «Describir con IA»** reciben el horario de la
+  empresa en una línea en el prompt, como la zona, y aceptan los dos modos en
+  `propose_create_automation`.
+- **Fuera de esta versión**: que el SLA de la mesa de ayuda (ADR-S70) use este
+  horario en lugar del suyo (sigue en `docs/ideas.md`, G15).
 
 
 ### ADR-S48 — Portal con contraseña por empresa, pagos del cliente y formularios verificados (v0.1.289)

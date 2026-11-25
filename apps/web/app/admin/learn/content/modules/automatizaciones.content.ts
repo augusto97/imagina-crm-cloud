@@ -864,6 +864,8 @@ export const articles: LearnArticle[] = [
                 rows: [
                     { name: 'Un tiempo', what: '**Cuánto esperar** en minutos, horas o días (hasta un año).' },
                     { name: 'Hasta una fecha del registro', what: 'Un **Campo de fecha**, con un desplazamiento opcional («1 día antes de») y **A una hora fija de ese día** (en la zona de la empresa).', tip: 'Si la fecha cambia mientras espera, la espera se mueve sola. Si el campo está vacío, la automatización termina ahí.' },
+                    { name: 'Hasta un día laborable', what: 'Si hoy es día laborable, sigue en el acto. Si es fin de semana o festivo, espera al **próximo día laborable**, a la hora en que abre la empresa o a **una hora fija** que elijas.', tip: 'Los días laborables y los festivos son los de **Ajustes → Horario laboral**.' },
+                    { name: 'Hasta el horario laboral', what: 'Si la empresa está trabajando, sigue en el acto. Si no (de noche, en el almuerzo, el fin de semana o un festivo), espera a la **próxima apertura**.', tip: 'Ponlo antes de un mensaje al cliente: así nunca le llega un WhatsApp un domingo a las 11 de la noche.' },
                     { name: 'Continuar sólo si… (opcional)', what: 'Al terminar la espera se vuelve a leer el registro: si ya no cumple estas condiciones (por ejemplo, la factura ya se pagó), la automatización termina ahí.', tip: 'Casi siempre quieres esto en un recordatorio: no le escribas a quien ya pagó.' },
                 ],
             },
@@ -871,6 +873,10 @@ export const articles: LearnArticle[] = [
                 t: 'callout',
                 tone: 'info',
                 md: 'Mientras espera, la corrida aparece **En espera** en el historial (con hasta cuándo) y se puede **Cancelar espera**. Si se borra el registro o se pausa la automatización, las esperas se cancelan y no se retoman al reactivarla.',
+            },
+            {
+                t: 'p',
+                md: '**El horario laboral** se configura una vez para toda la empresa en **Ajustes → Horario laboral**: qué días se trabaja, con uno o varios tramos por día (por ejemplo, de 8:00 a 12:00 y de 14:00 a 18:00), y de qué país son los festivos que no se trabajan. Lo ve todo el equipo y lo cambia un administrador. Si lo cambias (o cambias la zona horaria), las automatizaciones que ya están esperando se acomodan solas al horario nuevo. Si un día no se pueden saber los festivos del país, la espera se calcula sin ellos y el historial lo avisa: nunca se queda trabada.',
             },
             { t: 'h', text: 'Repetir por cada registro vinculado' },
             { t: 'anim', key: 'auto-repetir', caption: 'El correo de cobro sale una vez por cada factura pendiente del cliente; la pagada se salta.' },

@@ -36,7 +36,9 @@ import {
     BOOKING_EVENT_LABELS,
     BOOKING_EVENTS,
     cronError,
+    describeCompanyHours,
     describeWait,
+    isBusinessWaitMode,
     FOR_EACH_MAX_ITEMS,
     readWaitConfig,
     RESPONSE_NAME_RE,
@@ -46,9 +48,11 @@ import {
     scheduleParts,
     scheduleTimeZone,
     timeZoneLabel,
+    WAIT_MODES,
     WAIT_UNITS,
     waitConfigProblem,
     type BookingEvent,
+    type WaitMode,
     type Connection,
     type ConnectorParam,
 } from '@imagina-base/shared';
@@ -57,7 +61,8 @@ import { emptyTree } from '@/admin/records/filterTree';
 import { useRelationPaths } from '@/hooks/useRelationPaths';
 import type { FilterTree } from '@/types/record';
 import { TimeZoneSelect } from '@/components/TimeZoneSelect';
-import { browserTimeZone, getTenantTimeZone } from '@/lib/tenantFormat';
+import { browserTimeZone, getTenantFormat, getTenantTimeZone } from '@/lib/tenantFormat';
+import { useCompanyHours } from '@/hooks/useCompanyHours';
 import type {
     ActionMeta,
     ActionSpec,
@@ -3036,10 +3041,53 @@ const WAIT_UNIT_LABELS: Record<(typeof WAIT_UNITS)[number], string> = {
     days: 'días',
 };
 
+const WAIT_MODE_TAB_LABELS: Record<WaitMode, string> = {
+    duration: 'Un tiempo',
+    until_field: 'Hasta una fecha del registro',
+    business_day: 'Hasta un día laborable',
+    business_hours: 'Hasta el horario laboral',
+};
+
+/**
+ * v0.1.467 (E8) — «Hasta un día laborable» / «Hasta el horario laboral»: qué
+ * hace cada una, la hora opcional y el horario de la empresa en una línea (con
+ * el atajo para cambiarlo, en otra pestaña: aquí hay cambios sin guardar).
+ */
+function BusinessWaitFields({ mode, atTime, onAtTime }: { mode: 'business_day' | 'business_hours'; atTime: string | null; onAtTime: (v: string | null) => void }): JSX.Element {
+    const q = useCompanyHours();
+    const format = getTenantFormat().time_format;
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-text-sm" data-tour="automation-wait-business" data-testid="imcrm-wait-business">
+            <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                {mode === 'business_hours'
+                    ? __('Si la empresa está trabajando, sigue en el acto. Si no (de noche, el fin de semana o un festivo), espera a que vuelva a abrir.')
+                    : __('Si hoy es día laborable, sigue en el acto. Si es fin de semana o festivo, espera al próximo día laborable.')}
+            </p>
+            {mode === 'business_day' && (
+                <label className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
+                    <input type="checkbox" checked={atTime !== null} onChange={(e) => onAtTime(e.target.checked ? '09:00' : null)} data-testid="imcrm-wait-at-time-toggle" />
+                    <span>{__('Ese día, a una hora fija (si no, a la hora en que abre)')}</span>
+                    {atTime !== null && (
+                        <Input type="time" className="imcrm-w-28" value={atTime} onChange={(e) => onAtTime(e.target.value || '09:00')} data-testid="imcrm-wait-at-time" />
+                    )}
+                </label>
+            )}
+            <p className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-x-2 imcrm-gap-y-0.5 imcrm-text-xs" data-testid="imcrm-wait-company-hours">
+                <span className="imcrm-text-muted-foreground">{__('Horario de la empresa:')}</span>
+                <span className="imcrm-font-medium">{q.data ? describeCompanyHours(q.data.hours, format) : q.isLoading ? __('cargando…') : __('el de fábrica (lun a vie 8:00–17:00)')}</span>
+                <a href="/settings?s=horario" target="_blank" rel="noreferrer" className="imcrm-text-primary hover:imcrm-underline" data-testid="imcrm-wait-company-hours-link">
+                    {__('Cambiarlo en Ajustes → Horario laboral')}
+                </a>
+            </p>
+        </div>
+    );
+}
+
 /**
  * v0.1.288 — «Esperar»: un tiempo fijo o hasta una fecha del registro (con
  * desplazamiento y hora fija en la zona de la empresa). La corrida queda en
- * pausa y sigue sola; al terminar se vuelve a leer el registro.
+ * pausa y sigue sola; al terminar se vuelve a leer el registro. v0.1.467 suma
+ * «hasta un día laborable» y «hasta el horario laboral» (el de la empresa).
  */
 function WaitConfig({ spec, onChange, fields }: ActionConfigEditorProps): JSX.Element {
     const cfg = spec.config;
@@ -3069,8 +3117,8 @@ function WaitConfig({ spec, onChange, fields }: ActionConfigEditorProps): JSX.El
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="imcrm-wait-config">
-            <div className="imcrm-inline-flex imcrm-w-fit imcrm-gap-0.5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-canvas imcrm-p-0.5" role="tablist">
-                {(['duration', 'until_field'] as const).map((m) => (
+            <div className="imcrm-inline-flex imcrm-w-fit imcrm-max-w-full imcrm-flex-wrap imcrm-gap-0.5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-canvas imcrm-p-0.5" role="tablist" data-tour="automation-wait-mode">
+                {WAIT_MODES.map((m) => (
                     <button
                         key={m}
                         type="button"
@@ -3084,12 +3132,14 @@ function WaitConfig({ spec, onChange, fields }: ActionConfigEditorProps): JSX.El
                         }
                         data-testid={`imcrm-wait-mode-${m}`}
                     >
-                        {m === 'duration' ? __('Un tiempo') : __('Hasta una fecha del registro')}
+                        {__(WAIT_MODE_TAB_LABELS[m])}
                     </button>
                 ))}
             </div>
 
-            {w.mode === 'duration' ? (
+            {isBusinessWaitMode(w.mode) ? (
+                <BusinessWaitFields mode={w.mode} atTime={hasTime ? String(cfg.at_time) : null} onAtTime={(v) => set({ at_time: v ?? undefined })} />
+            ) : w.mode === 'duration' ? (
                 <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-text-sm">
                     <span>{__('Esperar')}</span>
                     <Input

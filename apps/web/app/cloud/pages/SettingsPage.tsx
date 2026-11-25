@@ -17,6 +17,8 @@ import { lazyWithReload } from '@/lib/lazyWithReload';
 
 // v0.1.347 — el editor de la barra del celular (chunk propio: sólo en Apariencia).
 const MobileNavEditor = lazyWithReload(() => import('@/admin/menu/MobileNavEditor').then((m) => ({ default: m.MobileNavEditor })));
+// v0.1.467 (E8) — el horario laboral (chunk propio: trae el editor de la semana).
+const CompanyHoursPanel = lazyWithReload(() => import('@/cloud/components/CompanyHoursPanel').then((m) => ({ default: m.CompanyHoursPanel })));
 import { NotificationPrefsCard } from '@/admin/settings/NotificationPrefsCard';
 import { AuditLogPanel } from '@/cloud/components/AuditLogPanel';
 import { IncidentsPanel } from '@/cloud/components/IncidentsPanel';
@@ -203,6 +205,11 @@ export function SettingsPage(): JSX.Element {
                 )}
                 {/* SMTP propio del workspace (white-label de correo). */}
                 {active === 'formato' && isAdmin && <RegionalFormatPanel />}
+                {active === 'horario' && (
+                    <Suspense fallback={<Card className="imcrm-h-40 imcrm-animate-pulse" />}>
+                        <CompanyHoursPanel canEdit={isAdmin} />
+                    </Suspense>
+                )}
 
                 {active === 'correo' && isAdmin && <TenantMailPanel />}
                 {active === 'portal' && isAdmin && (

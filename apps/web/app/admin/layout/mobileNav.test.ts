@@ -136,7 +136,14 @@ describe('Ajustes por tema', () => {
 
     it('un agente sólo ve temas con algo adentro', () => {
         const groups = settingsSectionGroups({ isAdmin: false });
-        expect(groups.map((g) => g.label)).toEqual(['Mantenimiento', 'Cuenta']);
+        // v0.1.467 — el horario laboral lo ve todo el equipo (sólo lectura).
+        expect(groups.map((g) => g.label)).toEqual(['Empresa', 'Mantenimiento', 'Cuenta']);
+        expect(groups[0]?.items.map((i) => i.id)).toEqual(['horario']);
+    });
+
+    it('el horario laboral va en Empresa, después del formato regional', () => {
+        const groups = settingsSectionGroups({ isAdmin: true });
+        expect(groups[0]?.items.map((i) => i.id)).toEqual(['plan', 'suscripcion', 'marca', 'formato', 'horario']);
     });
 
     it('un invitado sólo ve su cuenta', () => {

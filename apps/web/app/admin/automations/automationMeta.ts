@@ -298,7 +298,7 @@ export const ACTION_META: Record<string, StepMeta> = {
     wait: {
         icon: Hourglass,
         title: 'Esperar',
-        description: 'Pausa el flujo unos minutos, horas o días, o hasta una fecha del registro; después sigue con los pasos de abajo.',
+        description: 'Pausa el flujo unos minutos, horas o días, hasta una fecha del registro o hasta el horario laboral de la empresa; después sigue con los pasos de abajo.',
     },
     // C5 — aprobaciones: pedir una y esperar a que alguien decida.
     request_approval: {

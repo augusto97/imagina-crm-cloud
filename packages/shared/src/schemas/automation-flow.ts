@@ -1,3 +1,4 @@
+import { companyCalendar, companyWaitTarget, defaultCompanyHours, type CompanyCalendar } from './company-hours';
 import { addDaysYmd, FALLBACK_TIME_ZONE, isValidTimeZone, zonedInstant, zonedToday } from './timezone';
 
 /**
@@ -223,7 +224,18 @@ export function parseFlowPath(raw: unknown): FlowPath | null {
 
 export const WAIT_UNITS = ['minutes', 'hours', 'days'] as const;
 export type WaitUnit = (typeof WAIT_UNITS)[number];
-export type WaitMode = 'duration' | 'until_field';
+/**
+ * v0.1.467 (E8) — `business_day` («hasta un día laborable») y
+ * `business_hours` («hasta el horario laboral») dependen del horario laboral
+ * de la empresa (`company-hours.ts`).
+ */
+export type WaitMode = 'duration' | 'until_field' | 'business_day' | 'business_hours';
+export const WAIT_MODES: readonly WaitMode[] = ['duration', 'until_field', 'business_day', 'business_hours'];
+
+/** ¿Este modo depende del horario laboral de la empresa? */
+export function isBusinessWaitMode(mode: unknown): mode is 'business_day' | 'business_hours' {
+    return mode === 'business_day' || mode === 'business_hours';
+}
 
 const UNIT_MS: Record<WaitUnit, number> = { minutes: 60_000, hours: 3_600_000, days: 86_400_000 };
 
@@ -243,7 +255,10 @@ export interface WaitConfig {
     offsetAmount: number;
     offsetUnit: WaitUnit;
     offsetDirection: 'before' | 'after';
-    /** «A las 9:00 de ese día» (en la zona de la empresa). */
+    /**
+     * «A las 9:00 de ese día» (en la zona de la empresa). En `business_day`,
+     * la hora a la que sigue el próximo día laborable (sin ella, la de apertura).
+     */
     atTime: { h: number; m: number } | null;
 }
 
@@ -269,7 +284,7 @@ export function parseClockTime(raw: unknown): { h: number; m: number } | null {
 export function readWaitConfig(cfg: Record<string, unknown> | null | undefined): WaitConfig {
     const c = cfg ?? {};
     return {
-        mode: c.mode === 'until_field' ? 'until_field' : 'duration',
+        mode: (WAIT_MODES as readonly unknown[]).includes(c.mode) ? (c.mode as WaitMode) : 'duration',
         amount: Math.max(0, num(c.amount, 0)),
         unit: unitOf(c.unit, 'days'),
         dateField: typeof c.date_field === 'string' ? c.date_field : '',
@@ -283,6 +298,8 @@ export function readWaitConfig(cfg: Record<string, unknown> | null | undefined):
 /** Lo que le falta a un «Esperar» para poder correr (null = está bien). */
 export function waitConfigProblem(cfg: Record<string, unknown> | null | undefined): string | null {
     const w = readWaitConfig(cfg);
+    // Las del horario laboral no necesitan nada más (la hora es opcional).
+    if (isBusinessWaitMode(w.mode)) return null;
     if (w.mode === 'duration') {
         if (!(w.amount > 0)) return 'Indica cuánto esperar (un número mayor que 0).';
         if (w.amount * UNIT_MS[w.unit] > MAX_WAIT_MS) return `Una espera puede durar como mucho ${MAX_WAIT_DAYS} días.`;
@@ -294,7 +311,11 @@ export function waitConfigProblem(cfg: Record<string, unknown> | null | undefine
 }
 
 export type WaitTarget =
-    | { ok: true; at: Date }
+    /**
+     * `immediate` (sólo los modos del horario laboral): ya es horario laboral
+     * o día laborable — la corrida sigue en el acto, sin pausarse.
+     */
+    | { ok: true; at: Date; immediate?: 'open' | 'workday' }
     | { ok: false; reason: 'empty' | 'invalid' | 'too_far' | 'config'; message: string };
 
 /** Lee el valor de un campo de fecha: «sólo fecha» o un instante. */
@@ -320,7 +341,17 @@ function readDateValue(value: unknown): { ymd: string } | { instant: Date } | nu
  */
 export function waitResumeAt(
     cfg: Record<string, unknown> | null | undefined,
-    input: { now: Date; timeZone?: string | null; field?: { label?: string; value: unknown } | null },
+    input: {
+        now: Date;
+        timeZone?: string | null;
+        field?: { label?: string; value: unknown } | null;
+        /**
+         * v0.1.467 — el horario laboral de la empresa ya armado (con sus
+         * festivos), para los modos `business_*`. Sin él se usa el de fábrica
+         * sin festivos (el motor siempre lo pasa).
+         */
+        business?: CompanyCalendar | null;
+    },
 ): WaitTarget {
     const w = readWaitConfig(cfg);
     const tz = isValidTimeZone(input.timeZone) ? input.timeZone : FALLBACK_TIME_ZONE;
@@ -328,7 +359,15 @@ export function waitResumeAt(
     if (problem) return { ok: false, reason: 'config', message: problem };
 
     let at: Date;
-    if (w.mode === 'duration') {
+    if (isBusinessWaitMode(w.mode)) {
+        const cal = input.business ?? companyCalendar(defaultCompanyHours(tz), tz);
+        const target = companyWaitTarget(cal, w.mode, input.now, w.mode === 'business_day' ? w.atTime : null);
+        if (!target) {
+            return { ok: false, reason: 'config', message: 'El horario laboral de la empresa no tiene días laborables en el próximo año: revísalo en Ajustes → Horario laboral.' };
+        }
+        if (target.immediate) return { ok: true, at: target.at, immediate: w.mode === 'business_hours' ? 'open' : 'workday' };
+        at = target.at;
+    } else if (w.mode === 'duration') {
         at = new Date(input.now.getTime() + w.amount * UNIT_MS[w.unit]);
     } else {
         const label = input.field?.label ? `«${input.field.label}»` : 'El campo de fecha';
@@ -372,6 +411,9 @@ export function waitUnitLabel(n: number, unit: WaitUnit): string {
  */
 export function describeWait(cfg: Record<string, unknown> | null | undefined, fieldLabel?: string): string {
     const w = readWaitConfig(cfg);
+    const clock = (t: { h: number; m: number }): string => `${String(t.h).padStart(2, '0')}:${String(t.m).padStart(2, '0')}`;
+    if (w.mode === 'business_hours') return 'Espera hasta el horario laboral';
+    if (w.mode === 'business_day') return w.atTime ? `Espera hasta un día laborable a las ${clock(w.atTime)}` : 'Espera hasta un día laborable';
     if (w.mode === 'duration') {
         return w.amount > 0 ? `Espera ${waitUnitLabel(w.amount, w.unit)}` : 'Espera (falta indicar cuánto)';
     }
