@@ -430,7 +430,12 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.466**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.467**
+(**horario laboral de la empresa + esperar hasta un día laborable o el horario
+laboral** — Ajustes → Horario laboral (días con uno o varios tramos, festivos
+del país) y dos modos nuevos del paso «Esperar» que siguen en el acto si ya es
+momento o esperan a la próxima apertura; cambiar el horario recalcula las
+esperas en curso; sin migración; addendum ADR-S47). Antes **v0.1.466**
 (**automatizaciones: «Comprobar y detener» y «Agregar un comentario»** — un
 paso que corta la corrida si el registro no cumple unas reglas (sin ser una
 falla; en un bucle corta sólo ese vinculado) y una acción que deja una nota
@@ -2381,8 +2386,8 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   festivos del país de la zona horaria (Colombia si no). Dos modos nuevos de
   «Esperar» en el motor, el editor, «Probar», el historial, el asistente/MCP y
   «Describir con IA». **Decisiones de diseño**: cambiar el horario o la
-  zona RECALCULA las esperas en curso (y al reanudar se revisa otra vez con el horario de ahora); sin
-  festivos disponibles se calcula sin ellos y se anota (nunca se traba). **De
+  zona RECALCULA las esperas en curso (y al reanudar se revisa otra vez con
+  el horario de ahora); sin festivos disponibles se calcula sin ellos y se anota (nunca se traba). **De
   paso**: «Continuar sólo si…» se salteaba cuando la espera no hacía falta;
   ahora decide siempre. **Queda**: que el SLA de la mesa de ayuda use este
   horario (G15 en `docs/ideas.md`). E8 salió del banco.
