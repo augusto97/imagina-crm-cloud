@@ -2,6 +2,7 @@ import {
     Bell,
     Braces,
     CalendarCheck,
+    Clock,
     CreditCard,
     DoorOpen,
     Gauge,
@@ -42,6 +43,7 @@ export type SettingsSectionId =
     | 'equipos'
     | 'marca'
     | 'formato'
+    | 'horario'
     | 'correo'
     | 'portal'
     | 'widgets'
@@ -69,6 +71,7 @@ const ITEMS: Record<SettingsSectionId, SettingsSectionItem> = {
     suscripcion: { id: 'suscripcion', label: 'Suscripción', icon: CreditCard, hint: 'Pagar, renovar y ver tus pagos' },
     marca: { id: 'marca', label: 'Marca', icon: Palette, hint: 'Logo, colores, nombre y dominio propio' },
     formato: { id: 'formato', label: 'Formato regional', icon: Globe, hint: 'Números, fechas y zona horaria' },
+    horario: { id: 'horario', label: 'Horario laboral', icon: Clock, hint: 'Qué días y a qué horas trabaja la empresa, y sus festivos' },
     miembros: { id: 'miembros', label: 'Miembros', icon: Users, hint: 'Invitar a tu equipo y elegir su rol' },
     equipos: { id: 'equipos', label: 'Equipos', icon: UsersRound, hint: 'Grupos como Ventas o Soporte' },
     roles: { id: 'roles', label: 'Roles', icon: KeyRound, hint: 'Qué puede hacer cada rol' },
@@ -125,7 +128,9 @@ export function settingsSectionGroups({
     const groups: SettingsSectionGroup[] = [
         // v0.1.286 — `GET /billing` es sólo para admins: a cualquier otro rol
         // "Plan y uso" le quedaba en blanco (403).
-        { label: 'Empresa', items: pick(isAdmin && 'plan', isAdmin && 'suscripcion', isAdmin && 'marca', isAdmin && 'formato') },
+        // v0.1.467 (E8) — el horario laboral lo ve todo el equipo (lo usan las
+        // esperas de las automatizaciones); cambiarlo es del admin.
+        { label: 'Empresa', items: pick(isAdmin && 'plan', isAdmin && 'suscripcion', isAdmin && 'marca', isAdmin && 'formato', 'horario') },
         {
             label: 'Personas',
             // C1 — equipos: el admin o quien los gestiona. C2 — roles propios.

@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, ChevronDown, Copy, ImagePlus, Loader2, Plus, Trash2, Users, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, Copy, ImagePlus, Loader2, Trash2, Users } from 'lucide-react';
 import {
     BOOKING_APPROVAL_MODES,
     BOOKING_APPROVAL_MODE_LABELS,
@@ -13,7 +13,6 @@ import {
     holidayBlocksByDefault,
     serviceDurations,
     type BookingConfig,
-    type BookingInterval,
     type BookingServiceItem,
     type BookingStaff,
 } from '@imagina-base/shared';
@@ -32,8 +31,6 @@ import { Check, Field } from '../automations/email/EmailBlockInspector';
 import { uploadOne } from '../records/FileFieldControl';
 import {
     addTimeOff,
-    dayProblem,
-    nextInterval,
     removeTimeOff,
     setDefaultDuration,
     setHolidayCountry,
@@ -49,6 +46,10 @@ import {
     removeService,
 } from './bookingDesignOps';
 import { ServiceLocationEditor } from './BookingCalendarParts';
+import { IconBtn, WeekHoursEditor } from './WeekHoursEditor';
+
+// v0.1.467 — el editor de la semana vive aparte (lo usa Ajustes → Horario laboral sin cargar la agenda).
+export { IconBtn, WeekHoursEditor } from './WeekHoursEditor';
 import { useBookingHolidays } from './useBookingPages';
 
 /**
@@ -58,24 +59,7 @@ import { useBookingHolidays } from './useBookingPages';
  * atiende (foto, cargo y descripción).
  */
 
-const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
-const DAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 const DURATION_CHOICES = [10, 15, 20, 30, 45, 60, 75, 90, 120, 150, 180, 240];
-
-export function IconBtn({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: React.ReactNode }): JSX.Element {
-    return (
-        <button
-            type="button"
-            aria-label={label}
-            title={label}
-            disabled={disabled}
-            onClick={onClick}
-            className="imcrm-inline-flex imcrm-h-8 imcrm-w-8 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground disabled:imcrm-pointer-events-none disabled:imcrm-opacity-40"
-        >
-            {children}
-        </button>
-    );
-}
 
 function minutesLabel(n: number): string {
     if (n === 0) return __('Sin aviso mínimo');
@@ -89,76 +73,6 @@ export const NOTICE_OPTIONS = [0, 30, 60, 120, 240, 720, 1440, 2880, 4320, 10080
 export function intervalLabel(n: number): string {
     if (n === 0) return __('Lo que dura la cita');
     return n < 60 ? `${n} min` : `${n / 60} h`;
-}
-
-/** El horario de una semana (tramos por día) — el de quien atiende o el propio de un servicio. */
-export function WeekHoursEditor({
-    week,
-    onDay,
-    onCopyWeekdays,
-    testId,
-}: {
-    week: BookingInterval[][];
-    onDay: (dow: number, intervals: BookingInterval[]) => void;
-    onCopyWeekdays?: (dow: number) => void;
-    testId?: string;
-}): JSX.Element {
-    return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-divide-y imcrm-divide-border imcrm-rounded-lg imcrm-border imcrm-border-border" data-testid={testId}>
-            {WEEK_ORDER.map((dow) => {
-                const day = week[dow] ?? [];
-                const problem = dayProblem(day);
-                return (
-                    <div key={dow} className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-px-3 imcrm-py-2" data-day={dow}>
-                        <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
-                            <label className="imcrm-flex imcrm-w-28 imcrm-items-center imcrm-gap-2 imcrm-text-sm">
-                                <input type="checkbox" checked={day.length > 0} onChange={(e) => onDay(dow, e.target.checked ? [{ start: '08:00', end: '17:00' }] : [])} data-day-toggle={dow} />
-                                {__(DAY_NAMES[dow]!)}
-                            </label>
-                            {day.length === 0 && <span className="imcrm-text-xs imcrm-text-muted-foreground">{__('No atiende')}</span>}
-                            {onCopyWeekdays && day.length > 0 && dow >= 1 && dow <= 5 && (
-                                <button type="button" className="imcrm-ml-auto imcrm-text-[11px] imcrm-text-primary hover:imcrm-underline" onClick={() => onCopyWeekdays(dow)}>
-                                    {__('Copiar a lun–vie')}
-                                </button>
-                            )}
-                        </div>
-                        {day.map((t, i) => (
-                            <div key={i} className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-pl-6">
-                                <Input
-                                    type="time"
-                                    step={300}
-                                    value={t.start}
-                                    onChange={(e) => onDay(dow, day.map((x, j) => (j === i ? { ...x, start: e.target.value || x.start } : x)))}
-                                    className="imcrm-h-8 imcrm-w-32"
-                                    aria-label={__('Desde')}
-                                    data-interval-start={`${dow}-${i}`}
-                                />
-                                <span className="imcrm-text-xs imcrm-text-muted-foreground">–</span>
-                                <Input
-                                    type="time"
-                                    step={300}
-                                    value={t.end === '24:00' ? '23:59' : t.end}
-                                    onChange={(e) => onDay(dow, day.map((x, j) => (j === i ? { ...x, end: e.target.value || x.end } : x)))}
-                                    className="imcrm-h-8 imcrm-w-32"
-                                    aria-label={__('Hasta')}
-                                    data-interval-end={`${dow}-${i}`}
-                                />
-                                <IconBtn label={__('Quitar el tramo')} onClick={() => onDay(dow, day.filter((_, j) => j !== i))}>
-                                    <X className="imcrm-h-3.5 imcrm-w-3.5" />
-                                </IconBtn>
-                                {i === day.length - 1 && nextInterval(day) && day.length < 6 && (
-                                    <IconBtn label={__('Agregar otro tramo')} onClick={() => onDay(dow, [...day, nextInterval(day)!])}>
-                                        <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
-                                    </IconBtn>
-                                )}
-                            </div>
-                        ))}
-                        {problem && <p className="imcrm-pl-6 imcrm-text-[11px] imcrm-text-destructive">{__(problem)}</p>}
-                    </div>
-                );
-            })}
-        </div>
-    );
 }
 
 /** Lo que se pliega (reglas propias, horario propio): abierto si ya tiene algo. */

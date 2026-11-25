@@ -124,6 +124,7 @@ import {
     readMirrorListMarker,
     readWaitApprovalConfig,
     readWaitConfig,
+    isBusinessWaitMode,
     resolveTitleFieldId,
     readWebhookRecordConfig,
     WHATS_EVENT_TRIGGER,
@@ -212,6 +213,7 @@ import { RecordsService, type Actor } from '../records/records.service';
 import { RelationsRepository } from '../records/relations.repository';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
+import { CompanyHoursService, type CompanyCalendarInfo } from '../company-hours/company-hours.service';
 import { IncidentHub, errorText } from '../incidents/incident-hub';
 import { AgentHub } from '../ai-agents/agent-hub';
 import { AutomationAskAiService } from '../ai/automation-ask-ai.service';
@@ -673,7 +675,24 @@ export class AutomationEngine {
         @Optional() private readonly agents?: AgentHub,
         // v0.1.392 — hasta dónde llegó el último escaneo de cada vencimiento.
         @Optional() @Inject(REDIS) private readonly redis?: Redis,
+        // v0.1.467 (E8) — el horario laboral de la empresa («Esperar hasta el horario laboral»).
+        @Optional() private readonly companyHours?: CompanyHoursService,
     ) {}
+
+    /**
+     * v0.1.467 — El horario laboral de la empresa ya armado (con sus festivos)
+     * para las esperas que dependen de él. null = sin el servicio (specs que
+     * arman el motor a mano): la espera usa el horario de fábrica.
+     */
+    private async businessCalendar(ctx: RunContext, fresh = false): Promise<CompanyCalendarInfo | null> {
+        if (!this.companyHours) return null;
+        try {
+            return await this.companyHours.calendar(ctx.tenantId, undefined, { fresh });
+        } catch (err) {
+            this.logger.warn(`No se pudo leer el horario laboral de la empresa ${ctx.tenantId}: ${String(err)}`);
+            return null;
+        }
+    }
 
     /**
      * El servicio de registros para escribir con todos sus efectos (actividad,
@@ -1669,6 +1688,24 @@ export class AutomationEngine {
                 return this.finalize(ctx, auto, runId, [...prior, { ...entry, details: { path: waitKey } }], null, state.had_fail, state.had_errors === true);
             }
             if (target.at.getTime() > now.getTime() + 30_000) {
+                await this.tenantDb.withTenant(tenantId, (tx) =>
+                    this.automations.pauseRun(tx, tenantId, runId, {
+                        actionsLog: prior,
+                        resumeAt: target.at,
+                        resumeState: run.resumeState as Record<string, unknown>,
+                        error: run.error ?? null,
+                    }),
+                );
+                return;
+            }
+        }
+        // v0.1.467 (E8) — «hasta el horario laboral / un día laborable»: con el
+        // horario de AHORA (la empresa pudo cambiarlo, o el servidor estuvo
+        // apagado y ya cerró): si todavía no es momento, vuelve a esperar.
+        if (isBusinessWaitMode(state.wait.mode)) {
+            const business = await this.businessCalendar(ctx, true);
+            const target = waitResumeAt(state.wait, { now, timeZone: ctx.timeZone, ...(business ? { business: business.calendar } : {}) });
+            if (target.ok && !target.immediate && target.at.getTime() > now.getTime() + 30_000) {
                 await this.tenantDb.withTenant(tenantId, (tx) =>
                     this.automations.pauseRun(tx, tenantId, runId, {
                         actionsLog: prior,
@@ -2933,7 +2970,7 @@ export class AutomationEngine {
             }
         }
         if (spec.type === 'wait') {
-            const flow = this.executeWait(ctx, spec.config ?? {}, path);
+            const flow = await this.executeWait(ctx, spec.config ?? {}, path);
             return { ...flow, log: tag(flow.log) };
         }
         // C5 — esperar a que se resuelva una aprobación (pausa durable).
@@ -3389,7 +3426,7 @@ export class AutomationEngine {
      * aquí: seguir de inmediato mandaría «1 día antes» un aviso de una fecha
      * que no existe.
      */
-    private executeWait(ctx: RunContext, config: Record<string, unknown>, path: FlowPath): Flow {
+    private async executeWait(ctx: RunContext, config: Record<string, unknown>, path: FlowPath): Promise<Flow> {
         if (ctx.item) {
             return { log: [skip('wait', 'No se puede esperar dentro de «Repetir por cada registro vinculado»: se saltó la espera.')] };
         }
@@ -3408,11 +3445,15 @@ export class AutomationEngine {
             waitField = { key, label: def.label ?? w.dateField };
             value = ctx.data[key];
         }
+        // v0.1.467 (E8) — «hasta un día laborable» / «hasta el horario laboral».
+        const business = isBusinessWaitMode(w.mode) ? await this.businessCalendar(ctx) : null;
+        const holidayNote = business?.holidaysUnavailable ? ' No se pudieron saber los festivos del país: se calculó sin ellos.' : '';
         const now = new Date();
         const target = waitResumeAt(config, {
             now,
             timeZone: ctx.timeZone,
             ...(waitField ? { field: { label: waitField.label, value } } : {}),
+            ...(business ? { business: business.calendar } : {}),
         });
         if (!target.ok) {
             if (target.reason === 'empty' || target.reason === 'invalid') {
@@ -3422,12 +3463,26 @@ export class AutomationEngine {
         }
         const when = this.formatInstant(ctx, target.at);
         const resumeCond = config.resume_condition as ConditionData | undefined;
+        // «Sigue en el acto»: ya es horario laboral / día laborable, o la hora ya pasó.
+        const immediate =
+            target.immediate === 'open'
+                ? 'Es horario laboral'
+                : target.immediate === 'workday'
+                  ? 'Hoy es día laborable'
+                  : null;
         if (ctx.sim) {
             const ex = resumeCond ? explainCondition(resumeCond, this.accessor(ctx), this.condOpts(ctx)) : null;
             const past = target.at.getTime() <= now.getTime();
+            const message = immediate
+                ? `${immediate}: seguiría sin esperar.`
+                : past
+                  ? `La hora de la espera ya pasó (${when}): seguiría sin esperar.`
+                  : isBusinessWaitMode(w.mode)
+                    ? `Esperaría hasta ${when}, cuando ${w.mode === 'business_hours' ? 'vuelve el horario laboral' : 'empieza el próximo día laborable'}; los pasos siguientes correrían después.`
+                    : `Esperaría hasta ${when}; los pasos siguientes correrían después.`;
             return {
                 log: [
-                    ok('wait', past ? `La hora de la espera ya pasó (${when}): seguiría sin esperar.` : `Esperaría hasta ${when}; los pasos siguientes correrían después.`, {
+                    ok('wait', `${message}${holidayNote}`, {
                         _sim: 'would_run',
                         resume_at: target.at.toISOString(),
                         ...(ex ? { checks: this.labelChecks(ctx, ex.checks), resume_condition_now: ex.matched } : {}),
@@ -3436,12 +3491,22 @@ export class AutomationEngine {
             };
         }
         // Un margen chico: con la hora encima, esperar un tick de reloj no tiene sentido.
-        if (target.at.getTime() <= now.getTime() + 5_000) {
-            return { log: [ok('wait', `La hora de la espera ya pasó (${when}): siguió sin esperar.`)] };
+        if (immediate || target.at.getTime() <= now.getTime() + 5_000) {
+            const base = immediate ?? `La hora de la espera ya pasó (${when})`;
+            // «Continuar sólo si…» vale igual aunque no haya hecho falta esperar
+            // (v0.1.467: antes se salteaba y seguía con un registro que ya no
+            // cumplía, p. ej. una factura que se pagó).
+            if (resumeCond && !evaluateCondition(resumeCond, this.accessor(ctx), this.condOpts(ctx))) {
+                return { log: [skip('wait', `${base}, pero el registro no cumple «Continuar sólo si…»: la automatización no siguió.`)], stop: true };
+            }
+            return { log: [ok('wait', `${base}: siguió sin esperar.${holidayNote}`)] };
         }
         const last = path[path.length - 1] as number;
+        const label = isBusinessWaitMode(w.mode)
+            ? `En espera hasta ${when} (${w.mode === 'business_hours' ? 'cuando vuelve el horario laboral' : 'el próximo día laborable'}).`
+            : `En espera hasta ${when}.`;
         return {
-            log: [ok('wait', `En espera hasta ${when}.`, { resume_at: target.at.toISOString() })],
+            log: [ok('wait', `${label}${holidayNote}`, { resume_at: target.at.toISOString() })],
             pause: {
                 at: target.at,
                 waitPath: path,

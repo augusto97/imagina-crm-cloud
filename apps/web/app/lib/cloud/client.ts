@@ -319,6 +319,9 @@ import {
     type BrandingResponse,
     type TenantFormat,
     type UpdateTenantFormatInput,
+    type CompanyHolidaysResponse,
+    type CompanyHoursResponse,
+    type UpdateCompanyHoursInput,
     type CommentDto,
     type CreateAutomationInput,
     type CreateCommentInput,
@@ -793,6 +796,24 @@ export class CloudClient {
         return this.request('PATCH', '/workspaces/current/format', {
             body: updateTenantFormatSchema.parse(patch),
             schema: tenantFormatSchema,
+        });
+    }
+
+    // --- horario laboral de la empresa (v0.1.467, E8) ---
+    getBusinessHours(): Promise<CompanyHoursResponse> {
+        return this.request('GET', '/workspaces/current/business-hours', { schema: z.custom<CompanyHoursResponse>() });
+    }
+    updateBusinessHours(input: UpdateCompanyHoursInput): Promise<CompanyHoursResponse> {
+        return this.request('PUT', '/workspaces/current/business-hours', { body: input, schema: z.custom<CompanyHoursResponse>() });
+    }
+    getBusinessHolidays(query: { country?: string | null; year?: number; regional?: boolean } = {}): Promise<CompanyHolidaysResponse> {
+        return this.request('GET', '/workspaces/current/business-hours/holidays', {
+            query: {
+                ...(query.country !== undefined ? { country: query.country ?? 'none' } : {}),
+                ...(query.year ? { year: query.year } : {}),
+                ...(query.regional !== undefined ? { regional: query.regional ? '1' : '0' } : {}),
+            },
+            schema: z.custom<CompanyHolidaysResponse>(),
         });
     }
 

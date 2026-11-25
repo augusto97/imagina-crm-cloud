@@ -205,7 +205,7 @@ async function login(page, email, password) {
 }
 
 const LIST_SECTIONS = ['campos', 'general', 'apariencia', 'permisos', 'compartir', 'formularios', 'agenda', 'tienda', 'correo', 'plantillas', 'aprobaciones', 'documentos', 'sla'];
-const SETTINGS_SECTIONS = ['plan', 'suscripcion', 'marca', 'formato', 'miembros', 'equipos', 'roles', 'conectores', 'correo', 'almacenamiento', 'asistente', 'portal', 'widgets', 'privacidad', 'problemas', 'auditoria', 'papelera', 'seguridad', 'avisos', 'calendario', 'firma', 'datos', 'apariencia'];
+const SETTINGS_SECTIONS = ['plan', 'suscripcion', 'marca', 'formato', 'horario', 'miembros', 'equipos', 'roles', 'conectores', 'correo', 'almacenamiento', 'asistente', 'portal', 'widgets', 'privacidad', 'problemas', 'auditoria', 'papelera', 'seguridad', 'avisos', 'calendario', 'firma', 'datos', 'apariencia'];
 const PLATFORM_TABS = ['tenants', 'users', 'plans', 'uso', 'cobros', 'audit', 'transfers', 'marca', 'novedades', 'ayuda', 'integraciones', 'ai', 'correo', 'dominios', 'updates', 'backups', 'diagnostico'];
 
 const browser = await chromium.launch(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {});

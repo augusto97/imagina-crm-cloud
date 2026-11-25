@@ -173,6 +173,8 @@ export * from './schemas/helpdesk';
 export * from './schemas/managed-fields';
 export * from './schemas/shop';
 export * from './schemas/business-hours';
+export * from './schemas/company-hours';
+export * from './schemas/company-hours-input';
 export * from './xlsx';
 export * from './zip-files';
 export * from './schemas/team';

@@ -35,10 +35,13 @@ export function automationDraftToolDescription(baseDescription: string): string 
     );
 }
 
-export function buildDraftSystemPrompt(opts: { today: string; timeZone: string | null; mode: 'create' | 'change' }): string {
-    const zone = opts.timeZone
-        ? `La zona horaria de la empresa es ${opts.timeZone}: los horarios corren en ella (no pongas trigger_config.tz salvo que la persona pida otra zona).`
-        : 'La empresa todavía no eligió zona horaria: si programas algo a una hora, avísalo en warnings (se configura en Ajustes → Formato regional).';
+export function buildDraftSystemPrompt(opts: { today: string; timeZone: string | null; mode: 'create' | 'change'; businessHours?: string | null }): string {
+    const zone =
+        (opts.timeZone
+            ? `La zona horaria de la empresa es ${opts.timeZone}: los horarios corren en ella (no pongas trigger_config.tz salvo que la persona pida otra zona).`
+            : 'La empresa todavía no eligió zona horaria: si programas algo a una hora, avísalo en warnings (se configura en Ajustes → Formato regional).') +
+        // v0.1.467 (E8) — para «en horario laboral», «el próximo día hábil».
+        (opts.businessHours ? ` Su horario laboral es ${opts.businessHours}: si piden que algo salga «en horario laboral» o «el próximo día hábil», usa wait con mode business_hours o business_day.` : '');
     return [
         'Armas automatizaciones dentro del editor de automatizaciones de una app de listas (estilo Airtable/ClickUp). La persona te cuenta en sus palabras qué quiere que pase y tú entregas la automatización con la herramienta submit_automation. No escribes nada en la app: la persona ve lo que armaste en el editor y decide si lo guarda.',
         '',
