@@ -2366,6 +2366,21 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-25 · conversación** — Publicada y verificada **v0.1.465** (Zod 4):
+  zip, sha256, `install.sh` y el paquete de n8n; queda completa la tanda del
+  2026-11-19 y se le mandó el reporte de v0.1.458 a v0.1.465. El usuario mostró
+  el menú de acciones de automatización de OTRA app («me parecieron
+  interesantes»). Comparadas una por una: ya existen esperar (tiempo o hasta una
+  fecha), si/entonces/si no (y «Según el valor de…»), en el registro
+  relacionado («Repetir por cada vinculado»), solicitud HTTP, correo, notificar
+  a usuarios, crear registro, actualizar campos y enviar documento (correo +
+  «Adjuntar PDF»). Faltan y se anotaron en `docs/ideas.md`: **E8** horario
+  laboral de la empresa + esperar hasta un día laborable / el horario laboral,
+  **E9** paso «Comprobar y detener», **E10** acción «Agregar un comentario» y
+  **J4** estado de cuenta (plantilla + filtro en la tabla de ítems). «Enviar
+  mensaje a una bandeja de entrada» no se propone (ADR-S69: la app no es un
+  chat). **Esperando** que el usuario diga si se hacen.
+
 - **2026-11-19 · v0.1.465** — **Migración a Zod 4** (último ítem de la tanda
   aprobada el 2026-11-19; addendum ADR-S38; sin migración de base). Zod 3.25 →
   4.6 en shared, API y front (~90 archivos; se hizo SIN agentes en paralelo,
