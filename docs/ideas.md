@@ -16,7 +16,7 @@
 >   `docs/estudio-funcionalidades-2026-10.md`, junto con el valor, el esfuerzo
 >   y quién la tiene en la competencia.
 >
-> Última revisión: 2026-11-19 (v0.1.454).
+> Última revisión: 2026-11-25 (v0.1.467).
 
 ---
 
@@ -132,7 +132,6 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 |---|---|---|
 | E3 · Subflujos (una automatización que llama a otra, con sus datos) | medio · M | **Lo demás de E3 salió en v0.1.460**: «Según el valor de…» (varias ramas) y «Si este paso falla» (detener, seguir, reintentar hasta 3 veces u otros pasos). E2 salió completa: «Preguntarle a la IA» también en v0.1.460. |
 | E4 · Scripts en JavaScript aislado | medio-bajo · L | Necesita un sandbox serio. |
-| E8 · Horario laboral de la empresa + «Esperar hasta un día laborable» y «Esperar hasta el horario laboral» | alto · M | Visto en otra app (2026-11-25). Hoy «Esperar» sólo cuenta tiempo o espera una fecha del registro. Falta un horario de la empresa (días, horas y festivos del país; los festivos por país ya existen en la agenda) que también podría servir de base al SLA de la mesa de ayuda. |
 
 ### F. Inteligencia artificial
 | Idea | Valor · esfuerzo | Nota |
@@ -155,7 +154,7 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 | G12 · Avisos a Google Chat y Discord | bajo-medio · S c/u | Slack y Microsoft Teams ya existen (Teams desde v0.1.348). |
 | G13 · OneDrive / SharePoint y Dropbox como almacenamiento | medio · M | S3 y Google Drive ya existen. |
 | G14 · Enriquecimiento y validación (datos por dominio, email que existe) | bajo-medio · M | |
-| G15 · Días hábiles y festivos por país en todo | medio · S | **En parte hecho en v0.1.349**: la agenda de citas usa los festivos de 33 países. El SLA de la mesa de ayuda, las fórmulas de días hábiles y las plantillas siguen con los de Colombia. |
+| G15 · Días hábiles y festivos por país en todo | medio · S | **En parte hecho en v0.1.349 y v0.1.467**: la agenda de citas y el horario laboral de la empresa (Ajustes → Horario laboral, que usan las esperas de las automatizaciones) usan los festivos de 33 países. El SLA de la mesa de ayuda sigue con su propio horario y los festivos de Colombia (falta la opción «Usar el horario laboral de la empresa»), igual que las fórmulas de días hábiles y las plantillas. |
 
 ### H. Celular
 | Idea | Valor · esfuerzo | Nota |

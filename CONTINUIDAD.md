@@ -2372,6 +2372,20 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-25 · v0.1.467** — **Horario laboral de la empresa + «Esperar hasta
+  un día laborable» y «hasta el horario laboral»** (idea E8, vista por el
+  usuario en otra app; addendum ADR-S47; sin migración). Ajustes → Horario
+  laboral (lo ve todo el equipo, lo cambia el admin): días con uno o varios
+  tramos, país de los festivos (los 33 de la agenda) y regionales, vista previa
+  con la hora real de la empresa. De fábrica: lunes a viernes 8:00–17:00 y los
+  festivos del país de la zona horaria (Colombia si no). Dos modos nuevos de
+  «Esperar» en el motor, el editor, «Probar», el historial, el asistente/MCP y
+  «Describir con IA». **Decisiones de diseño**: cambiar el horario o la
+  zona RECALCULA las esperas en curso (y al reanudar se revisa otra vez con el horario de ahora); sin
+  festivos disponibles se calcula sin ellos y se anota (nunca se traba). **De
+  paso**: «Continuar sólo si…» se salteaba cuando la espera no hacía falta;
+  ahora decide siempre. **Queda**: que el SLA de la mesa de ayuda use este
+  horario (G15 en `docs/ideas.md`). E8 salió del banco.
 - **2026-11-25 · v0.1.466** — **Automatizaciones: «Comprobar y detener» y
   «Agregar un comentario»** (ideas E9 y E10; addendum ADR-S47; sin migración).
   (1) `stop_unless`: reglas por slug como el «Si / sino», sobre el registro
