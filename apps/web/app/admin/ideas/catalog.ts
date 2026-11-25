@@ -462,6 +462,77 @@ export const IDEAS: readonly IdeaDef[] = [
         learn: 'tableros/tableros-crear',
         plan: { kind: 'dashboard', template: 'sys:cartera-y-cobros', name: 'Cartera' },
     },
+    {
+        // v0.1.468 — El estado de cuenta (plantilla de documento con la tabla de
+        // ítems filtrada a lo pendiente) le llega cada mes a cada cliente con
+        // saldo. La plantilla se crea desde la galería de documentos de la lista
+        // (`?starter=estado_cuenta`, en otra pestaña) y la pregunta la toma sola.
+        id: 'estado-de-cuenta-mensual',
+        category: 'cobros',
+        title: 'Manda el estado de cuenta cada mes',
+        summary: 'Cada mes, a cada cliente con saldo pendiente le llega por correo su estado de cuenta en PDF.',
+        problem: 'Armar y mandar a mano el estado de cuenta de cada cliente toma una tarde entera cada mes.',
+        steps: [
+            'En la lista de clientes creas la plantilla «Estado de cuenta»: trae sus facturas vinculadas y muestra sólo las pendientes, con el total.',
+            'El día del mes que elijas, la automatización revisa qué clientes tienen saldo pendiente.',
+            'A cada uno le llega un correo con su estado de cuenta en PDF.',
+            'Los clientes que están al día no reciben nada.',
+        ],
+        illustration: 'pdf-automatizar',
+        icon: 'FileText',
+        tone: 'mint',
+        listHints: ['cliente', 'cartera', 'deudor', 'cuenta'],
+        keywords: 'estado de cuenta saldo pendiente cartera cobranza mensual pdf clientes deuda extracto',
+        learn: 'documentos-pdf/documentos-pdf-automatizar',
+        plan: {
+            kind: 'automations',
+            roles: [EMAIL, role('saldo', 'Saldo pendiente', ['rollup', 'currency', 'number', 'formula', 'computed'])],
+            questions: [
+                {
+                    kind: 'document',
+                    key: 'documento',
+                    label: 'Documento que se adjunta',
+                    help: 'El estado de cuenta de cada cliente, con sus facturas pendientes y el total.',
+                    guess: ['estado de cuenta', 'estado', 'extracto'],
+                    starter: 'estado_cuenta',
+                    createLabel: 'Crear el estado de cuenta',
+                },
+                {
+                    kind: 'choice',
+                    key: 'dia',
+                    label: 'Qué día del mes se manda',
+                    default: '1',
+                    options: [1, 5, 10, 15, 20, 25].map((d) => ({ value: String(d), label: `El ${d} de cada mes` })),
+                },
+            ],
+            automations: [
+                {
+                    name: 'Estado de cuenta mensual',
+                    description: 'Cada mes, a cada cliente con saldo pendiente, le manda su estado de cuenta en PDF.',
+                    trigger_type: 'scheduled',
+                    trigger_config: {
+                        frequency: 'monthly',
+                        day: q('dia'),
+                        hour: 8,
+                        minute: 0,
+                        for_each_record: true,
+                        records_filter: { type: 'group', logic: 'and', children: [{ type: 'condition', field_id: { $fieldId: 'saldo' }, op: 'gt', value: 0 }] },
+                    },
+                    actions: [
+                        {
+                            type: 'send_email',
+                            config: {
+                                to: '{{email}}',
+                                subject: 'Tu estado de cuenta',
+                                body: 'Hola,\n\nTe compartimos tu estado de cuenta al {{date.today|larga}}. Tu saldo pendiente es de {{saldo|moneda}}.\n\nEl detalle de las facturas va en el PDF adjunto. Si ya hiciste el pago, no tengas en cuenta este mensaje.\n\nGracias.',
+                                pdf_templates: [q('documento')],
+                            },
+                        },
+                    ],
+                },
+            ],
+        },
+    },
 
     // ── Clientes y soporte ──────────────────────────────────────────────
     {

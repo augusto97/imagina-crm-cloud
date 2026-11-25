@@ -72,6 +72,44 @@ describe('remapJson', () => {
         });
     });
 
+    it('v0.1.468 — el filtro de la tabla de ítems de un documento apunta a los campos nuevos', () => {
+        const out = remapJson(
+            {
+                blocks: [
+                    {
+                        type: 'items',
+                        source: { relation_field_id: 11, direction: 'reverse', list_id: 2 },
+                        filter_tree: {
+                            type: 'group',
+                            logic: 'and',
+                            children: [
+                                { type: 'condition', field_id: 12, op: 'nin', value: ['pagada', 'anulada'] },
+                                { type: 'group', logic: 'or', children: [{ type: 'condition', field_id: 10, op: 'gt', value: 0 }] },
+                            ],
+                        },
+                    },
+                ],
+            },
+            maps(),
+        );
+        expect(out).toEqual({
+            blocks: [
+                {
+                    type: 'items',
+                    source: { relation_field_id: 111, direction: 'reverse', list_id: 102 },
+                    filter_tree: {
+                        type: 'group',
+                        logic: 'and',
+                        children: [
+                            { type: 'condition', field_id: 112, op: 'nin', value: ['pagada', 'anulada'] },
+                            { type: 'group', logic: 'or', children: [{ type: 'condition', field_id: 110, op: 'gt', value: 0 }] },
+                        ],
+                    },
+                },
+            ],
+        });
+    });
+
     it('traduce las claves con nombre propio y conserva `list_id: 0`', () => {
         const out = remapJson(
             [

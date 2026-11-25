@@ -430,7 +430,13 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.467**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.468**
+(**estado de cuenta del cliente** — la tabla de ítems de un documento PDF se
+puede filtrar («Mostrar sólo los ítems que…», por id de campo, con el acceso de
+quien genera, y los totales suman sólo lo filtrado), plantilla «Estado de
+cuenta» en la galería (sólo lo pendiente, «TOTAL PENDIENTE» y el monto en
+letras) e idea lista para mandarlo cada mes a los clientes con saldo; sin
+migración; addendum ADR-S35). Antes **v0.1.467**
 (**horario laboral de la empresa + esperar hasta un día laborable o el horario
 laboral** — Ajustes → Horario laboral (días con uno o varios tramos, festivos
 del país) y dos modos nuevos del paso «Esperar» que siguen en el acto si ya es
@@ -2377,6 +2383,26 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-25 · v0.1.468** — **Estado de cuenta del cliente + tabla de
+  ítems con filtro** (idea J4, vista por el usuario en otra app; addendum
+  ADR-S35; sin migración). (1) La tabla de ítems de un documento gana
+  «Filtrar los ítems» («Mostrar sólo los ítems que…», el mismo editor de
+  filtros de la tabla), guardado por `field_id`, aplicado en SQL con el ACL de
+  quien genera; una regla rota se ignora con aviso y nunca rompe el PDF; los
+  totales suman sólo lo que queda (vacío = $ 0). (2) Plantilla **«Estado de
+  cuenta»** en la galería: facturas o cuotas pendientes del cliente (lo
+  pendiente se deduce de las opciones del estado: no «pagada/anulada»; o el
+  saldo > 0), ordenadas por vencimiento, con «Total pendiente». (3) Idea
+  **«Manda el estado de cuenta cada mes»**: programada «para cada registro que
+  cumpla» saldo > 0, correo con el PDF adjunto; si la lista no tiene la
+  plantilla, «Crear el estado de cuenta» abre la galería en otra pestaña. (4)
+  Asistente/MCP: `filter` por slug y opciones por etiqueta en la tabla de
+  ítems. E2E 30/30 (escritorio y celular oscuro). La rama se mezcló con
+  `origin/main` (v0.1.466) para resolver ahí el choque de la novedad y quitar
+  J4 del banco. **Queda**: «vence en N días» con un N cualquiera (hoy los
+  rangos fijos: próximos 7 o 30 días, este mes…), y los valores de un filtro
+  sobre un campo Persona o Equipo no se re-apuntan al migrar una empresa (el
+  campo sí).
 - **2026-11-25 · v0.1.467** — **Horario laboral de la empresa + «Esperar hasta
   un día laborable» y «hasta el horario laboral»** (idea E8, vista por el
   usuario en otra app; addendum ADR-S47; sin migración). Ajustes → Horario

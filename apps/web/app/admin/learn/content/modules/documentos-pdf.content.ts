@@ -107,6 +107,7 @@ export const articles: LearnArticle[] = [
                     { name: 'Cuenta de cobro con detalle', what: 'Con una tabla de ítems (servicios, horas, cuotas) sacada de los registros vinculados y el total sumado solo.', tip: 'Necesita que la lista tenga un campo de relación con la lista de los ítems.' },
                     { name: 'Cotización', what: 'Ítems con cantidad, precio y descuento por línea, el total de cada línea calculado, IVA, validez y condiciones comerciales.' },
                     { name: 'Factura (no electrónica)', what: 'Ítems con el total de cada línea, descuentos, base gravable, IVA, forma de pago y tus datos bancarios. Lleva el aviso «No es factura electrónica DIAN».' },
+                    { name: 'Estado de cuenta', what: 'Para la lista de clientes: sus facturas o cuotas pendientes (número, fecha, vencimiento, estado y valor, más lo pagado y el saldo si los tienes) con el **Total pendiente** y el monto en letras.', tip: 'Muestra sólo lo pendiente: las de estado «Pagada» o «Anulada» no aparecen. Lo cambias en **Filtrar los ítems**.' },
                     { name: 'En blanco', what: 'Una hoja con un encabezado para armar el documento desde cero.', tip: 'Para certificados, actas, órdenes de servicio o paz y salvos.' },
                 ],
             },
@@ -290,6 +291,7 @@ export const articles: LearnArticle[] = [
                     { name: 'Ocultarla (sólo para calcular los totales)', what: 'Una columna que no se ve pero se usa en los cálculos.' },
                     { name: 'Columna calculada', what: 'Una columna que hace una cuenta con otras, sin escribir fórmulas: elige la forma y los operandos.' },
                     { name: 'Mostrar como', what: '**Como en la lista**, **Moneda** o **Número**, con **Decimales** y texto **Antes del número**.' },
+                    { name: 'Filtrar los ítems', what: 'Marca **Mostrar sólo los ítems que…** y elige las condiciones sobre los campos de la lista de los ítems: «Estado no es ninguno de Pagada, Anulada», «Saldo mayor que 0», «Vencimiento antes de hoy». **Todas** o **alguna** de las condiciones.', tip: 'Los totales de la tabla suman sólo las filas que quedan.' },
                     { name: 'Ordenar por', what: '**Como se crearon** o por un campo, ascendente o descendente.' },
                     { name: 'Numerar las filas (#)', what: 'Agrega una columna con 1, 2, 3…' },
                     { name: 'Filas alternadas', what: 'Pinta una fila sí y otra no para que se lea mejor.' },
@@ -338,6 +340,17 @@ export const articles: LearnArticle[] = [
                 title: 'Una cotización con IVA, paso a paso',
                 md: '1. **Subtotal** = suma de la columna Bruto (cantidad × precio).\n2. **Descuentos** = suma de la columna de descuento de cada línea, restada (no se muestra si da 0).\n3. **Base gravable** = subtotal − descuentos.\n4. **IVA 19 %** = 19 % de la base.\n5. **TOTAL** = base + IVA, destacada.\n\nDebajo, un texto «Son: {{totales.total|pesos}} M/CTE.» escribe el total en letras.',
             },
+            { t: 'h', text: 'Mostrar sólo algunos ítems: el estado de cuenta' },
+            {
+                t: 'p',
+                md: 'Con **Filtrar los ítems** la tabla trae sólo las líneas que cumplen las condiciones. Es lo que hace el **Estado de cuenta** de la galería: en la ficha de un cliente muestra sus facturas que todavía no están pagadas, y el **Total pendiente** suma sólo esas. Si una condición usa un campo que ya no existe, una opción que borraste o un campo que quien genera el PDF no puede ver, el editor lo avisa y el PDF ignora esa regla (nunca deja de salir).',
+            },
+            { t: 'anim', key: 'pdf-automatizar', caption: 'Cada mes, a cada cliente con saldo, le llega su estado de cuenta en PDF.' },
+            {
+                t: 'example',
+                title: 'El estado de cuenta de cada cliente, cada mes',
+                md: '1. En la lista **Clientes**, crea la plantilla **Estado de cuenta**: los ítems salen de **Facturas**, ya filtrados a lo pendiente.\n2. Activa la idea **Manda el estado de cuenta cada mes**: el día que elijas, a cada cliente con **Saldo pendiente** mayor que 0 le llega un correo con su PDF.\n3. Los clientes al día no reciben nada.',
+            },
             {
                 t: 'example',
                 title: 'Una cuenta de cobro de un contratista con retención',
@@ -347,6 +360,7 @@ export const articles: LearnArticle[] = [
                 t: 'faq',
                 items: [
                     { q: '¿Puedo tener dos tablas de ítems?', a: 'Sí, por ejemplo productos y servicios de dos listas vinculadas distintas. Cada fila de totales elige de qué tabla suma.' },
+                    { q: '¿Puedo filtrar por «vence en los próximos días»?', a: 'Sí: en una fecha, el operador **en** ofrece «Próximos 7 días», «Próximos 30 días», «Antes de hoy (vencido)», «De hoy en adelante» y otros períodos, o un rango personalizado. Para otra cantidad de días, usa un rango.' },
                     { q: '¿Qué pasa si un ítem no tiene precio?', a: 'Cuenta como cero en las cuentas. Revisa la vista previa con un registro real antes de usar la plantilla.' },
                     { q: '¿Los ítems se editan desde el documento?', a: 'No: se editan en la ficha del registro (en la tabla de vinculados). El documento siempre muestra lo que hay en ese momento, salvo que esté congelado.' },
                 ],

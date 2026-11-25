@@ -46,6 +46,7 @@ function envFor(roles: string[]): AnswerEnv {
         roleOptions: Object.fromEntries(roles.map((r) => [r, SAMPLE_OPTIONS])),
         mappedRoles: new Set(roles),
         connections: CONNECTIONS,
+        documents: [{ id: 21, name: 'Estado de cuenta' }],
     };
 }
 
@@ -108,6 +109,7 @@ describe('catálogo de ideas', () => {
             }
             const built = buildIdeaAutomations(idea.plan.automations, idea.plan.roles, {
                 roleToSlug: Object.fromEntries(roles.map((r) => [r, `f_${r}`])),
+                roleToId: Object.fromEntries(roles.map((r, i) => [r, 100 + i])),
                 answers: resolveAnswers(idea.plan.questions, raw),
                 connectionApps: Object.fromEntries(CONNECTIONS.map((c) => [c.id, c.integration_key])),
             });
@@ -118,6 +120,7 @@ describe('catálogo de ideas', () => {
             expect(json.includes('$q'), idea.id).toBe(false);
             expect(json.includes('[[q:'), idea.id).toBe(false);
             expect(json.includes('$message'), idea.id).toBe(false);
+            expect(json.includes('$fieldId'), idea.id).toBe(false);
             for (const r of roles) expect(new RegExp(`\\{\\{(before\\.)?${r}[}.|]`).test(json), `${idea.id}: {{${r}}}`).toBe(false);
         }
     });
@@ -214,6 +217,38 @@ describe('activar una idea', () => {
             { id: 2, label: 'Razón social', slug: 'razon_social', type: 'text', is_primary: true },
         ];
         expect(suggestIdeaMapping(roles, fields)).toEqual({ titulo: 2 });
+    });
+
+    it('v0.1.468 — el estado de cuenta: cada mes, a cada cliente con saldo, con el PDF elegido', () => {
+        const idea = IDEAS.find((i) => i.id === 'estado-de-cuenta-mensual')!;
+        if (idea.plan.kind !== 'automations') throw new Error('tipo');
+        const docQ = idea.plan.questions.find((x) => x.key === 'documento')!;
+        const env = envFor(['email', 'saldo']);
+        // Adivina la plantilla por el nombre; sin ninguna parecida, no elige.
+        expect(defaultRawAnswer(docQ, { ...env, documents: [{ id: 7, name: 'Cotización' }, { id: 9, name: 'Estado de cuenta 2026' }] })).toBe('9');
+        expect(defaultRawAnswer(docQ, { ...env, documents: [{ id: 7, name: 'Cotización' }] })).toBe('');
+        const raw = Object.fromEntries(idea.plan.questions.map((x) => [x.key, defaultRawAnswer(x, env)]));
+        const ctx = {
+            roleToSlug: { email: 'correo', saldo: 'saldo_pendiente' },
+            roleToId: { email: 31, saldo: 32 },
+            answers: resolveAnswers(idea.plan.questions, { ...raw, dia: '5' }),
+            connectionApps: {},
+        };
+        const built = buildIdeaAutomations(idea.plan.automations, idea.plan.roles, ctx);
+        expect(built.problems).toEqual([]);
+        const auto = built.automations[0]!;
+        expect(auto.trigger_type).toBe('scheduled');
+        expect(auto.trigger_config).toMatchObject({
+            frequency: 'monthly',
+            day: '5',
+            for_each_record: true,
+            records_filter: { type: 'group', logic: 'and', children: [{ type: 'condition', field_id: 32, op: 'gt', value: 0 }] },
+        });
+        expect(auto.actions[0]!.config).toMatchObject({ to: '{{correo}}', pdf_templates: [21] });
+        expect(String(auto.actions[0]!.config.body)).toContain('{{saldo_pendiente|moneda}}');
+        // Sin la plantilla elegida (la lista no tiene ninguna), lo dice.
+        const noDoc = buildIdeaAutomations(idea.plan.automations, idea.plan.roles, { ...ctx, answers: resolveAnswers(idea.plan.questions, { ...raw, documento: '' }) });
+        expect(noDoc.problems).toContain('Elige el documento PDF que se adjunta.');
     });
 
     it('sugiere la lista por su nombre', () => {

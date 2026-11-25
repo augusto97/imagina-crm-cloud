@@ -179,6 +179,8 @@ export interface DesignField {
     slug: string;
     label: string;
     type: string;
+    /** v0.1.468 — Sólo selecciones: sus opciones (el filtro de ítems acepta la etiqueta). */
+    config?: unknown;
 }
 
 export interface DesignRelation {

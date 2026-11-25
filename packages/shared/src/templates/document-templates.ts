@@ -1,3 +1,6 @@
+import { foldSearchText } from '../field-types/search';
+import { docFilterFieldOptions, type DocFilterField } from '../schemas/document-items-filter';
+import type { FilterCondition, FilterGroup } from '../schemas/filter';
 import type { RichNode } from '../schemas/rich-text';
 import type { TemplateRoleField } from '../schemas/templates';
 import {
@@ -99,6 +102,12 @@ export interface DocumentStarterInput {
     items?: {
         source: DocItemsSource | null;
         fields: Record<string, string | null | undefined>;
+        /**
+         * v0.1.468 — El campo elegido para cada rol de los ítems (id, tipo y
+         * opciones): el estado de cuenta arma su filtro «sólo lo pendiente»
+         * con el id y las opciones del estado.
+         */
+        info?: Record<string, DocFilterField | null | undefined>;
     } | null;
     issuer?: DocumentIssuer | null;
     /** v0.1.290 — IVA (sólo plantillas con `taxes`). Por defecto 19 %. */
@@ -227,6 +236,22 @@ export const DOCUMENT_STARTERS: readonly DocumentStarter[] = [
         notice: DIAN_NOTICE,
     },
     {
+        key: 'estado_cuenta',
+        name: 'Estado de cuenta',
+        description: 'Lo que debe cada cliente: sus facturas o cuotas pendientes de la lista vinculada, con el vencimiento, el estado y el total pendiente.',
+        roles: CUSTOMER_ROLES,
+        item_roles: [
+            { key: 'numero', label: 'Número de la factura', types: ['text', 'number', 'autonumber'], required: false },
+            { key: 'fecha', label: 'Fecha de la factura', types: ['date', 'datetime'], required: false },
+            { key: 'vencimiento', label: 'Fecha de vencimiento', types: ['date', 'datetime'], required: false },
+            { key: 'estado', label: 'Estado (pagada, pendiente…)', types: ['select', 'multi_select'], required: false },
+            { key: 'valor', label: 'Valor', types: MONEY_TYPES, required: true },
+            { key: 'pagado', label: 'Pagado (abonos)', types: MONEY_TYPES, required: false },
+            { key: 'saldo', label: 'Saldo pendiente', types: [...MONEY_TYPES, 'formula'], required: false },
+        ],
+        issuer: true,
+    },
+    {
         key: 'blank',
         name: 'En blanco',
         description: 'Una hoja con un encabezado para armar el documento desde cero.',
@@ -279,6 +304,9 @@ export function buildDocumentStarter(key: string, input: DocumentStarterInput = 
 
     if (starter.key === 'cotizacion' || starter.key === 'factura') {
         return buildSalesDocument(starter, input, { tag, slug, id });
+    }
+    if (starter.key === 'estado_cuenta') {
+        return buildAccountStatement(starter, input, { tag, slug, id });
     }
 
     if (starter.key === 'blank') {
@@ -754,6 +782,237 @@ function buildSalesDocument(
                 save_field: null,
                 freeze: !ownNumber && freeze,
             },
+            blocks,
+        },
+    };
+}
+
+// ---------------------------------------------------------------------------
+// v0.1.468 — Estado de cuenta (lo pendiente de cada cliente)
+// ---------------------------------------------------------------------------
+
+/**
+ * Opciones de un estado que significan «ya no se debe» (pagada, saldada,
+ * cancelada, anulada, borrador). Se comparan sin tildes ni mayúsculas.
+ */
+export const DOC_CLOSED_STATUS_RE = /pagad|cobrad|\bpaid\b|saldad|liquidad|al[ _-]?dia|cancelad|anulad|\bvoid\b|borrador|\bdraft\b|rechazad/;
+/** …salvo que digan que todavía se debe algo («no pagada», «pagada parcialmente», «abono»). */
+export const DOC_STILL_OWED_RE = /no pagad|sin pagar|impag|parcial|abon|pendient|por pagar|por cobrar|venc|mora|unpaid|overdue|deud/;
+/** Opciones que significan «se debe» (si el estado no tiene ninguna de «pagada»). */
+export const DOC_PENDING_STATUS_RE = /pend|venc|mora|por pagar|por cobrar|sin pagar|impag|abiert|unpaid|overdue|deud|atras|parcial|abon/;
+
+function statusText(o: { value: string; label: string }): string {
+    return foldSearchText(`${o.label} ${o.value}`.replace(/_/g, ' '));
+}
+
+/** ¿La opción (etiqueta o valor) quiere decir que ya no se debe? */
+export function isClosedStatusOption(o: { value: string; label: string }): boolean {
+    const text = statusText(o);
+    return DOC_CLOSED_STATUS_RE.test(text) && !DOC_STILL_OWED_RE.test(text);
+}
+
+/**
+ * El filtro «sólo lo pendiente» de un estado de cuenta: el estado no es
+ * ninguna de las opciones de «pagada / anulada» (las vacías entran: una
+ * factura sin estado se sigue debiendo); si el estado no tiene opciones así,
+ * el estado es alguna de las de «pendiente»; sin estado, el saldo mayor que 0.
+ * null = no hay con qué filtrar.
+ */
+export function pendingItemsFilter(
+    status: DocFilterField | null | undefined,
+    balance: DocFilterField | null | undefined,
+): FilterGroup | null {
+    const children: FilterCondition[] = [];
+    if (status && (status.type === 'select' || status.type === 'multi_select')) {
+        const options = docFilterFieldOptions(status);
+        const closed = options.filter(isClosedStatusOption).map((o) => o.value);
+        if (closed.length > 0) {
+            children.push({ type: 'condition', field_id: status.id, op: 'nin', value: closed });
+        } else {
+            const pending = options.filter((o) => DOC_PENDING_STATUS_RE.test(statusText(o))).map((o) => o.value);
+            if (pending.length > 0) children.push({ type: 'condition', field_id: status.id, op: 'in', value: pending });
+        }
+    }
+    if (children.length === 0 && balance && balance.id > 0) {
+        children.push({ type: 'condition', field_id: balance.id, op: 'gt', value: 0 });
+    }
+    return children.length > 0 ? { type: 'group', logic: 'and', children } : null;
+}
+
+/**
+ * El estado de cuenta de un cliente: sus facturas (o cuotas) de la lista
+ * vinculada, filtradas a lo pendiente, con el número, la fecha, el
+ * vencimiento, el estado y el valor (y lo pagado y el saldo si se eligen), y
+ * el «Total pendiente» sumado sólo de esas filas.
+ */
+function buildAccountStatement(
+    starter: DocumentStarter,
+    input: DocumentStarterInput,
+    h: { tag: (k: string, mods?: string) => string; slug: (k: string) => string | null; id: (p: string) => string },
+): DocumentStarterResult {
+    const { tag, slug, id } = h;
+    const issuer = input.issuer ?? emptyIssuer();
+    const decimals = Math.max(0, Math.min(4, Math.trunc(input.money_decimals ?? 0)));
+    const docId = `${issuer.doc_label || 'C.C.'} ${issuer.doc_number}`.trim();
+    const issuerName = issuer.name.trim() || '[Tu nombre o el de tu empresa]';
+    const company = [issuerName, issuer.doc_number ? docId : '', issuer.address, [issuer.phone, issuer.email].filter(Boolean).join(' · ')]
+        .filter((l) => l.trim() !== '')
+        .join('\n');
+    const today = '{{date.today|larga}}';
+    const blocks: DocBlock[] = [];
+    const boxBg = '#f8fafc';
+
+    blocks.push({
+        id: id('h'),
+        type: 'header',
+        layout: 'split',
+        logo: { kind: 'brand', file_id: null, url: '' },
+        logo_width: 110,
+        company,
+        title: 'ESTADO DE CUENTA',
+        number: '',
+        date: issuer.city.trim() ? `${issuer.city.trim()}, ${today}` : today,
+    });
+    blocks.push({ id: id('s'), type: 'spacer', height: 12 });
+
+    const clientLines: RichNode[] = [para(txt(tag('cliente'), true))];
+    if (slug('cliente_doc')) clientLines.push(para(txt('NIT / C.C. '), txt(tag('cliente_doc'))));
+    if (slug('direccion')) clientLines.push(para(txt(tag('direccion'))));
+    if (slug('correo')) clientLines.push(para(txt(tag('correo'))));
+    const summaryLines: RichNode[] = [
+        para(txt('Estado de cuenta al ', true), txt(today)),
+        para(txt('Saldo pendiente: ', true), txt('{{totales.total}}')),
+    ];
+    const party = (title: string, lines: RichNode[]): DocInnerBlock[] => [
+        { id: id('ht'), type: 'heading', text: title, level: 3, align: 'left', color: null },
+        { id: id('pt'), type: 'text', doc: doc(...lines), align: 'left', size: 'md', background: boxBg, padding: 'md' },
+    ];
+    blocks.push({
+        id: id('c'),
+        type: 'columns',
+        columns: [{ blocks: party('CLIENTE', clientLines) }, { blocks: party('RESUMEN', summaryLines) }],
+    });
+    blocks.push({ id: id('s'), type: 'spacer', height: 12 });
+
+    // Las facturas: lo mapeado como columna de campo; lo que falta, como
+    // columna marcadora "[Fecha de vencimiento]" bien visible.
+    const items = input.items ?? null;
+    const itemSlug = (k: string): string | null => {
+        const v = items?.fields[k];
+        return typeof v === 'string' && v !== '' ? v : null;
+    };
+    const itemLabel = (k: string): string => starter.item_roles.find((r) => r.key === k)?.label ?? k;
+    const ref = (k: string): string => itemSlug(k) ?? `[${itemLabel(k)}]`;
+    const money = (k: string, label: string): DocItemsColumn => ({
+        slug: ref(k),
+        label,
+        align: 'right',
+        width: 'auto',
+        format: 'currency',
+        decimals,
+        prefix: '$ ',
+    });
+    const columns: DocItemsColumn[] = [
+        { slug: ref('numero'), label: 'Factura', align: 'left', width: 'auto' },
+        { slug: ref('fecha'), label: 'Fecha', align: 'left', width: 'auto' },
+        { slug: ref('vencimiento'), label: 'Vence', align: 'left', width: 'auto' },
+        { slug: ref('estado'), label: 'Estado', align: 'left', width: 'fill' },
+        money('valor', 'Valor'),
+    ];
+    if (itemSlug('pagado')) columns.push(money('pagado', 'Pagado'));
+    if (itemSlug('saldo')) columns.push(money('saldo', 'Saldo'));
+    const sortBy = itemSlug('vencimiento') ?? itemSlug('fecha');
+    const filter = pendingItemsFilter(items?.info?.estado ?? null, items?.info?.saldo ?? null);
+    const itemsId = 'items';
+    blocks.push({
+        id: itemsId,
+        type: 'items',
+        title: 'PENDIENTE DE PAGO',
+        source: items?.source ?? null,
+        columns,
+        numbered: false,
+        sort: sortBy ? { slug: sortBy, dir: 'asc' } : null,
+        limit: 200,
+        striped: true,
+        empty_text: 'No hay saldos pendientes a la fecha.',
+        ...(filter ? { filter_tree: filter } : {}),
+    });
+    blocks.push({ id: id('s'), type: 'spacer', height: 6 });
+
+    // Totales: sólo de las filas que quedaron (las pendientes).
+    const rows: DocTotalRow[] = [];
+    const valor = itemSlug('valor');
+    const pagado = itemSlug('pagado');
+    const saldo = itemSlug('saldo');
+    if (valor && (pagado || saldo)) {
+        rows.push({ id: 'facturado', label: 'Total facturado', source: { kind: 'items_sum', block_id: itemsId, slug: valor }, emphasis: false });
+    }
+    if (valor && pagado) {
+        rows.push({ id: 'pagado', label: 'Pagado', source: { kind: 'items_sum', block_id: itemsId, slug: pagado }, emphasis: false, hide_zero: true });
+    }
+    rows.push({
+        id: 'total',
+        label: 'TOTAL PENDIENTE',
+        source: saldo
+            ? { kind: 'items_sum', block_id: itemsId, slug: saldo }
+            : valor && pagado
+              ? { kind: 'sum', rows: ['facturado'], minus: ['pagado'] }
+              : valor
+                ? { kind: 'items_sum', block_id: itemsId, slug: valor }
+                : { kind: 'text', value: '[Elige la columna del valor]' },
+        emphasis: true,
+    });
+    blocks.push({ id: 'totals', type: 'totals', rows, width: 'half', prefix: '$ ', decimals });
+
+    blocks.push({ id: id('s'), type: 'spacer', height: 8 });
+    blocks.push({
+        id: id('w'),
+        type: 'text',
+        doc: doc(para(txt('Son: ', true), txt('{{totales.total|pesos|mayusculas}} M/CTE.'))),
+        align: 'left',
+        size: 'md',
+        background: boxBg,
+        padding: 'md',
+    });
+
+    const bank = issuer.bank.trim() !== '' && issuer.account_number.trim() !== '';
+    const holder = issuer.account_holder.trim() || issuerName;
+    blocks.push({ id: id('s'), type: 'spacer', height: 10 });
+    blocks.push({ id: id('ht'), type: 'heading', text: 'DATOS PARA EL PAGO', level: 3, align: 'left', color: null });
+    blocks.push({
+        id: id('pt'),
+        type: 'text',
+        doc: doc(
+            bank
+                ? para(
+                      txt('Consignar o transferir a la cuenta de '),
+                      txt(`${issuer.account_type || 'ahorros'} N.º ${issuer.account_number.trim()}`, true),
+                      txt(` de ${issuer.bank.trim()}, a nombre de ${holder}${issuer.doc_number ? ` (${docId})` : ''}.`),
+                  )
+                : para(txt('[Tus datos bancarios: banco, tipo y número de cuenta]')),
+        ),
+        align: 'left',
+        size: 'md',
+    });
+    blocks.push({ id: id('s'), type: 'spacer', height: 10 });
+    blocks.push({
+        id: id('tn'),
+        type: 'text',
+        doc: doc(para(txt('Si ya hiciste el pago, no tengas en cuenta este estado de cuenta o escríbenos para conciliarlo.'))),
+        align: 'left',
+        size: 'sm',
+        color: '#6b7280',
+    });
+
+    const clientInName = slug('cliente') ? ` - ${tag('cliente')}` : '';
+    return {
+        name: starter.name,
+        filename: `Estado de cuenta${clientInName} - {{date.today|value}}`,
+        design: {
+            version: DOC_DESIGN_VERSION,
+            theme: theme(input.accent),
+            footer: { text: '', page_numbers: true },
+            numbering: { enabled: false, prefix: '', padding: 4, start: 1, save_field: null },
             blocks,
         },
     };

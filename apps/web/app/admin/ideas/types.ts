@@ -77,7 +77,22 @@ export type IdeaQuestion =
     /** Una conexión de una de estas apps de la galería de integraciones. */
     | (QuestionBase & { kind: 'connection'; apps: string[] })
     /** Elegir entre opciones fijas. */
-    | (QuestionBase & { kind: 'choice'; default: string; options: Array<{ value: string; label: string }> });
+    | (QuestionBase & { kind: 'choice'; default: string; options: Array<{ value: string; label: string }> })
+    /**
+     * v0.1.468 — Una plantilla de documento PDF de la lista (la que se adjunta
+     * al correo). `guess` adivina por el nombre; `starter` es la plantilla de
+     * la galería que se ofrece crear si la lista todavía no tiene ninguna.
+     */
+    | (QuestionBase & { kind: 'document'; guess: string[]; starter: string; createLabel: string });
+
+/**
+ * v0.1.468 — El ID del campo que cumple un rol: `{ $fieldId: 'saldo' }` se
+ * reemplaza ENTERO por el número. Lo necesitan los filtros por `field_id`
+ * (el «para cada registro que cumpla…» de un horario), que no van por slug.
+ */
+export interface IdeaFieldIdRef {
+    $fieldId: string;
+}
 
 /**
  * Un paso de una automatización de la idea. Igual que una acción normal,

@@ -1,11 +1,14 @@
 import { forwardRef, useEffect, useMemo, useState } from 'react';
 import * as RDialog from '@radix-ui/react-dialog';
-import { AlertTriangle, ArrowLeft, Calculator, FileSpreadsheet, FileText, Receipt, ReceiptText, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Calculator, FileSpreadsheet, FileText, Filter, Receipt, ReceiptText, Wallet, X } from 'lucide-react';
 import {
     DEFAULT_IVA_RATE,
     DOCUMENT_STARTERS,
     buildDocumentStarter,
+    docFilterFieldOptions,
     emptyIssuer,
+    isClosedStatusOption,
+    type DocFilterField,
     type DocDesign,
     type DocumentIssuer,
     type DocumentStarter,
@@ -85,6 +88,7 @@ const ICONS: Record<string, typeof FileText> = {
     cuenta_cobro_detalle: FileSpreadsheet,
     cotizacion: Calculator,
     factura: ReceiptText,
+    estado_cuenta: Wallet,
     blank: FileText,
 };
 
@@ -106,17 +110,27 @@ export function DocumentStarterDialog({
     listId,
     fields,
     onCreate,
+    initialStarter = null,
 }: {
     open: boolean;
     onOpenChange: (o: boolean) => void;
     listId: number;
     fields: FieldEntity[];
     onCreate: (tpl: { name: string; filename: string; design: DocDesign }) => void;
+    /** v0.1.468 — abrir directo en esta plantilla de la galería. */
+    initialStarter?: string | null;
 }): JSX.Element {
     const [starter, setStarter] = useState<DocumentStarter | null>(null);
     useEffect(() => {
         if (!open) setStarter(null);
     }, [open]);
+    // Con los campos ya cargados: el formulario sugiere el mapeo al montarse.
+    const fieldsReady = fields.length > 0;
+    useEffect(() => {
+        if (!open || !initialStarter || !fieldsReady) return;
+        const s = DOCUMENT_STARTERS.find((x) => x.key === initialStarter && x.key !== 'blank');
+        if (s) setStarter(s);
+    }, [open, initialStarter, fieldsReady]);
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="imcrm-max-h-[92vh] imcrm-max-w-3xl imcrm-overflow-y-auto" data-testid="doc-starter">
@@ -199,13 +213,26 @@ function StarterForm({
     // ítems se sugieren apenas se conocen.
     useEffect(() => {
         if (pathKey === '' && paths.data && paths.data.length > 0) {
-            const first = paths.data[0]!;
+            // v0.1.468 — el estado de cuenta prefiere la lista de facturas o cuotas.
+            const preferred = starter.key === 'estado_cuenta' ? paths.data.find((p) => STATEMENT_LIST_RE.test(norm(p.other_list_name))) : undefined;
+            const first = preferred ?? paths.data[0]!;
             setPathKey(`${first.relation_field_id}:${first.direction}`);
         }
-    }, [paths.data, pathKey]);
+    }, [paths.data, pathKey, starter.key]);
     useEffect(() => {
         if (itemFields.data) setItemMapping(slugMapping(starter.item_roles, itemFields.data));
     }, [itemFields.data, starter.item_roles]);
+
+    // v0.1.468 — el estado de cuenta arma su filtro de pendientes con las
+    // opciones REALES del estado (o con el saldo): el servidor no las adivina.
+    const itemInfo = useMemo(() => {
+        const out: Record<string, DocFilterField> = {};
+        for (const key of ['estado', 'saldo']) {
+            const f = (itemFields.data ?? []).find((x) => x.slug === itemMapping[key]);
+            if (f) out[key] = { id: f.id, type: f.type, slug: f.slug, label: f.label, config: f.config };
+        }
+        return out;
+    }, [itemFields.data, itemMapping]);
 
     const missing = starter.roles.filter((r) => r.required && !mapping[r.key]);
     const missingItems = starter.item_roles.length > 0 && (!path || starter.item_roles.some((r) => r.required && !itemMapping[r.key]));
@@ -223,7 +250,11 @@ function StarterForm({
                 accent: branding.data?.primary_color ?? null,
                 fields: mapping,
                 items: path
-                    ? { source: { relation_field_id: path.relation_field_id, direction: path.direction, list_id: path.other_list_id }, fields: itemMapping }
+                    ? {
+                          source: { relation_field_id: path.relation_field_id, direction: path.direction, list_id: path.other_list_id },
+                          fields: itemMapping,
+                          info: itemInfo,
+                      }
                     : null,
                 issuer,
                 ...(starter.taxes
@@ -294,6 +325,7 @@ function StarterForm({
                                         onChange={(v) => setItemMapping((m) => ({ ...m, [role.key]: v }))}
                                     />
                                 ))}
+                            {path && starter.key === 'estado_cuenta' && <PendingNote info={itemInfo} />}
                         </>
                     )}
                 </div>
@@ -396,11 +428,14 @@ function StarterForm({
                             </label>
                         </div>
                     )}
-                    <label className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-text-xs">
-                        <span className="imcrm-font-medium">{__('Nota tributaria al pie')}</span>
-                        <Textarea rows={3} value={issuer.tax_note} onChange={(e) => set('tax_note', e.target.value)} className="imcrm-text-xs" />
-                        <span className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Ajústala a tu régimen: es la declaración que suelen pedir las empresas para pagar una cuenta de cobro.')}</span>
-                    </label>
+                    {/* v0.1.468 — el estado de cuenta no lleva nota tributaria (no cobra: informa). */}
+                    {starter.key !== 'estado_cuenta' && (
+                        <label className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-text-xs">
+                            <span className="imcrm-font-medium">{__('Nota tributaria al pie')}</span>
+                            <Textarea rows={3} value={issuer.tax_note} onChange={(e) => set('tax_note', e.target.value)} className="imcrm-text-xs" />
+                            <span className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Ajústala a tu régimen: es la declaración que suelen pedir las empresas para pagar una cuenta de cobro.')}</span>
+                        </label>
+                    )}
                 </div>
             </div>
 
@@ -458,6 +493,28 @@ const norm = (s: string): string =>
         .replace(/[\u0300-\u036f]/g, '')
         .replace(/[^a-z0-9]+/g, ' ');
 
+/** Las listas de un estado de cuenta: facturas, cuentas de cobro, cuotas, cartera. */
+const STATEMENT_LIST_RE = /factur|cuenta|cobr|cuota|cartera|pago|saldo|deuda/;
+
+/** v0.1.468 — Qué filas va a mostrar el estado de cuenta, dicho en palabras. */
+function PendingNote({ info }: { info: Record<string, DocFilterField> }): JSX.Element {
+    const estado = info.estado;
+    const closed = estado ? docFilterFieldOptions(estado).filter(isClosedStatusOption) : [];
+    const text = estado && closed.length > 0
+        ? `${__('Muestra sólo lo pendiente: no aparecen las de estado')} ${closed.map((o) => `«${o.label}»`).join(', ')}.`
+        : info.saldo
+          ? __('Muestra sólo las que tienen saldo pendiente (mayor que 0).')
+          : __('Muestra todas las filas. Elige el estado o el saldo para mostrar sólo lo pendiente.');
+    return (
+        <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-rounded-md imcrm-bg-muted imcrm-p-2 imcrm-text-[11px] imcrm-leading-relaxed imcrm-text-muted-foreground" data-starter-pending-note>
+            <Filter className="imcrm-mt-px imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" aria-hidden />
+            <span>
+                {text} {__('Lo cambias en el editor, en la tabla de ítems → «Filtrar los ítems».')}
+            </span>
+        </p>
+    );
+}
+
 /** ¿El nombre del campo se parece al del rol? ("Valor" ↔ valor, "NIT" ↔ cliente_doc). */
 function looksLike(role: TemplateRoleField, f: FieldEntity): boolean {
     const name = `${norm(f.label)} ${norm(f.slug)}`;
@@ -476,6 +533,13 @@ function looksLike(role: TemplateRoleField, f: FieldEntity): boolean {
         condiciones: ['condiciones', 'terminos'],
         forma_pago: ['forma', 'metodo', 'medio'],
         fecha_pago: ['pago', 'limite', 'vence'],
+        // v0.1.468 — estado de cuenta.
+        fecha: ['emision', 'fecha'],
+        vencimiento: ['vence', 'vencimiento', 'limite'],
+        estado: ['estado', 'status'],
+        valor: ['valor', 'total', 'monto', 'importe'],
+        pagado: ['pagado', 'abono', 'abonado'],
+        saldo: ['saldo', 'pendiente', 'debe', 'deuda'],
     };
     return words.some((w) => name.includes(w)) || (extra[role.key] ?? []).some((w) => name.includes(w));
 }

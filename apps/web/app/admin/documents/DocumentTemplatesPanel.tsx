@@ -46,6 +46,23 @@ export function DocumentTemplatesPanel({ listId }: { listId: number }): JSX.Elem
             { replace: true },
         );
     }, [docParam, setParams]);
+    // v0.1.468 — `?starter=<clave>` abre la galería en esa plantilla (lo usa la
+    // idea «estado de cuenta» para crearla sin buscarla).
+    const starterParam = params.get('starter');
+    const [starterKey, setStarterKey] = useState<string | null>(null);
+    useEffect(() => {
+        if (!starterParam) return;
+        setStarterKey(starterParam);
+        setStarterOpen(true);
+        setParams(
+            (prev) => {
+                const next = new URLSearchParams(prev);
+                next.delete('starter');
+                return next;
+            },
+            { replace: true },
+        );
+    }, [starterParam, setParams]);
 
     return (
         <Card>
@@ -155,11 +172,16 @@ export function DocumentTemplatesPanel({ listId }: { listId: number }): JSX.Elem
 
             <DocumentStarterDialog
                 open={starterOpen}
-                onOpenChange={setStarterOpen}
+                onOpenChange={(o) => {
+                    setStarterOpen(o);
+                    if (!o) setStarterKey(null);
+                }}
+                initialStarter={starterKey}
                 listId={listId}
                 fields={fields.data ?? []}
                 onCreate={(initial) => {
                     setStarterOpen(false);
+                    setStarterKey(null);
                     setEditing({ id: null, initial });
                 }}
             />

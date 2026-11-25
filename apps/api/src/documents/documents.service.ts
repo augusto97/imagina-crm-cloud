@@ -21,6 +21,7 @@ import {
     DOC_MAX_PDF_BYTES,
     FALLBACK_TIME_ZONE,
     applyWordModifiers,
+    cleanDocItemsFilter,
     computeItemsRows,
     describeDocItemExpr,
     docAllBlocks,
@@ -41,6 +42,8 @@ import {
     type CreateDocumentTemplateInput,
     type DocBlock,
     type DocDesign,
+    type DocFilterField,
+    type FilterGroup,
     type DocImage,
     type DocNumbering,
     type DocumentPreviewInput,
@@ -1150,7 +1153,7 @@ export class DocumentsService {
                 data: { status: 400 },
             });
         }
-        for (const set of itemSets.values()) if (set.warning) warnings.push(set.warning);
+        for (const set of itemSets.values()) warnings.push(...set.warnings);
         // v0.1.290 — Congelar: la primera vez que el documento sale de verdad
         // con su número (o el primero después de encender la opción). Va en
         // la MISMA transacción que emitió el número: si el PDF no se puede
@@ -1413,7 +1416,7 @@ export class DocumentsService {
             sums: new Map(),
             raw: [],
             fields: [],
-            warning,
+            warnings: warning ? [warning] : [],
         });
         if (!b.source) return empty('Elige de qué registros vinculados salen las filas.');
         const rel = await this.fields.findAnyByIdWithinTx(tx, req.tenantId, b.source.relation_field_id);
@@ -1448,35 +1451,62 @@ export class DocumentsService {
         if (drawn.length === 0) {
             return { ...empty('Elige las columnas de la tabla.'), table: { columns: [], rows: [], notice: 'Elige las columnas de la tabla.' } };
         }
+        // v0.1.468 — «Mostrar sólo los ítems que…»: el filtro se limpia contra
+        // los campos de la lista de los ítems y lo que quien genera ve; una
+        // regla rota se ignora con un aviso (nunca rompe el PDF).
+        const filter = b.filter_tree ? await this.itemsFilter(tx, req, b, itemFields) : { tree: null, warnings: [] };
         if (tagsMode) {
             const row = drawn.map((c) =>
                 isComputedItemColumn(c) ? `= ${describeDocItemExpr(c.expr, labelOf)}` : isPlaceholderSlug(c.slug) ? c.slug : `{{${c.slug}}}`,
             );
-            return { table: { columns, rows: [row, row] }, sums: new Map(), raw: [], fields: itemFields };
+            return { table: { columns, rows: [row, row] }, sums: new Map(), raw: [], fields: itemFields, warnings: filter.warnings };
         }
-        if (!record) return { table: { columns, rows: [] }, sums: new Map(), raw: [], fields: itemFields };
+        if (!record) return { table: { columns, rows: [] }, sums: new Map(), raw: [], fields: itemFields, warnings: filter.warnings };
 
         const sortField = b.sort ? bySlug.get(b.sort.slug) : undefined;
-        const rawRows: Array<Record<string, unknown>> = [];
-        let cursor: number | undefined;
-        while (rawRows.length < b.limit) {
-            const page = await this.records.list(
-                req.tenantId,
-                req.actor,
-                String(b.source.list_id),
-                listRecordsQuerySchema.parse({
-                    limit: Math.min(200, b.limit - rawRows.length),
-                    ...(sortField ? { sort: `field_${sortField.id}:${b.sort!.dir}` } : {}),
-                    ...(cursor !== undefined ? { cursor } : {}),
-                }),
-                {
-                    tx,
-                    related: { fieldId: b.source.relation_field_id, recordId: record.id, direction: b.source.direction },
-                },
-            );
-            rawRows.push(...page.data.map((r) => r.data));
-            if (!page.meta.next_cursor) break;
-            cursor = Number(page.meta.next_cursor);
+        const source = b.source;
+        const fetchRows = async (ttx: Tx, tree: FilterGroup | null): Promise<Array<Record<string, unknown>>> => {
+            const out: Array<Record<string, unknown>> = [];
+            let cursor: number | undefined;
+            while (out.length < b.limit) {
+                const page = await this.records.list(
+                    req.tenantId,
+                    req.actor,
+                    String(source.list_id),
+                    listRecordsQuerySchema.parse({
+                        limit: Math.min(200, b.limit - out.length),
+                        ...(sortField ? { sort: `field_${sortField.id}:${b.sort!.dir}` } : {}),
+                        ...(cursor !== undefined ? { cursor } : {}),
+                        ...(tree ? { filter_tree: tree } : {}),
+                    }),
+                    {
+                        tx: ttx,
+                        related: { fieldId: source.relation_field_id, recordId: record.id, direction: source.direction },
+                    },
+                );
+                out.push(...page.data.map((r) => r.data));
+                if (!page.meta.next_cursor) break;
+                cursor = Number(page.meta.next_cursor);
+            }
+            return out;
+        };
+        let rawRows: Array<Record<string, unknown>>;
+        let filtered = false;
+        if (filter.tree) {
+            // En un savepoint: si la consulta con el filtro igual falla (un
+            // valor que el motor no supo leer), la transacción del documento
+            // sigue viva y la regla se ignora como las demás rotas.
+            const tree = filter.tree;
+            try {
+                rawRows = await tx.transaction((stx) => fetchRows(stx as unknown as Tx, tree));
+                filtered = true;
+            } catch (err) {
+                this.logger.warn(`Filtro de la tabla «${b.title || b.id}» ignorado: ${err instanceof Error ? err.message : String(err)}`);
+                filter.warnings.push(`En la tabla «${b.title || 'de ítems'}» no se pudo aplicar el filtro: se muestran todos los ítems.`);
+                rawRows = await fetchRows(tx, null);
+            }
+        } else {
+            rawRows = await fetchRows(tx, null);
         }
         const userIds = new Set<number>();
         for (const r of rawRows) collectUserIds(itemFields, r, userIds);
@@ -1526,7 +1556,51 @@ export class DocumentsService {
             }
             if (any) sums.set(f.slug, total);
         }
-        return { table: { columns, rows }, sums, raw: rawRows, fields: itemFields };
+        // v0.1.468 — Una tabla FILTRADA sin filas suma 0 (el cliente no debe
+        // nada: «Total pendiente $ 0»), no «—» como una tabla sin ítems cargados.
+        if (filtered && rawRows.length === 0) {
+            for (const f of itemFields) if (isNumericField(display.get(f.id) ?? f)) sums.set(f.slug, 0);
+            for (const c of cols) if (isComputedItemColumn(c)) sums.set(c.slug, 0);
+        }
+        return { table: { columns, rows }, sums, raw: rawRows, fields: itemFields, warnings: filter.warnings };
+    }
+
+    /**
+     * v0.1.468 — El filtro de una tabla de ítems, limpio: sin las reglas sobre
+     * campos borrados, sobre campos que quien genera no ve (no se pueden usar
+     * para filtrar) ni con valores que ya no sirven. Cada regla quitada deja un
+     * aviso para el editor.
+     */
+    private async itemsFilter(
+        tx: Tx,
+        req: RenderRequest,
+        b: Extract<DocBlock, { type: 'items' }>,
+        itemFields: Field[],
+    ): Promise<{ tree: FilterGroup | null; warnings: string[] }> {
+        const { hiddenIds, fieldsById } = await this.records.filterContextWithinTx(tx, req.tenantId, req.actor, String(b.source!.list_id));
+        const FORMULA_RESULT: Record<string, string> = { number: 'number', text: 'text', boolean: 'checkbox', date: 'date', datetime: 'datetime' };
+        const filterFields: DocFilterField[] = itemFields.map((f) => {
+            const kind = fieldsById.get(f.id)?.formulaKind;
+            return {
+                id: f.id,
+                type: f.type,
+                slug: f.slug,
+                label: f.label,
+                config: f.config,
+                ...(f.type === 'formula' ? { formula: { result_type: kind ? FORMULA_RESULT[kind] ?? null : null } } : {}),
+            };
+        });
+        const DERIVED = new Set(['rollup', 'lookup', 'computed', 'time_tracked', 'checklist_progress', 'approval', 'formula', 'created_at', 'updated_at', 'created_by', 'updated_by']);
+        const { tree, issues } = cleanDocItemsFilter(b.filter_tree, filterFields, {
+            hiddenIds,
+            canFilter: (f) => {
+                const ff = fieldsById.get(f.id);
+                if (!ff) return false;
+                return DERIVED.has(f.type) ? ff.expr !== undefined : true;
+            },
+        });
+        const where = `En la tabla «${b.title.trim() || 'de ítems'}»`;
+        return { tree, warnings: issues.map((i) => `${where}: ${i.message.charAt(0).toLowerCase()}${i.message.slice(1)}`) };
     }
 
     private async loadImages(
@@ -1694,7 +1768,8 @@ interface LoadedItems {
     sums: Map<string, number>;
     raw: Array<Record<string, unknown>>;
     fields: Field[];
-    warning?: string;
+    /** Avisos para el editor (relación borrada, reglas del filtro que no se aplican). */
+    warnings: string[];
 }
 
 type FormatOpts = Pick<TenantFormat, 'number_format' | 'date_format' | 'time_format'> & { timezone?: string | null };

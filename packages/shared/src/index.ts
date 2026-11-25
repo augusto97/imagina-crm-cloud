@@ -149,6 +149,7 @@ export * from './schemas/email-design';
 export * from './schemas/html-scan';
 export * from './templates/email-templates';
 export * from './schemas/document-design';
+export * from './schemas/document-items-filter';
 export * from './schemas/document-calc';
 export * from './templates/document-templates';
 export * from './templates/form-templates';

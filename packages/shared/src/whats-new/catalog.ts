@@ -3963,4 +3963,33 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ver el horario laboral', href: '/settings?s=horario', tour: 'automation-basics' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.468-estado-de-cuenta',
+        version: '0.1.468',
+        date: '2026-11-25',
+        kind: 'feature',
+        title: 'Estado de cuenta en PDF y tablas de ítems con filtro',
+        summary:
+            'Nueva plantilla «Estado de cuenta»: en la ficha de un cliente, sus facturas pendientes con el total que debe. Y en cualquier documento, la tabla de ítems puede mostrar sólo las filas que elijas.',
+        media: {
+            slides: [
+                {
+                    title: 'Sólo lo pendiente',
+                    text: 'En el editor del documento, en la tabla de ítems, «Filtrar los ítems» deja sólo las filas que cumplen tus condiciones. Los totales suman sólo esas.',
+                    illustration: 'pdf-totales',
+                },
+                {
+                    title: 'Cada mes, a cada cliente con saldo',
+                    text: 'Activa la idea «Manda el estado de cuenta cada mes» y a cada cliente que debe le llega su estado de cuenta en PDF por correo.',
+                    illustration: 'pdf-automatizar',
+                },
+            ],
+        },
+        body: [
+            '- Está en **Configurar lista → Documentos → Nueva plantilla → Estado de cuenta**, en la lista de tus clientes: trae sus facturas vinculadas ya filtradas a lo pendiente.',
+            '- Si un filtro usa un campo que ya no existe o una opción que borraste, el editor te lo avisa y el PDF ignora esa regla.',
+        ].join('\n'),
+        action: { label: 'Ver la idea', href: '/ideas/estado-de-cuenta-mensual' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

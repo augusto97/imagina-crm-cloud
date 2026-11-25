@@ -1075,6 +1075,23 @@ export class RecordsService {
     }
 
     /**
+     * v0.1.468 — Para el filtro de la tabla de ítems de un documento (dentro de
+     * la transacción del documento): los campos que quien genera NO ve y los
+     * filtrables con sus expresiones (un derivado sin expresión no filtra). Así
+     * el documento avisa qué reglas no se aplican con la MISMA regla que el
+     * listado, que de todas formas las descarta.
+     */
+    async filterContextWithinTx(
+        tx: Tx,
+        tenantId: number,
+        actor: Actor,
+        listIdOrSlug: string,
+    ): Promise<{ hiddenIds: Set<number>; fieldsById: Map<number, FilterableField> }> {
+        const ctx = await this.readContext(tx, tenantId, actor, listIdOrSlug);
+        return { hiddenIds: ctx.hiddenIds, fieldsById: ctx.fieldsById };
+    }
+
+    /**
      * Lo que necesita una LECTURA de la lista para quien pide (v0.1.286, antes
      * vivía dentro de `list`): campos, ACL (scope + ocultos), campos filtrables
      * con las expresiones de los derivados y el reloj de la empresa.

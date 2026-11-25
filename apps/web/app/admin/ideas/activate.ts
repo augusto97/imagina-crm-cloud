@@ -11,7 +11,7 @@ import type { IdeaAction, IdeaAutomation, IdeaDef, IdeaQuestion } from './types'
  *
  * Orden (importa):
  *   1. respuestas → se reemplazan los `{ $q }` (estructural) y los `[[q:key]]`
- *      dentro de textos;
+ *      dentro de textos; y los `{ $fieldId: rol }` por el ID del campo;
  *   2. `$message` → la acción de la app de mensajería de la conexión elegida;
  *   3. roles → campos (`remapAutomationSlugs`); los roles opcionales que la
  *      persona dejó sin campo se borran de los textos para no mandar `{{rol}}`;
@@ -27,6 +27,8 @@ import type { IdeaAction, IdeaAutomation, IdeaDef, IdeaQuestion } from './types'
 export interface IdeaContext {
     /** Rol → slug del campo elegido. */
     roleToSlug: Record<string, string>;
+    /** Rol → ID del campo elegido (para los `{ $fieldId }`). */
+    roleToId?: Record<string, number>;
     /** Respuestas YA resueltas (ver `resolveAnswers`). */
     answers: Record<string, unknown>;
     /** Conexión elegida → su app (`whatsapp`, `slack`, `mercadopago`…). */
@@ -48,6 +50,22 @@ function isAnswerRef(v: unknown): v is { $q: string } {
 }
 
 const TEXT_REF = /\[\[q:([a-z0-9_]+)\]\]/g;
+
+function isFieldIdRef(v: unknown): v is { $fieldId: string } {
+    return isPlainObject(v) && typeof v.$fieldId === 'string' && Object.keys(v).length === 1;
+}
+
+/** Paso 1b: `{ $fieldId: rol }` → el ID del campo elegido (0 si no hay). */
+export function fillFieldIds(value: unknown, roleToId: Record<string, number>): unknown {
+    if (isFieldIdRef(value)) return roleToId[value.$fieldId] ?? 0;
+    if (Array.isArray(value)) return value.map((v) => fillFieldIds(v, roleToId));
+    if (isPlainObject(value)) {
+        const out: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(value)) out[k] = fillFieldIds(v, roleToId);
+        return out;
+    }
+    return value;
+}
 
 /** Paso 1: reemplaza las respuestas en cualquier JSON. */
 export function fillAnswers(value: unknown, answers: Record<string, unknown>): unknown {
@@ -146,6 +164,9 @@ function checkActions(actions: unknown[], problems: string[]): void {
         if (raw.type === 'send_email' && String(cfg.to ?? '').trim() === '') {
             problems.push('Falta a qué correo mandar el aviso.');
         }
+        if (raw.type === 'send_email' && Array.isArray(cfg.pdf_templates) && cfg.pdf_templates.some((id) => !(Number(id) > 0))) {
+            problems.push('Elige el documento PDF que se adjunta.');
+        }
         if (raw.type === 'call_webhook' && !/^https?:\/\/\S+$/i.test(String(cfg.url ?? '').trim())) {
             problems.push('Pega la dirección (https://…) a la que se envían los datos.');
         }
@@ -198,7 +219,7 @@ export function buildIdeaAutomations(
 
     const out: CreateAutomationInput[] = [];
     for (const auto of automations) {
-        const filled = fillAnswers({ trigger_config: auto.trigger_config, actions: auto.actions }, ctx.answers) as {
+        const filled = fillFieldIds(fillAnswers({ trigger_config: auto.trigger_config, actions: auto.actions }, ctx.answers), ctx.roleToId ?? {}) as {
             trigger_config: Record<string, unknown>;
             actions: IdeaAction[];
         };
@@ -236,6 +257,8 @@ export interface AnswerEnv {
     mappedRoles: ReadonlySet<string>;
     /** Conexiones disponibles, para elegir por defecto la primera de la app. */
     connections: Array<{ id: number; integration_key: string | null; name: string }>;
+    /** v0.1.468 — Plantillas de documento de la lista elegida. */
+    documents?: Array<{ id: number; name: string }>;
 }
 
 export function fold(s: string): string {
@@ -287,6 +310,11 @@ export function defaultRawAnswer(q: IdeaQuestion, env: AnswerEnv): string | stri
         }
         case 'choice':
             return q.default;
+        case 'document': {
+            const docs = env.documents ?? [];
+            const hit = q.guess.map(fold).reduce<{ id: number; name: string } | undefined>((acc, w) => acc ?? docs.find((d) => fold(d.name).includes(w)), undefined);
+            return hit ? String(hit.id) : '';
+        }
     }
 }
 
@@ -305,6 +333,7 @@ export function resolveAnswer(q: IdeaQuestion, raw: string | string[] | undefine
             return q.unit === 'minutes' ? signed * 1440 : signed;
         }
         case 'connection':
+        case 'document':
             return Number(s) || 0;
         case 'option':
             return q.multiple ? (Array.isArray(raw) ? raw : s === '' ? [] : [s]) : s;
