@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { idSchema, isoDateTimeSchema } from './common';
 import { BORDER_STYLES, DESIGN_FONTS, blockStyleSchema, elementStyleSchema } from './design-style';
+import { filterTreeSchema } from './filter';
 import { richDocSchema, sanitizeRichDoc } from './rich-text';
 
 /**
@@ -280,6 +281,15 @@ const itemsBlock = z.object({
     limit: z.number().int().min(1).max(DOC_MAX_ITEM_ROWS).default(200),
     striped: z.boolean().default(true),
     empty_text: z.string().max(200).default('Sin ítems.'),
+    /**
+     * v0.1.468 — «Mostrar sólo los ítems que…»: condiciones sobre los campos
+     * de la lista de los ítems, con la forma de los filtros de la tabla (por
+     * `field_id`: renombrar un campo no lo rompe). El servidor lo compila en
+     * SQL con el acceso de quien genera y lo limpia antes con
+     * `cleanDocItemsFilter` (una regla rota se ignora con un aviso). Un árbol
+     * mal armado se lee como «sin filtro» en vez de tirar la plantilla.
+     */
+    filter_tree: filterTreeSchema.nullable().optional().catch(null),
 });
 
 const totalSource = z.discriminatedUnion('kind', [

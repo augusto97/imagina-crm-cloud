@@ -63,6 +63,7 @@ import {
 } from '../automations/email/EmailBlockInspector';
 import { EmailTextEditor } from '../automations/email/EmailTextEditor';
 import { makeDocInner, newTotalRowId } from './documentDesignOps';
+import { ItemsFilterEditor } from './ItemsFilterEditor';
 import { FORMULA_ARITY, exprToFormula, formulaToExpr, newComputedKey, renameItemsColumnRef, type Formula, type FormulaKind, type FormulaOperand } from './itemFormula';
 
 /**
@@ -815,6 +816,7 @@ function ItemsFields(p: DocInspectorProps): JSX.Element {
                             source: path ? { relation_field_id: path.relation_field_id, direction: path.direction, list_id: path.other_list_id } : null,
                             columns: [],
                             sort: null,
+                            filter_tree: null,
                         });
                     }}
                 >
@@ -992,6 +994,14 @@ function ItemsFields(p: DocInspectorProps): JSX.Element {
 
             {block.source && (
                 <>
+                    <Field label={__('Filtrar los ítems')}>
+                        <ItemsFilterEditor
+                            value={block.filter_tree}
+                            onChange={(tree) => p.onPatch({ filter_tree: tree })}
+                            fields={itemFields.data ?? []}
+                            listId={block.source.list_id}
+                        />
+                    </Field>
                     <Field label={__('Ordenar por')}>
                         <div className="imcrm-flex imcrm-gap-1">
                             <Select

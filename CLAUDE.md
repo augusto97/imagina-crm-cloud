@@ -17553,6 +17553,94 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         en espera hasta la próxima apertura y reanudada al abrir; en horario sin
         pausar; celular 390×844 oscuro sin scroll lateral).
 
+  - [x] **Estado de cuenta del cliente + tabla de ítems con filtro (v0.1.468,
+        addendum ADR-S35, idea J4 del banco)**: un PDF por cliente con sus
+        facturas o cuotas PENDIENTES y el total que debe, armado desde la
+        galería y mandado solo cada mes. Sin migración.
+        (a) **«Filtrar los ítems»** en el bloque «Tabla de ítems» de cualquier
+        plantilla de documento (`filter_tree` del bloque, opcional y con
+        `.catch(null)` en `document-design.ts`): «Mostrar sólo los ítems
+        que…» con condiciones sobre los campos de la lista de los ítems (el
+        MISMO editor de filtros de la tabla, `FilterGroupView`, en
+        `ItemsFilterEditor.tsx`, `data-tour="doc-items-filter"`), todas o
+        alguna, y los operadores de los filtros según el tipo (es / no es /
+        es alguno de / no es ninguno de, vacío, mayor/menor, contiene, y
+        «en» con los rangos relativos de fecha: antes de hoy, desde hoy,
+        próximos 7 o 30 días, este mes…). Se guarda por `field_id` (regla de
+        oro nº 1: renombrar un campo no lo rompe; migrar una empresa lo
+        re-apunta solo por la clave). **Limpieza tolerante y compartida**
+        (`schemas/document-items-filter.ts`: `cleanDocItemsFilter`,
+        `docFilterOpsFor`, `docFilterFieldOptions`, `docItemsFilterCount`):
+        una regla rota —campo borrado, campo que quien genera no ve, operador
+        que ya no aplica al tipo, valor que no sirve, opción que ya no
+        existe— se QUITA con un aviso y el resto del filtro sigue; nunca
+        lanza. El editor muestra esos avisos en ámbar; el servidor los suma a
+        los avisos del documento.
+        (b) **El servidor filtra en SQL** (`DocumentsService.loadItems`): el
+        árbol limpio va como `filter_tree` del listado de registros vinculados
+        (`RecordsService.list` con `related`), o sea el QueryBuilder
+        whitelisteado con el ACL, el alcance y los campos ocultos de quien
+        genera (`filterContextWithinTx`); un campo derivado sin expresión SQL
+        no filtra. La consulta filtrada corre en un savepoint: si igual falla,
+        se ignora el filtro con un aviso y salen todos los ítems. Los totales
+        `items_sum` suman SÓLO las filas que quedan, y una tabla filtrada que
+        queda vacía suma **0** (antes «—»: un cliente al día dice «Total
+        pendiente $ 0» y «Son: CERO PESOS M/CTE.»).
+        (c) **Plantilla «Estado de cuenta»** en la galería (`estado_cuenta`
+        en `document-templates.ts`): en la lista de clientes, los ítems salen
+        de la lista vinculada que suena a facturas/cuotas/cartera; roles del
+        cliente (nombre, NIT, dirección, correo) y de los ítems (número,
+        fecha, vencimiento, estado, valor, pagado y saldo, sugeridos por
+        nombre y tipo); encabezado de quien emite con «Estado de cuenta al
+        <fecha larga>», bloque del cliente y un resumen con el saldo, la tabla
+        «Pendiente de pago» ordenada por vencimiento con columnas de saldo y
+        pagado si se mapean, fila **«Total pendiente»** (el saldo si existe, si
+        no el valor), el monto en letras, datos para el pago y una nota. **Lo
+        pendiente por defecto** (`pendingItemsFilter` + `isClosedStatusOption`):
+        el estado no es ninguna de las opciones que suenan a pagada/anulada
+        (sin tildes ni mayúsculas, salvo «no pagada», «parcial», «abono»…;
+        las facturas sin estado entran), si el estado no tiene ninguna así,
+        el estado es alguna de las de «pendiente», y sin estado, el saldo
+        mayor que 0. El formulario de la galería lo dice antes de crear
+        («Muestra sólo lo pendiente: no aparecen las de estado «Pagada»,
+        «Anulada».») y no ofrece la nota tributaria. Lo no mapeado sale como
+        «[Rol]». `?starter=estado_cuenta` en Configuración → Documentos abre
+        la galería directo en esa plantilla.
+        (d) **Idea «Manda el estado de cuenta cada mes»** (`estado-de-cuenta-
+        mensual`, categoría Cobros): una automatización programada el día
+        elegido de cada mes «para cada registro que cumpla…» saldo > 0, que
+        manda un correo con el saldo (`{{saldo|moneda}}`) y **Adjuntar PDF**
+        con la plantilla. La plantilla se elige con una pregunta nueva de las
+        ideas (`kind: 'document'`: adivina «Estado de cuenta» por el nombre) y,
+        si la lista no la tiene, **«Crear el estado de cuenta»** abre la
+        galería en esa plantilla en otra pestaña y la lista se refresca al
+        volver (o con «Ya la creé»). El filtro del horario apunta al campo
+        mapeado con el token nuevo `{ $fieldId: rol }` (`fillFieldIds`).
+        Activar con el tope del plan lleno ofrece «Guardarla en pausa», como
+        toda idea.
+        (e) **Asistente/MCP**: el bloque `items` de
+        `propose_create/update_document_template` acepta `filter {logic
+        all|any, conditions [{field (slug), op, value}]}` con las opciones de
+        una selección por su ETIQUETA, validado con errores corregibles
+        (campo de otra lista, operador, opción inexistente); se guarda por id
+        y `get_document_template` lo devuelve por slug.
+        Ayuda: guía de documentos al día, sección «Mostrar sólo algunos
+        ítems: el estado de cuenta» en Aprende → Documentos PDF (ilustración
+        `pdf-automatizar`) y novedad con carrusel; J4 sale de `docs/ideas.md`.
+        Tests: `document-items-filter.test` (8) y 5 nuevos de la plantilla en
+        shared; `documents-items-filter.spec` (6, Postgres real: sólo lo
+        pendiente ordenado con su total, cliente al día con $ 0, renombrar el
+        campo, campo oculto que no filtra, regla rota ignorada con aviso,
+        fecha relativa y «alguna»), uno en `ai-designs.spec` y otro en
+        `tenant-transfer-remap.spec`; `itemsFilter.test` (3) e `ideas.test`
+        en el front — shared 1178, front 1026 — + E2E navegador 30/30 en
+        escritorio claro y celular 390×844 oscuro (galería con la nota, vista
+        previa sólo con lo pendiente y $ 180,000, cambiar el filtro y
+        deshacer, guardar por id, «Generar PDF» desde la ficha, cliente al día
+        con $ 0, la idea con la plantilla elegida sola, «Ejecutar ahora» que
+        corre sólo para el cliente con saldo con el PDF adjunto, «Crear el
+        estado de cuenta» desde otra lista).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

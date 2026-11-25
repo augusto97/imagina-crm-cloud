@@ -49,7 +49,7 @@ export const meta: LearnModuleMeta = {
             summary: 'Las líneas del documento salen de una lista vinculada; cada línea calcula su total y los totales encadenan subtotal, descuentos, IVA y total a pagar.',
             minutes: 8,
             level: 'advanced',
-            keywords: 'items lineas productos servicios cantidad precio columna calculada subtotal descuento base gravable iva retencion total suma',
+            keywords: 'items lineas productos servicios cantidad precio columna calculada subtotal descuento base gravable iva retencion total suma filtrar mostrar solo pendientes estado de cuenta saldo vencidas',
             needs: 'manage_documents',
         },
         {

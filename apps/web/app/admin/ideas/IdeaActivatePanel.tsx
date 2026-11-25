@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, ArrowRight, Check, CheckCircle2, Loader2, Lock, PencilLine, Plug, Sparkles } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Check, CheckCircle2, ExternalLink, Loader2, Lock, PencilLine, Plug, RefreshCw, Sparkles } from 'lucide-react';
 import type { Connection } from '@imagina-base/shared';
 
 import type { AutomationFormState } from '@/admin/automations/config-editors';
+import { useDocumentTemplates } from '@/admin/documents/useDocuments';
 import { RoleFieldMapper } from '@/admin/templates/RoleFieldMapper';
 import { useSession } from '@/cloud/session';
 import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
@@ -202,6 +203,17 @@ function AutomationsActivator({ idea, plan }: { idea: IdeaDef; plan: Extract<Ide
     const connections = useConnections();
     const myEmail = useSession((s) => s.user?.email ?? '');
     const existing = useAutomations(listId ?? undefined);
+    // v0.1.468 — las plantillas de documento de la lista (preguntas `document`).
+    // Se crean en OTRA pestaña: al volver a ésta se piden de nuevo.
+    const wantsDocs = plan.questions.some((x) => x.kind === 'document');
+    const docs = useDocumentTemplates(wantsDocs ? (listId ?? undefined) : undefined);
+    const refetchDocs = docs.refetch;
+    useEffect(() => {
+        if (!wantsDocs || listId === null) return;
+        const onFocus = (): void => void refetchDocs();
+        window.addEventListener('focus', onFocus);
+        return () => window.removeEventListener('focus', onFocus);
+    }, [wantsDocs, listId, refetchDocs]);
 
     const slugById = useMemo(() => new Map(fieldList.map((f) => [f.id, f.slug])), [fieldList]);
     const roleToSlug = useMemo(() => {
@@ -220,8 +232,9 @@ function AutomationsActivator({ idea, plan }: { idea: IdeaDef; plan: Extract<Ide
             roleOptions,
             mappedRoles: new Set(Object.keys(roleToSlug)),
             connections: connections.map((c) => ({ id: c.id, integration_key: c.integration_key, name: c.name })),
+            documents: (docs.data ?? []).map((d) => ({ id: d.id, name: d.name })),
         };
-    }, [mapping, fieldList, myEmail, roleToSlug, connections]);
+    }, [mapping, fieldList, myEmail, roleToSlug, connections, docs.data]);
 
     // Respuestas: el valor por defecto se recalcula mientras la persona no toque la pregunta.
     const [touched, setTouched] = useState<Record<string, string | string[]>>({});
@@ -236,10 +249,11 @@ function AutomationsActivator({ idea, plan }: { idea: IdeaDef; plan: Extract<Ide
         () =>
             buildIdeaAutomations(plan.automations, plan.roles, {
                 roleToSlug,
+                roleToId: mapping,
                 answers: resolveAnswers(plan.questions, raw),
                 connectionApps: Object.fromEntries(connections.map((c) => [c.id, c.integration_key])),
             }),
-        [plan, roleToSlug, raw, connections],
+        [plan, roleToSlug, mapping, raw, connections],
     );
 
     const create = useCreateAutomation(listId ?? 0);
@@ -359,6 +373,9 @@ function AutomationsActivator({ idea, plan }: { idea: IdeaDef; plan: Extract<Ide
                                     value={raw[q.key] ?? ''}
                                     env={env}
                                     connections={connections}
+                                    listSlug={list.slug}
+                                    docsLoading={docs.isFetching}
+                                    onRefreshDocs={() => void refetchDocs()}
                                     onChange={(v) => setTouched((t) => ({ ...t, [q.key]: v }))}
                                 />
                             ))}
@@ -414,12 +431,18 @@ function QuestionField({
     value,
     env,
     connections,
+    listSlug,
+    docsLoading,
+    onRefreshDocs,
     onChange,
 }: {
     q: IdeaQuestion;
     value: string | string[];
     env: AnswerEnv;
     connections: Connection[];
+    listSlug: string;
+    docsLoading: boolean;
+    onRefreshDocs: () => void;
     onChange: (v: string | string[]) => void;
 }): JSX.Element | null {
     const id = `idea-q-${q.key}`;
@@ -539,6 +562,53 @@ function QuestionField({
                                 </option>
                             ))}
                         </Select>
+                    )}
+                    {help}
+                </div>
+            );
+        }
+        case 'document': {
+            // v0.1.468 — la plantilla de documento que se adjunta. Si la lista
+            // no tiene ninguna, se crea desde la galería en otra pestaña (con
+            // la plantilla ya elegida; `Link` arma el `#/` del HashRouter) y al
+            // volver aparece sola.
+            const docs = env.documents ?? [];
+            const createHref = `/lists/${listSlug}/edit?s=documentos&starter=${encodeURIComponent(q.starter)}`;
+            return (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5" data-testid={`idea-q-${q.key}`}>
+                    {label}
+                    {docs.length > 0 && (
+                        <Select id={id} value={str} onChange={(e) => onChange(e.target.value)}>
+                            <option value="">{__('— Elige —')}</option>
+                            {docs.map((d) => (
+                                <option key={d.id} value={d.id}>
+                                    {d.name}
+                                </option>
+                            ))}
+                        </Select>
+                    )}
+                    {(docs.length === 0 || str === '') && (
+                        <p className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-x-2 imcrm-gap-y-1 imcrm-text-xs imcrm-text-muted-foreground">
+                            {docs.length === 0 ? __('Esta lista todavía no tiene esa plantilla.') : __('¿No está en la lista?')}
+                            <Link
+                                to={createHref}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-font-medium imcrm-text-primary hover:imcrm-underline"
+                                data-testid="idea-create-document"
+                            >
+                                {q.createLabel}
+                                <ExternalLink className="imcrm-h-3 imcrm-w-3" aria-hidden />
+                            </Link>
+                            <button
+                                type="button"
+                                onClick={onRefreshDocs}
+                                className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-font-medium imcrm-text-primary hover:imcrm-underline"
+                            >
+                                <RefreshCw className={cn('imcrm-h-3 imcrm-w-3', docsLoading && 'imcrm-animate-spin')} aria-hidden />
+                                {__('Ya la creé')}
+                            </button>
+                        </p>
                     )}
                     {help}
                 </div>

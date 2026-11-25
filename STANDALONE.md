@@ -2991,6 +2991,28 @@ viajan en la migración de empresa.
    que se alimenta del bundle de la ficha; la fila de totales la suma el
    servidor con el mismo alcance y ACL.
 
+**Addendum v0.1.468 (tabla de ítems con filtro y estado de cuenta).**
+1. **El filtro es un árbol de filtros por `field_id`** (`filter_tree` del
+   bloque `items`), el mismo de las vistas: renombrar un campo no lo rompe y
+   migrar una empresa lo re-apunta por la clave. Se compila en SQL con el
+   QueryBuilder sobre el listado de vinculados (`RecordsService.list` con
+   `related`), así respeta el ACL, el alcance y los campos ocultos de quien
+   genera; nunca se filtra en memoria.
+2. **Tolerante por regla**: `cleanDocItemsFilter` (shared) quita cada regla
+   que ya no se puede aplicar (campo borrado u oculto, operador o valor que no
+   sirve, opción que no existe) y deja un aviso; la misma función arma los
+   avisos del editor y los del PDF. Si la consulta filtrada igual falla, corre
+   en un savepoint y el documento sale con todos los ítems y un aviso. Un PDF
+   nunca se rompe por un filtro.
+3. **Los totales siguen al filtro**: `items_sum` suma sólo las filas que
+   quedan, y una tabla filtrada vacía suma 0 (no «—»).
+4. **«Estado de cuenta» y su filtro por defecto se deducen de las opciones**:
+   el estado no es ninguna de las que suenan a pagada/anulada (sin tildes ni
+   mayúsculas), o es alguna de las de pendiente, o el saldo es mayor que 0.
+   La persona lo ve antes de crear y lo cambia en el editor.
+5. **El asistente/MCP escribe el filtro por slug y con las opciones por
+   etiqueta**; se guarda por id y se lee de vuelta por slug.
+
 ### ADR-S36 — Almacenamiento propio de cada empresa + enlace del PDF sin guardarlo (v0.1.268)
 
 **Contexto.** El usuario preguntó cómo evitar que miles de PDF generados por

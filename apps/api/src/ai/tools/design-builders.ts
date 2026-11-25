@@ -1,6 +1,9 @@
 import {
     DESIGN_FONTS,
+    FILTER_OPERATORS,
+    cleanDocItemsFilter,
     docAllBlocks,
+    docFilterFieldOptions,
     docDesignSchema,
     docItemExprRefs,
     docItemExprSchema,
@@ -13,6 +16,7 @@ import {
     type DocDesign,
     type EmailDesign,
     type FieldType,
+    type FilterGroup,
     type RichNode,
 } from '@imagina-base/shared';
 import { z } from 'zod';
@@ -71,7 +75,7 @@ export const DOC_DESIGN_DOC =
     'Bloques (type): header {layout split|centered|band, logo {kind none|brand|url, url}, logo_width 30-240, company (renglones de quien emite; el primero en negrita), title "CUENTA DE COBRO", number "N.º {{documento.numero}}", date "Bogotá, {{date.today|larga}}"} | ' +
     'heading {text, level, align, color} | text {text (formato sencillo, igual que en correos), align left|center|right|justify, size sm|md|lg, color} | ' +
     'fields {title, slugs, layout table|stacked, columns 1|2, label_color, value_color, label_width, lines} | ' +
-    'items {title, from (slug de la lista VINCULADA cuyos registros son las filas), via (slug del campo relación, sólo si hay dos relaciones con esa lista), columns [{slug (de la lista vinculada), label, align, width auto|fill} | columna CALCULADA {kind "computed", slug (clave propia que no sea un campo, p. ej. "calc_total"), label, align right, expr, format currency|number|percent, decimals (se redondea a esto: 0 en pesos), prefix "$ ", hidden (se calcula y suma pero no se dibuja)}], numbered, sort {slug, dir}, limit, striped, empty_text}. ' +
+    'items {title, from (slug de la lista VINCULADA cuyos registros son las filas), via (slug del campo relación, sólo si hay dos relaciones con esa lista), columns [{slug (de la lista vinculada), label, align, width auto|fill} | columna CALCULADA {kind "computed", slug (clave propia que no sea un campo, p. ej. "calc_total"), label, align right, expr, format currency|number|percent, decimals (se redondea a esto: 0 en pesos), prefix "$ ", hidden (se calcula y suma pero no se dibuja)}], numbered, sort {slug, dir}, limit, striped, empty_text, filter {logic all|any, conditions [{field (slug de la lista vinculada), op eq|neq|in|nin|gt|gte|lt|lte|contains|not_contains|starts_with|ends_with|is_null|is_not_null|between_relative, value (una selección por la ETIQUETA de su opción —en|nin con una lista—; fechas YYYY-MM-DD; between_relative con today|before_today|from_today|next_7_days|next_30_days|this_month…; sin value en is_null/is_not_null)}]} = «mostrar sólo los ítems que…» (un estado de cuenta: estado nin ["Pagada", "Anulada"]); los totales items_sum suman sólo las filas que quedan}. ' +
     'expr (fórmula SIN código, sobre la MISMA fila): {op col, slug (campo de la lista vinculada o columna calculada ANTERIOR)} | {op const, value} | {op add|sub|mul|div, args [2-6 expr]} | {op pct, of expr, pct expr} (of × pct / 100) | {op minus_pct, of expr, pct expr} (of × (1 − pct/100): aplicar un descuento %). Ej. total de la línea con descuento: {op minus_pct, of {op mul, args [{op col, slug cantidad}, {op col, slug precio}]}, pct {op col, slug descuento}}. Vacíos: en sumas cuentan 0, en productos dejan la celda vacía, un % vacío es 0. | ' +
     'totals {rows [{id, label (admite variables), source: {kind items_sum, block_id (id del bloque items), slug (campo o columna calculada)} | {kind field, slug} | {kind percent, of (id de otra fila), pct, pct_field (slug de un campo numérico del registro con el %; vacío = pct), negate (true = se resta: un descuento)} | {kind sum, rows [ids], minus [ids]} | {kind text, value}, emphasis, hidden (se calcula pero no se dibuja), hide_zero (no se dibuja si da 0)}], width half|full, prefix "$ ", decimals (cada fila se redondea a esto antes de usarse en otra)} → cada fila también queda como {{totales.<id>}}. ' +
     'Cotización/factura: Subtotal = items_sum de la columna bruto (cantidad × precio, hidden); Descuentos = items_sum de una calculada (total − bruto, hidden, en negativo, hide_zero); Descuento global = percent of neto con negate; Base gravable = sum; IVA = percent 19 of base; TOTAL = sum(base, iva) con emphasis; y un text "Son: {{totales.total|pesos|mayusculas}} M/CTE.". | ' +
@@ -110,6 +114,8 @@ export interface DesignFieldRef {
     slug: string;
     label: string;
     type: FieldType;
+    /** v0.1.468 — Sólo selecciones: sus opciones (el filtro de ítems acepta la etiqueta). */
+    config?: unknown;
 }
 
 export interface DocRelationRef {
@@ -337,6 +343,16 @@ export function buildDocDesign(input: z.infer<typeof docDesignInput>, ctx: DocDe
         if (bad.length > 0) throw new AiToolError(`El bloque items «${String(b.id)}» usa columnas que no existen en la lista vinculada: ${bad.join(', ')}. Campos: ${[...fieldSlugs].join(', ')}.`);
         const sort = b.sort as { slug?: string } | null | undefined;
         if (sort?.slug && !fieldSlugs.has(sort.slug)) throw new AiToolError(`items «${String(b.id)}»: no se puede ordenar por «${sort.slug}».`);
+        // v0.1.468 — «Mostrar sólo los ítems que…»: por slug y con las opciones
+        // por su etiqueta; se guarda como árbol de filtros por id.
+        const src = b.source as { list_id?: number };
+        const other = ctx.otherFields.get(Number(src.list_id)) ?? [];
+        if (b.filter !== undefined && b.filter !== null) {
+            b.filter_tree = docItemsFilterFromModel(b.filter, other, String(b.id));
+        } else if (b.filter_tree !== undefined && b.filter_tree !== null) {
+            b.filter_tree = strictItemsFilter(b.filter_tree, other, String(b.id));
+        }
+        delete b.filter;
     }
 
     // Logo/imágenes: el modelo no sube archivos; `file` sólo si ya venía (ida y vuelta).
@@ -404,8 +420,70 @@ export function buildDocDesign(input: z.infer<typeof docDesignInput>, ctx: DocDe
     return design;
 }
 
+/** Las opciones de los campos llegan de la base: `config` es `unknown`. */
+function filterFieldsOf(fields: DesignFieldRef[]): Array<{ id: number; type: string; slug: string; label: string; config?: unknown }> {
+    return fields.map((f) => ({ id: f.id, type: f.type, slug: f.slug, label: f.label, config: f.config }));
+}
+
+/** Limpia un árbol de filtros: lo que no se puede aplicar es un error corregible. */
+function strictItemsFilter(raw: unknown, fields: DesignFieldRef[], blockId: string): FilterGroup | null {
+    const { tree, issues } = cleanDocItemsFilter(raw, filterFieldsOf(fields));
+    if (issues.length > 0) {
+        throw new AiToolError(
+            `items «${blockId}», filter: ${issues.map((i) => i.message).join(' ')} Campos de la lista vinculada: ${fields.map((f) => f.slug).join(', ')}.`,
+        );
+    }
+    return tree;
+}
+
+/**
+ * v0.1.468 — El filtro de una tabla de ítems como lo escribe el modelo:
+ * `{logic all|any, conditions [{field (slug), op, value}]}` → árbol por id.
+ */
+export function docItemsFilterFromModel(raw: unknown, fields: DesignFieldRef[], blockId: string): FilterGroup | null {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new AiToolError(`items «${blockId}»: filter tiene que ser {logic, conditions}.`);
+    const spec = raw as { logic?: unknown; conditions?: unknown };
+    const list = Array.isArray(spec.conditions) ? spec.conditions : [];
+    if (list.length === 0) return null;
+    const bySlug = new Map(fields.map((f) => [f.slug, f]));
+    const children = list.map((c, i) => {
+        const cond = (c ?? {}) as { field?: unknown; op?: unknown; value?: unknown };
+        const slug = typeof cond.field === 'string' ? cond.field : '';
+        const field = bySlug.get(slug);
+        if (!field) {
+            throw new AiToolError(`items «${blockId}», filter.conditions[${i}]: «${slug}» no es un campo de la lista vinculada. Campos: ${fields.map((f) => f.slug).join(', ')}.`);
+        }
+        const op = typeof cond.op === 'string' ? cond.op : '';
+        if (!(FILTER_OPERATORS as readonly string[]).includes(op)) {
+            throw new AiToolError(`items «${blockId}», filter.conditions[${i}]: el operador «${op}» no existe. Usa: ${FILTER_OPERATORS.join(', ')}.`);
+        }
+        return { type: 'condition', field_id: field.id, op, ...(cond.value !== undefined ? { value: cond.value } : {}) };
+    });
+    const logic = spec.logic === 'any' || spec.logic === 'or' ? 'or' : 'and';
+    return strictItemsFilter({ type: 'group', logic, children }, fields, blockId);
+}
+
+/**
+ * El árbol guardado, como lo lee el modelo (sólo si es de un nivel): los
+ * campos por slug y las opciones por su etiqueta. Uno anidado queda tal cual.
+ */
+function docItemsFilterForModel(tree: unknown, fields: DesignFieldRef[]): Record<string, unknown> | null {
+    const t = tree as { type?: string; logic?: string; children?: Array<Record<string, unknown>> } | null | undefined;
+    if (!t || t.type !== 'group' || !Array.isArray(t.children)) return null;
+    if (t.children.some((c) => c.type !== 'condition')) return null;
+    const byId = new Map(fields.map((f) => [f.id, f]));
+    const conditions = t.children.map((c) => {
+        const f = byId.get(Number(c.field_id));
+        const options = f ? docFilterFieldOptions(f) : [];
+        const label = (v: unknown): unknown => (typeof v === 'string' ? options.find((o) => o.value === v)?.label ?? v : v);
+        const value = Array.isArray(c.value) ? c.value.map(label) : label(c.value);
+        return { field: f?.slug ?? `#${String(c.field_id)}`, op: c.op, ...(c.value !== undefined ? { value } : {}) };
+    });
+    return { logic: t.logic === 'or' ? 'any' : 'all', conditions };
+}
+
 /** Para leer: texto sencillo y la tabla de ítems con `from`/`via` por slug. */
-export function docDesignForModel(design: unknown, relations: DocRelationRef[]): unknown {
+export function docDesignForModel(design: unknown, relations: DocRelationRef[], otherFields?: Map<number, DesignFieldRef[]>): unknown {
     const parsed = docDesignSchema.safeParse(design);
     if (!parsed.success) return design;
     const blocks = (list: Array<Record<string, unknown>>): Array<Record<string, unknown>> =>
@@ -418,10 +496,19 @@ export function docDesignForModel(design: unknown, relations: DocRelationRef[]):
             if (out.type === 'items' && out.source) {
                 const src = out.source as { relation_field_id: number; direction: string };
                 const rel = relations.find((r) => r.relation_field_id === src.relation_field_id && r.direction === src.direction);
+                const listId = (out.source as { list_id: number }).list_id;
                 if (rel) {
                     out.from = rel.other_list_slug;
                     out.via = rel.relation_slug;
                     delete out.source;
+                }
+                // v0.1.468 — el filtro por slug (de un nivel) para que el modelo lo lea y lo devuelva.
+                if (out.filter_tree) {
+                    const readable = docItemsFilterForModel(out.filter_tree, otherFields?.get(listId) ?? []);
+                    if (readable) {
+                        out.filter = readable;
+                        delete out.filter_tree;
+                    }
                 }
             }
             if (out.type === 'columns') {

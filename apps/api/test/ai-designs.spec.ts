@@ -15,7 +15,7 @@ import { McpService } from '../src/ai/mcp.service';
 import { ProposalsService } from '../src/ai/proposals.service';
 import { ProposalsStore } from '../src/ai/proposals.store';
 import { DataTools } from '../src/ai/tools/data-tools';
-import { buildDocDesign, buildEmailDesign } from '../src/ai/tools/design-builders';
+import { buildDocDesign, buildEmailDesign, docDesignForModel } from '../src/ai/tools/design-builders';
 import { AiToolError, AiToolRegistry, type AiToolContext } from '../src/ai/tools/registry';
 import { StructureTools } from '../src/ai/tools/structure-tools';
 import { AuditService } from '../src/audit/audit.service';
@@ -220,6 +220,61 @@ describe('v0.1.281 — constructores de diseño (puros)', () => {
         expect(() => base([{ type: 'totals', rows: [{ id: 'a', label: 'A', source: { kind: 'field', slug: 'total' } }, { id: 'b', label: 'B', source: { kind: 'percent', of: 'a', pct: 0, pct_field: 'estado' } }] }])).toThrow(/no es numérico/);
         expect(() => base([{ type: 'spacer' }], { numbering: { enabled: false, freeze: true } })).toThrow(/freeze/);
     });
+
+    it('v0.1.468 — filtro de la tabla de ítems por slug y etiqueta → árbol por id; se lee de vuelta en el vocabulario del modelo', () => {
+        const estado = {
+            ...fieldRef(74, 'estado', 'select'),
+            label: 'Estado',
+            config: { options: [{ value: 'pendiente', label: 'Pendiente' }, { value: 'pagada', label: 'Pagada' }] },
+        };
+        const relations = [{ relation_field_id: 90, relation_slug: 'cliente', direction: 'reverse' as const, other_list_id: 7, other_list_slug: 'facturas' }];
+        const otherFields = new Map([[7, [fieldRef(70, 'numero', 'text'), fieldRef(71, 'saldo', 'currency'), estado]]]);
+        const ctx = { fields, relations, otherFields };
+        const items = (filter: unknown) => ({ id: 'tabla', type: 'items', from: 'facturas', columns: [{ slug: 'numero' }, { slug: 'saldo' }], filter });
+        const design = buildDocDesign(
+            {
+                blocks: [
+                    items({
+                        logic: 'all',
+                        conditions: [
+                            { field: 'estado', op: 'nin', value: ['pagada'] },
+                            { field: 'saldo', op: 'gt', value: 0 },
+                        ],
+                    }),
+                ],
+            },
+            ctx,
+        );
+        const b = design.blocks[0]!;
+        expect(b.type === 'items' && b.filter_tree).toEqual({
+            type: 'group',
+            logic: 'and',
+            children: [
+                { type: 'condition', field_id: 74, op: 'nin', value: ['pagada'] },
+                { type: 'condition', field_id: 71, op: 'gt', value: 0 },
+            ],
+        });
+        // Al leerlo: por slug y con la etiqueta de la opción (ida y vuelta).
+        const read = docDesignForModel(design, relations, otherFields) as { blocks: Array<Record<string, unknown>> };
+        expect(read.blocks[0]).toMatchObject({
+            from: 'facturas',
+            filter: { logic: 'all', conditions: [{ field: 'estado', op: 'nin', value: ['Pagada'] }, { field: 'saldo', op: 'gt', value: 0 }] },
+        });
+        expect(read.blocks[0]!.filter_tree).toBeUndefined();
+        const again = buildDocDesign({ blocks: [read.blocks[0]!] }, ctx);
+        expect(again.blocks[0]!.type === 'items' && again.blocks[0]!.filter_tree).toEqual(b.type === 'items' ? b.filter_tree : null);
+
+        const base = (filter: unknown): unknown => buildDocDesign({ blocks: [items(filter)] }, ctx);
+        expect(() => base({ conditions: [{ field: 'nope', op: 'eq', value: 'x' }] })).toThrow(/no es un campo de la lista vinculada.*numero, saldo, estado/);
+        expect(() => base({ conditions: [{ field: 'estado', op: 'parecido', value: 'x' }] })).toThrow(/operador «parecido»/);
+        expect(() => base({ conditions: [{ field: 'estado', op: 'eq', value: 'Archivada' }] })).toThrow(/opciones que ya no existen/);
+        expect(() => base({ conditions: [{ field: 'saldo', op: 'gt', value: 'mucho' }] })).toThrow(/valor válido/);
+        // `any` = «alguna», y sin condiciones no hay filtro.
+        const any = buildDocDesign({ blocks: [items({ logic: 'any', conditions: [{ field: 'estado', op: 'eq', value: 'Pendiente' }] })] }, ctx).blocks[0]!;
+        expect(any.type === 'items' && any.filter_tree).toMatchObject({ logic: 'or', children: [{ field_id: 74, op: 'eq', value: 'pendiente' }] });
+        const none = buildDocDesign({ blocks: [items({ conditions: [] })] }, ctx).blocks[0]!;
+        expect(none.type === 'items' && none.filter_tree).toBeFalsy();
+    });
 });
 
 describe('v0.1.281 — correos y PDF diseñados por el asistente/MCP (Postgres + Redis)', () => {
@@ -232,11 +287,13 @@ describe('v0.1.281 — correos y PDF diseñados por el asistente/MCP (Postgres +
     let tenantId: number;
     let admin: AiToolContext;
     let cuentaId: number;
+    let tdb: TenantDb;
 
     beforeAll(async () => {
         [pg, redisC] = await Promise.all([startPostgres(), startRedis()]);
         redis = new Redis(redisC.url);
         const tenantDb = new TenantDb(pg.db);
+        tdb = tenantDb;
         const rt = new RealtimeService();
         const env = loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea', FILES_SIGNING_SECRET: 'test-secret', APP_BASE_URL: 'https://app.test' });
         const audit = new AuditService(tenantDb);
@@ -290,6 +347,16 @@ describe('v0.1.281 — correos y PDF diseñados por el asistente/MCP (Postgres +
         for (const [d, v] of [['Diseño', 200000], ['Hosting', 100000]] as const) {
             await records.create(tenantId, actor, 'lineas', { data: { [`f${fDetalle.id}`]: d, [`f${fValor.id}`]: v, [`f${fCuenta.id}`]: [cuentaId] } });
         }
+        // v0.1.468 — un estado para el filtro «sólo lo pendiente» (las dos de arriba no tienen).
+        const fEstado = await fields.create(tenantId, 'lineas', {
+            label: 'Estado',
+            type: 'select',
+            slug: 'estado',
+            config: { options: [{ value: 'pendiente', label: 'Pendiente' }, { value: 'pagada', label: 'Pagada' }] },
+        });
+        await records.create(tenantId, actor, 'lineas', {
+            data: { [`f${fDetalle.id}`]: 'Dominio', [`f${fValor.id}`]: 50000, [`f${fEstado.id}`]: 'pagada', [`f${fCuenta.id}`]: [cuentaId] },
+        });
 
         const server = mcp.buildServer(admin, 'full', '0.0.0-test');
         const [clientT, serverT] = InMemoryTransport.createLinkedPair();
@@ -407,7 +474,14 @@ describe('v0.1.281 — correos y PDF diseñados por el asistente/MCP (Postgres +
                     blocks: [
                         { type: 'header', layout: 'split', logo: { kind: 'brand' }, company: 'Diseños SA\nNIT 900.1', title: 'CUENTA DE COBRO', number: 'N.º {{documento.numero}}', date: '{{date.today|larga}}' },
                         { type: 'fields', title: 'Cliente', slugs: ['cliente', 'email'], columns: 2 },
-                        { id: 'lineas', type: 'items', from: 'lineas', columns: [{ slug: 'detalle', width: 'fill' }, { slug: 'valor', align: 'right' }] },
+                        {
+                            id: 'lineas',
+                            type: 'items',
+                            from: 'lineas',
+                            columns: [{ slug: 'detalle', width: 'fill' }, { slug: 'valor', align: 'right' }],
+                            // v0.1.468 — sólo lo que no está pagado (la opción por su etiqueta).
+                            filter: { logic: 'all', conditions: [{ field: 'estado', op: 'nin', value: ['Pagada'] }] },
+                        },
                         { type: 'totals', rows: [{ id: 'tot', label: 'Total', source: { kind: 'items_sum', block_id: 'lineas', slug: 'valor' }, emphasis: true }] },
                         { type: 'text', text: 'Son: **{{totales.tot|pesos}}**' },
                         { type: 'signature', signers: [{ name: 'Ana Pérez', detail: 'C.C. 1.234' }] },
@@ -424,15 +498,28 @@ describe('v0.1.281 — correos y PDF diseñados por el asistente/MCP (Postgres +
         const items = tpl.design.blocks.find((b) => b.type === 'items')!;
         expect(items.type === 'items' && items.source?.direction).toBe('reverse');
 
-        // El PDF real: la tabla trae las dos líneas de ESTA cuenta.
+        expect(items.type === 'items' && items.filter_tree?.children).toEqual([
+            { type: 'condition', field_id: expect.any(Number), op: 'nin', value: ['pagada'] },
+        ]);
+
+        // El PDF real: la tabla trae las dos líneas de ESTA cuenta (la pagada no).
         const pdf = await docs.preview(tenantId, { userId: admin.userId, role: 'admin' }, 'cuentas', { design: tpl.design, record_id: cuentaId, mode: 'real' });
         expect(Buffer.from(pdf.pdf, 'base64').subarray(0, 4).toString()).toBe('%PDF');
         expect(pdf.warnings).toEqual([]);
+        const rendered = await tdb.withTenant(tenantId, (tx) =>
+            docs.renderInTx(tx, { tenantId, actor: { userId: admin.userId, role: 'admin' }, listId: tpl.list_id, recordId: cuentaId, design: tpl.design, filename: 'x', mode: 'real' }),
+        );
+        expect(rendered.content.items.lineas!.map((r) => r[0])).toEqual(['Diseño', 'Hosting']);
+        expect(rendered.content.totals.tot).toMatch(/^\$ 300[.,]000$/);
 
         // Lectura en el vocabulario del modelo.
         const read = json(await call('get_document_template', { list: 'cuentas', template: 'Cuenta de cobro' }));
         const blocks = (read.design as { blocks: Array<Record<string, unknown>> }).blocks;
-        expect(blocks.find((b) => b.type === 'items')).toMatchObject({ from: 'lineas', via: 'cuenta' });
+        expect(blocks.find((b) => b.type === 'items')).toMatchObject({
+            from: 'lineas',
+            via: 'cuenta',
+            filter: { logic: 'all', conditions: [{ field: 'estado', op: 'nin', value: ['Pagada'] }] },
+        });
         expect(blocks.find((b) => b.type === 'text')).toMatchObject({ text: 'Son: **{{totales.tot|pesos}}**' });
 
         // Cambio: A4 + portal, mandando la versión completa leída.
@@ -446,6 +533,15 @@ describe('v0.1.281 — correos y PDF diseñados por el asistente/MCP (Postgres +
         expect(after.portal_visible).toBe(true);
         const after2 = after.design.blocks.find((b) => b.type === 'items')!;
         expect(after2.type === 'items' && after2.source).toEqual(items.type === 'items' ? items.source : null);
+        expect(after2.type === 'items' && after2.filter_tree).toEqual(items.type === 'items' ? items.filter_tree : null);
+        // Una regla sobre una opción que no existe es un error corregible.
+        const badFilter = await call('propose_update_document_template', {
+            list: 'cuentas',
+            template: summary!.id,
+            design: { blocks: [{ type: 'items', from: 'lineas', columns: [{ slug: 'detalle' }], filter: { conditions: [{ field: 'estado', op: 'eq', value: 'Archivada' }] } }] },
+        });
+        expect(isError(badFilter)).toBe(true);
+        expect(json(badFilter).error).toContain('opciones que ya no existen');
 
         // Borrar.
         const del = json(await call('propose_delete_document_template', { list: 'cuentas', template: 'Cuenta de cobro' }));

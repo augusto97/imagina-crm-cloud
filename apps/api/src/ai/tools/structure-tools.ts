@@ -2881,7 +2881,15 @@ export class StructureTools implements AiProposalApplier {
     private async designContext(ctx: AiToolContext, listId: number, own: Field[]): Promise<{ listId: number; fields: DesignField[]; relations: DesignRelation[]; otherFields: Map<number, DesignField[]> }> {
         const [paths, allLists] = await Promise.all([this.fields.relationPaths(ctx.tenantId, String(listId)), this.lists.list(ctx.tenantId)]);
         const slugOf = new Map(allLists.map((l) => [l.id, l.slug]));
-        const toDesign = (f: Field): DesignField => ({ id: f.id, slug: f.slug, label: f.label, type: f.type });
+        const toDesign = (f: Field): DesignField => ({
+            id: f.id,
+            slug: f.slug,
+            label: f.label,
+            type: f.type,
+            // v0.1.468 — las opciones de una selección (el filtro de la tabla
+            // de ítems de un documento las acepta por su etiqueta).
+            ...(f.type === 'select' || f.type === 'multi_select' ? { config: f.config } : {}),
+        });
         const otherFields = new Map<number, DesignField[]>();
         for (const otherId of new Set(paths.map((p) => p.other_list_id))) {
             otherFields.set(otherId, otherId === listId ? own.map(toDesign) : (await this.fields.listByListId(ctx.tenantId, otherId)).map(toDesign));
@@ -2967,7 +2975,7 @@ export class StructureTools implements AiProposalApplier {
                 name: tpl.name,
                 filename: tpl.filename,
                 portal_visible: tpl.portal_visible,
-                design: docDesignForModel(tpl.design, dctx.relations),
+                design: docDesignForModel(tpl.design, dctx.relations, dctx.otherFields),
             },
         };
     }

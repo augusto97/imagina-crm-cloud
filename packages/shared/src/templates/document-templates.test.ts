@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { docDesignSchema, formatDocNumber, parseDocDesign } from '../schemas/document-design';
-import { DOCUMENT_STARTERS, buildDocumentStarter, emptyIssuer } from './document-templates';
+import { DOCUMENT_STARTERS, buildDocumentStarter, emptyIssuer, isClosedStatusOption, pendingItemsFilter } from './document-templates';
 
 describe('plantillas de documentos (v0.1.266)', () => {
     it('todas validan contra el schema, mapeadas o no', () => {
@@ -65,5 +65,103 @@ describe('plantillas de documentos (v0.1.266)', () => {
         })!;
         expect(d.blocks[0]).toMatchObject({ type: 'qr', size: 96, align: 'left' });
         expect(d.numbering).toEqual({ enabled: false, prefix: '', padding: 4, start: 1, save_field: null });
+    });
+});
+
+describe('estado de cuenta (v0.1.468)', () => {
+    const estado = {
+        id: 31,
+        type: 'select',
+        label: 'Estado',
+        config: {
+            options: [
+                { value: 'pendiente', label: 'Pendiente' },
+                { value: 'pagada', label: 'Pagada' },
+                { value: 'parcial', label: 'Pagada parcialmente' },
+                { value: 'anulada', label: 'ANULADA' },
+                { value: 'no_pagada', label: 'No pagada' },
+            ],
+        },
+    };
+    const source = { relation_field_id: 9, direction: 'reverse' as const, list_id: 4 };
+
+    it('reconoce las opciones cerradas sin tildes ni mayúsculas, salvo las que todavía deben', () => {
+        const closed = estado.config.options.filter(isClosedStatusOption).map((o) => o.value);
+        expect(closed).toEqual(['pagada', 'anulada']);
+        expect(isClosedStatusOption({ value: 'x', label: 'Cancelada' })).toBe(true);
+        expect(isClosedStatusOption({ value: 'al_dia', label: 'Al día' })).toBe(true);
+        expect(isClosedStatusOption({ value: 'abono', label: 'Abonada' })).toBe(false);
+    });
+
+    it('filtra lo pendiente: sin las cerradas; sin cerradas, las pendientes; sin estado, saldo > 0', () => {
+        expect(pendingItemsFilter(estado, null)).toEqual({
+            type: 'group',
+            logic: 'and',
+            children: [{ type: 'condition', field_id: 31, op: 'nin', value: ['pagada', 'anulada'] }],
+        });
+        const onlyOpen = {
+            ...estado,
+            config: { options: [{ value: 'por_cobrar', label: 'Por cobrar' }, { value: 'en_mora', label: 'En mora' }, { value: 'otro', label: 'Otro' }] },
+        };
+        expect(pendingItemsFilter(onlyOpen, null)?.children).toEqual([{ type: 'condition', field_id: 31, op: 'in', value: ['por_cobrar', 'en_mora'] }]);
+        expect(pendingItemsFilter(null, { id: 40, type: 'rollup' })?.children).toEqual([{ type: 'condition', field_id: 40, op: 'gt', value: 0 }]);
+        expect(pendingItemsFilter(null, null)).toBeNull();
+    });
+
+    it('arma la tabla de facturas pendientes, el total pendiente y los datos de quien emite y del cliente', () => {
+        const issuer = { ...emptyIssuer('Estudio Norte SAS'), doc_label: 'NIT', doc_number: '900.123.456-7', city: 'Cali' };
+        const r = buildDocumentStarter('estado_cuenta', {
+            fields: { cliente: 'razon_social', cliente_doc: 'nit', correo: 'correo' },
+            items: {
+                source,
+                fields: { numero: 'num', fecha: 'emitida', vencimiento: 'vence', estado: 'estado', valor: 'valor', saldo: 'saldo' },
+                info: { estado, saldo: { id: 33, type: 'currency' } },
+            },
+            issuer,
+        });
+        const design = parseDocDesign(r.design)!;
+        expect(docDesignSchema.safeParse(design).success).toBe(true);
+        const header = design.blocks.find((b) => b.type === 'header');
+        expect(header && header.type === 'header' && header.title).toBe('ESTADO DE CUENTA');
+        expect(header && header.type === 'header' && header.date).toBe('Cali, {{date.today|larga}}');
+        const json = JSON.stringify(design);
+        expect(json).toContain('Estudio Norte SAS');
+        expect(json).toContain('{{razon_social}}');
+        expect(json).toContain('{{nit}}');
+        expect(json).toContain('Estado de cuenta al ');
+        const items = design.blocks.find((b) => b.type === 'items');
+        if (!items || items.type !== 'items') throw new Error('sin tabla');
+        expect(items.source).toEqual(source);
+        expect(items.columns.map((c) => c.slug)).toEqual(['num', 'emitida', 'vence', 'estado', 'valor', 'saldo']);
+        expect(items.sort).toEqual({ slug: 'vence', dir: 'asc' });
+        expect(items.filter_tree?.children).toEqual([{ type: 'condition', field_id: 31, op: 'nin', value: ['pagada', 'anulada'] }]);
+        const totals = design.blocks.find((b) => b.type === 'totals');
+        if (!totals || totals.type !== 'totals') throw new Error('sin totales');
+        const total = totals.rows.find((row) => row.id === 'total')!;
+        expect(total.label).toBe('TOTAL PENDIENTE');
+        expect(total.source).toEqual({ kind: 'items_sum', block_id: 'items', slug: 'saldo' });
+        expect(design.numbering.enabled).toBe(false);
+        expect(r.filename).toBe('Estado de cuenta - {{razon_social}} - {{date.today|value}}');
+    });
+
+    it('con lo pagado y sin saldo, el pendiente es facturado − pagado; sin estado, sin filtro', () => {
+        const r = buildDocumentStarter('estado_cuenta', {
+            fields: { cliente: 'nombre' },
+            items: { source, fields: { valor: 'valor', pagado: 'abonos' } },
+        });
+        const totals = r.design.blocks.find((b) => b.type === 'totals');
+        if (!totals || totals.type !== 'totals') throw new Error('sin totales');
+        expect(totals.rows.map((row) => row.id)).toEqual(['facturado', 'pagado', 'total']);
+        expect(totals.rows[2]!.source).toEqual({ kind: 'sum', rows: ['facturado'], minus: ['pagado'] });
+        const items = r.design.blocks.find((b) => b.type === 'items');
+        expect(items && items.type === 'items' && items.filter_tree).toBeUndefined();
+    });
+
+    it('lo que no se mapea queda como «[Rol]» visible', () => {
+        const json = JSON.stringify(buildDocumentStarter('estado_cuenta').design);
+        expect(json).toContain('[Nombre del cliente]');
+        expect(json).toContain('[Número de la factura]');
+        expect(json).toContain('[Fecha de vencimiento]');
+        expect(json).toContain('[Elige la columna del valor]');
     });
 });

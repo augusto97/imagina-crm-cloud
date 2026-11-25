@@ -175,12 +175,9 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 | I9 · Página de estado pública (la franja de avisos ya existe desde v0.1.319) | bajo-medio · S | |
 
 ### J. Reportes
-Las tres salieron: comparar períodos y el pronóstico de ventas (J2, J3) en
-v0.1.462, y los informes con bloques de varias listas (J1) en v0.1.464.
-
-| Idea | Valor · esfuerzo | Nota |
-|---|---|---|
-| J4 · Estado de cuenta del cliente (plantilla PDF + filtro en la tabla de ítems) | alto · M | Visto en otra app (2026-11-25). La tabla de ítems de un documento no filtra (traería todas las facturas, también las pagadas) y la galería no tiene «Estado de cuenta». Con eso, una idea lista: «el día 1, manda a cada cliente con saldo su estado de cuenta». «Enviar documento de facturación» ya se hace con «Enviar correo» + «Adjuntar PDF». |
+Las cuatro salieron: comparar períodos y el pronóstico de ventas (J2, J3) en
+v0.1.462, los informes con bloques de varias listas (J1) en v0.1.464 y el
+estado de cuenta del cliente con la tabla de ítems filtrada (J4) en v0.1.468.
 
 ---
 
