@@ -394,6 +394,14 @@ function StepResult({
             </div>
 
             {Array.isArray(d.checks) && (d.checks as ConditionCheck[]).length > 0 && <ChecksTable checks={d.checks as ConditionCheck[]} />}
+            {step.action === 'add_comment' && typeof d.body === 'string' && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-px-2.5 imcrm-py-2 imcrm-text-xs" data-testid="imcrm-test-comment">
+                    <span className="imcrm-font-medium imcrm-text-muted-foreground">
+                        {d.visibility === 'client' ? __('Comentario visible para el cliente') : __('Nota interna')}
+                    </span>
+                    <p className="imcrm-whitespace-pre-wrap imcrm-break-words imcrm-text-foreground">{d.body}</p>
+                </div>
+            )}
             {step.action === 'switch' && Array.isArray(d.cases) && <SwitchChecks cases={d.cases as SwitchCheck[]} branchLabel={typeof d.branch_label === 'string' ? d.branch_label : ''} />}
             {(d.handled === 'continue' || d.handled === 'steps') && (
                 <p className="imcrm-rounded imcrm-bg-warning/10 imcrm-px-2 imcrm-py-1 imcrm-text-xs imcrm-text-[hsl(var(--imcrm-warning-ink))]" data-testid="imcrm-test-handled">

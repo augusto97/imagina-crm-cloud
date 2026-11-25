@@ -132,6 +132,7 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 |---|---|---|
 | E3 · Subflujos (una automatización que llama a otra, con sus datos) | medio · M | **Lo demás de E3 salió en v0.1.460**: «Según el valor de…» (varias ramas) y «Si este paso falla» (detener, seguir, reintentar hasta 3 veces u otros pasos). E2 salió completa: «Preguntarle a la IA» también en v0.1.460. |
 | E4 · Scripts en JavaScript aislado | medio-bajo · L | Necesita un sandbox serio. |
+| E8 · Horario laboral de la empresa + «Esperar hasta un día laborable» y «Esperar hasta el horario laboral» | alto · M | Visto en otra app (2026-11-25). Hoy «Esperar» sólo cuenta tiempo o espera una fecha del registro. Falta un horario de la empresa (días, horas y festivos del país; los festivos por país ya existen en la agenda) que también podría servir de base al SLA de la mesa de ayuda. |
 
 ### F. Inteligencia artificial
 | Idea | Valor · esfuerzo | Nota |
@@ -177,6 +178,10 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 ### J. Reportes
 Las tres salieron: comparar períodos y el pronóstico de ventas (J2, J3) en
 v0.1.462, y los informes con bloques de varias listas (J1) en v0.1.464.
+
+| Idea | Valor · esfuerzo | Nota |
+|---|---|---|
+| J4 · Estado de cuenta del cliente (plantilla PDF + filtro en la tabla de ítems) | alto · M | Visto en otra app (2026-11-25). La tabla de ítems de un documento no filtra (traería todas las facturas, también las pagadas) y la galería no tiene «Estado de cuenta». Con eso, una idea lista: «el día 1, manda a cada cliente con saldo su estado de cuenta». «Enviar documento de facturación» ya se hace con «Enviar correo» + «Adjuntar PDF». |
 
 ---
 

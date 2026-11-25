@@ -17424,6 +17424,66 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         **Con esto queda completa la tanda aprobada el 2026-11-19
         (v0.1.455-465).**
 
+  - [x] **Automatizaciones: «Comprobar y detener» y «Agregar un comentario»
+        (v0.1.466, addendum ADR-S47, ideas E9 y E10 del banco)**. Sin
+        migración (todo vive en `automations.actions` y en el `metadata` de
+        los comentarios). Reglas en
+        `packages/shared/src/schemas/automation-steps.ts` (sin zod: lectores
+        tolerantes `readStopUnlessRules`/`readAddCommentConfig`, la marca
+        `readAutomationCommentMark`, el autor `automationCommentAuthor`) y
+        validación al guardar (`stopUnlessIssues`/`addCommentIssues` dentro de
+        `automationConfigIssues`).
+        (a) **«Comprobar y detener si no se cumple»** (`stop_unless`): las
+        reglas por slug con el MISMO evaluador de la condición de cada paso y
+        del «Si / sino» (campos del registro, `payload.*`, `respuestas.*`,
+        `comentario.*`, `item.*` dentro de un bucle), unidas por «y», sobre el
+        registro TAL COMO LO DEJARON los pasos anteriores. Si no se cumplen, la
+        corrida termina ahí como la espera «Continuar sólo si…»: no es una
+        falla (la corrida queda «Éxito», sin Problema) y el historial dice qué
+        regla no se cumplió («No se cumplía «Estado» es «Hecho» ni «Monto» es
+        mayor que «100»: la automatización no siguió.»). Dentro de «Repetir
+        por cada vinculado» corta SÓLO ese vinculado (la repetición sigue y lo
+        cuenta como omitido); en cualquier otro lugar —también dentro de una
+        rama— detiene todo. No lleva «Si este paso falla» (nunca falla).
+        «Probar» dice si seguiría o se detendría y por qué regla. En el lienzo
+        el nodo dice «Si no: termina aquí» (o «Si no: pasa al próximo» en un
+        bucle).
+        (b) **«Agregar un comentario»** (`add_comment`): texto con variables
+        (cuadro que crece), menciones `@correo` y `@equipo` que avisan como un
+        comentario normal (filtradas por el ACL del registro), nota interna
+        (de fábrica) o visible para el cliente (sale por el camino de siempre:
+        portal y su correo), y dentro de un bucle en el registro que disparó o
+        en el vinculado. Lo escribe `CommentsService.createFromAutomation`:
+        `user_id` 0 y la marca `metadata.automation = {id, name}` que sólo
+        pone el servidor (se suma a `RESERVED_COMMENT_METADATA_KEYS`: el
+        controlador la quita de lo que manda una persona). En la ficha, la
+        actividad y el portal aparece como **«Automatización «<nombre>»»** con
+        un rayo (en el portal, con el nombre de la empresa); no se edita y lo
+        borra un administrador o quien puede editar el registro (nunca un
+        invitado ni el cliente). **Nunca dispara «Cuando se agrega un
+        comentario»** (`fromAutomation` en el hub: sin bucles); nadie queda
+        «siguiendo» por él y las menciones no guardan fila de autor (el aviso
+        sale sin actor). Un texto vacío tras resolver las variables se salta
+        con el motivo; «Probar» muestra el texto armado sin comentar.
+        (c) **Asistente/MCP**: `propose_create_automation`/`update` aceptan
+        los dos pasos (`condition` por slug con opciones por etiqueta;
+        `body`, `visibility`, `target`) con errores corregibles.
+        (d) **Migrar una empresa**: un comentario sin persona (automatización o
+        respuesta automática de la mesa de ayuda) llegaba firmado por la
+        persona de respaldo; ahora sigue sin persona y la marca apunta a la
+        automatización nueva.
+        Ayuda: guías de esperas/ramas y de buscar/crear al día, secciones en
+        Aprende → Automatizaciones (ilustraciones `auto-flujo` y
+        `ficha-comentarios`) y novedad con carrusel. E9 y E10 salen del banco
+        de ideas. Tests: `automation-steps.test` en shared,
+        `automation-steps.spec` (8, Postgres + Redis reales: seguir/detener con
+        el motivo, en una rama detiene todo, en un bucle sólo el vinculado,
+        «Probar», validación al guardar, comentario con variables/marca/
+        mención/sin disparar `comment_added`, en el vinculado, permisos de
+        borrar y editar, asistente), casos en `portal.spec` y
+        `tenant-transfer.spec`, `stepsMeta.test` en el front — E2E navegador
+        24/24 en escritorio claro y celular 390×844 oscuro.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

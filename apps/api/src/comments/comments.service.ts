@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
-import { parseTeamHandles, teamHandle } from '@imagina-base/shared';
+import { automationCommentAuthor, parseTeamHandles, readAutomationCommentMark, teamHandle } from '@imagina-base/shared';
 import type {
     CommentDto,
     CommentKind,
@@ -8,9 +8,9 @@ import type {
     CreateCommentInput,
     UpdateCommentInput,
 } from '@imagina-base/shared';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Tx } from '../db/client';
-import { memberships, mentions, recordFollows, users } from '../db/schema';
+import { memberships, mentions, recordFollows, records, users } from '../db/schema';
 import { RealtimeService } from '../realtime/realtime.service';
 import { ListsService } from '../lists/lists.service';
 import { RecordsService, type Actor } from '../records/records.service';
@@ -152,6 +152,82 @@ export class CommentsService {
     }
 
     /**
+     * v0.1.466 — La acción «Agregar un comentario» de una automatización. El
+     * comentario no tiene persona detrás: `user_id` = 0 (la convención de
+     * «Sistema») y la marca `metadata.automation = {id, name}`, que sólo
+     * escribe el servidor (una persona no la puede fabricar ni quitar). Las
+     * @menciones y los @equipos avisan igual que en un comentario normal (el
+     * aviso filtra por el ACL del registro); nadie queda «siguiendo» el
+     * registro por él y NUNCA dispara «Cuando se agrega un comentario»
+     * (`fromAutomation` en el hub: evita bucles). Visible para el cliente,
+     * sigue el camino de siempre (el portal le manda el correo).
+     *
+     * El llamador (el motor) ya verificó que el registro existe; aquí se
+     * vuelve a mirar dentro de la transacción (la lista y el registro vivos).
+     */
+    async createFromAutomation(
+        tenantId: number,
+        input: {
+            listId: number;
+            recordId: number;
+            body: string;
+            visibility: 'internal' | 'client';
+            automation: { id: number; name: string };
+        },
+    ): Promise<CommentDto> {
+        let mentioned: number[] = [];
+        let mentionedTeams: Array<{ teamId: number; name: string; userIds: number[] }> = [];
+        const mark = { id: input.automation.id, name: input.automation.name.slice(0, 200) };
+        const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [live] = await tx
+                .select({ id: records.id })
+                .from(records)
+                .where(
+                    and(
+                        eq(records.tenantId, tenantId),
+                        eq(records.listId, input.listId),
+                        eq(records.id, input.recordId),
+                        isNull(records.deletedAt),
+                    ),
+                )
+                .limit(1);
+            if (!live) {
+                throw new NotFoundException({ code: 'record_not_found', message: 'El registro ya no existe.', data: { status: 404 } });
+            }
+            const row = await this.repo.insert(tx, {
+                tenantId,
+                listId: input.listId,
+                recordId: input.recordId,
+                userId: 0,
+                body: input.body,
+                kind: 'note',
+                parentId: null,
+                metadata: { automation: mark },
+                visibility: input.visibility,
+            });
+            mentioned = await this.storeMentions(tx, tenantId, row);
+            mentionedTeams = await this.teamMentions(tx, tenantId, row.body);
+            return row;
+        });
+        this.realtime.records(tenantId, input.listId);
+        this.notify?.emit({
+            type: 'comment',
+            tenantId,
+            listId: input.listId,
+            recordId: input.recordId,
+            actorId: 0,
+            body: row.body,
+            mentioned,
+            ...(mentionedTeams.length > 0 ? { mentionedTeams } : {}),
+            commentId: row.id,
+            visibility: row.visibility === 'client' ? 'client' : 'internal',
+            source: 'app',
+            fromAutomation: mark,
+        });
+        return toComment(row, null);
+    }
+
+    /**
      * El raíz del hilo al que se responde. Si el padre ya es una respuesta, el
      * raíz es SU padre (un solo nivel). Tiene que ser de este registro; un raíz
      * eliminado sólo acepta respuestas mientras su hilo siga vivo.
@@ -274,11 +350,29 @@ export class CommentsService {
             const current = await this.repo.findById(tx, tenantId, id);
             if (!current || current.recordId !== recordId) throw commentNotFound(id);
             if (current.userId !== actor.userId) {
-                throw new ForbiddenException('Sólo el autor puede eliminar el comentario');
+                // v0.1.466 — el comentario de una automatización no tiene autor
+                // que lo borre: lo borra un administrador o quien puede editar
+                // el registro (nunca un invitado ni el cliente del portal).
+                const byAutomation = current.userId <= 0 && readAutomationCommentMark(current.metadata) !== null;
+                if (!byAutomation || !(await this.canRemoveAutomationComment(tenantId, actor, listId, recordId))) {
+                    throw new ForbiddenException(
+                        byAutomation
+                            ? 'Un comentario de una automatización lo borra un administrador o quien puede editar el registro'
+                            : 'Sólo el autor puede eliminar el comentario',
+                    );
+                }
             }
             await this.repo.softDelete(tx, tenantId, id);
         });
         this.realtime.records(tenantId, listId);
+    }
+
+    /** v0.1.466 — ¿Puede esta persona borrar un comentario de una automatización? */
+    private async canRemoveAutomationComment(tenantId: number, actor: Actor, listId: number, recordId: number): Promise<boolean> {
+        if (actor.role === 'admin') return true;
+        if (actor.role === 'guest' || actor.role === 'client') return false;
+        const editors = await this.records.editorsOf(tenantId, listId, recordId, [actor], () => ({}));
+        return editors.has(actor.userId);
     }
 
     /** Resuelve la lista y verifica que el record exista/sea visible al actor. */
@@ -304,6 +398,9 @@ export class CommentsService {
             );
         const targets = members.filter((m) => m.userId !== row.userId);
         if (targets.length === 0) return [];
+        // v0.1.466 — una automatización no tiene cuenta (la mención guarda el
+        // autor como cuenta): el aviso sale igual por el hub, sin fila aquí.
+        if (row.userId <= 0) return targets.map((m) => m.userId);
         const snippet = row.body.slice(0, 180);
         await tx.insert(mentions).values(
             targets.map((m) => ({
@@ -387,12 +484,14 @@ function toComment(
         const name = typeof mail.from_name === 'string' && mail.from_name.trim() !== '' ? mail.from_name : typeof mail.from === 'string' ? mail.from : '';
         clientName = name || 'Cliente';
     }
+    // v0.1.466 — lo escribió una automatización: se nombra como tal.
+    const auto = row.userId <= 0 ? readAutomationCommentMark(row.metadata) : null;
     return {
         id: row.id,
         list_id: row.listId,
         record_id: row.recordId,
         user_id: row.userId,
-        user_name: userName,
+        user_name: auto ? automationCommentAuthor(auto.name) : userName,
         // Un raíz eliminado que conserva sus respuestas viaja SIN su texto.
         body: deleted ? '' : row.body,
         kind: row.kind as CommentKind,
@@ -419,10 +518,11 @@ function commentNotFound(id: number): NotFoundException {
 /**
  * Claves de `metadata` que sólo escribe el servidor: `email` (la mesa de ayuda:
  * con `direction: 'in'` el comentario se muestra como escrito por el CLIENTE,
- * con su nombre y su correo) y `agent` (lo escribió un agente de IA). Una
- * persona no puede fabricar un «correo del cliente» ni firmar como un agente.
+ * con su nombre y su correo), `agent` (lo escribió un agente de IA) y, v0.1.466,
+ * `automation` (lo escribió una automatización). Una persona no puede fabricar
+ * un «correo del cliente» ni firmar como un agente o una automatización.
  */
-export const RESERVED_COMMENT_METADATA_KEYS = ['email', 'agent'] as const;
+export const RESERVED_COMMENT_METADATA_KEYS = ['email', 'agent', 'automation'] as const;
 
 export function stripReservedCommentMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
     const out: Record<string, unknown> = {};

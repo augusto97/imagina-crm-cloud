@@ -38,9 +38,12 @@ import {
     Shuffle,
     CopyCheck,
     Split,
+    OctagonX,
+    MessageSquarePlus,
     type LucideIcon,
 } from 'lucide-react';
 
+import { ADD_COMMENT_ACTION, STOP_UNLESS_ACTION, describeStopUnless, readAddCommentConfig, readStopUnlessRules } from '@imagina-base/shared';
 import { ASSIGN_MODE_LABELS, ON_ERROR_EXEMPT_ACTIONS, describeAskAi, describeOnError, describeSwitch, readAskAiConfig, readOnError, readSwitchConfig, describeFileTrigger, describeRecordMatchesTrigger, readAssignRoundRobinConfig, readCopyRecordConfig, readFileAddedConfig, readNotifyInAppConfig, readRecordMatchesConfig } from '@imagina-base/shared';
 import { APPROVAL_STATUS_LABELS, SUBSCRIPTION_EVENT_LABELS, requestSignatureSummary, signatureTriggerSummary, describeCommentTrigger, readCommentTriggerConfig, readFindRecordsConfig, readUpsertRecordConfig, type SubscriptionEvent, describeWait, describeWaitApproval, describeWebhookRecord, describeWhatsTrigger, readWhatsTriggerConfig, readApprovalTriggerResults, readWebhookRecordConfig, scheduleParts } from '@imagina-base/shared';
 
@@ -275,6 +278,17 @@ export const ACTION_META: Record<string, StepMeta> = {
         title: 'Según el valor de…',
         description: 'Varias ramas según el valor de un campo o de una variable (una por estado, por categoría…), y «En otro caso».',
     },
+    // v0.1.466 — seguir sólo si se cumple algo, y dejar un comentario en el registro.
+    stop_unless: {
+        icon: OctagonX,
+        title: 'Comprobar y detener',
+        description: 'Sigue con los pasos de abajo sólo si el registro cumple una condición; si no, la automatización termina ahí.',
+    },
+    add_comment: {
+        icon: MessageSquarePlus,
+        title: 'Agregar un comentario',
+        description: 'Deja un comentario en el registro (nota interna o visible para el cliente), con variables y menciones que avisan.',
+    },
     ask_ai: {
         icon: Sparkles,
         title: 'Preguntarle a la IA',
@@ -335,6 +349,22 @@ export function actionMetaFor(slug: string): StepMeta {
 
 function fieldLabel(fields: FieldEntity[], slug: string): string {
     return fields.find((f) => f.slug === slug)?.label ?? slug;
+}
+
+/**
+ * v0.1.466 — Una regla de condición en palabras para el resumen: el campo por
+ * su etiqueta (también `item.slug` y las variables) y el valor de una opción
+ * por su etiqueta.
+ */
+function conditionRuleParts(fields: FieldEntity[], field: string, op: string, value: unknown): { label: string; op: string; valueText: string } {
+    const f = fields.find((x) => x.slug === field);
+    const options = (f?.config as { options?: Array<{ value?: unknown; label?: unknown }> } | undefined)?.options ?? [];
+    const one = (v: unknown): string => {
+        const hit = options.find((o) => String(o.value ?? '') === String(v));
+        return hit ? String(hit.label ?? hit.value ?? '') : String(v);
+    };
+    const values = (Array.isArray(value) ? value : [value]).filter((v) => v !== null && v !== undefined && v !== '');
+    return { label: f?.label ?? field, op, valueText: values.map(one).join(', ') };
 }
 
 function conditionCount(value: unknown): number {
@@ -715,6 +745,15 @@ export function summarizeAction(
             const base = __(describeAskAi(cfg, save ?? null));
             const what = a.instruction.trim().replace(/\s+/g, ' ');
             return what !== '' ? `${base} · «${what.slice(0, 60)}${what.length > 60 ? '…' : ''}»` : base;
+        }
+        case STOP_UNLESS_ACTION:
+            return __(describeStopUnless(readStopUnlessRules(cfg).map((r) => conditionRuleParts(fields, r.field, r.op, r.value))));
+        case ADD_COMMENT_ACTION: {
+            const c = readAddCommentConfig(cfg);
+            const text = c.body.trim().replace(/\s+/g, ' ');
+            const who = c.visibility === 'client' ? __('Comenta (visible para el cliente)') : __('Deja una nota interna');
+            const where = c.target === 'item' ? ` ${__('en el registro vinculado')}` : '';
+            return text !== '' ? `${who}${where}: «${text.slice(0, 60)}${text.length > 60 ? '…' : ''}»` : `${who}${where}`;
         }
         case 'if_else': {
             const thenN = Array.isArray(cfg.then_actions) ? cfg.then_actions.length : 0;

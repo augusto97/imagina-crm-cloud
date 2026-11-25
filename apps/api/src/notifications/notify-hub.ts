@@ -41,6 +41,12 @@ export type NotifyEvent =
           /** v0.1.444 — lo dejó un agente de IA: no dispara automatizaciones (evita bucles). */
           fromAgent?: boolean;
           /**
+           * v0.1.466 — lo dejó la acción «Agregar un comentario» de una
+           * automatización (`actorId` = 0): no dispara automatizaciones (evita
+           * bucles) y el aviso nombra a la automatización.
+           */
+          fromAutomation?: { id: number; name: string };
+          /**
            * v0.1.291 — es una RESPUESTA en el hilo de este comentario raíz:
            * quienes escribieron en el hilo reciben «respondió».
            */

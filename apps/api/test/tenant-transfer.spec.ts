@@ -597,6 +597,17 @@ describe('Migración de empresa (v0.1.197)', () => {
         await pg.db
             .insert(automationHooks)
             .values({ token: hookToken, tenantId: tenantA, automationId: hookAuto!.id });
+        // v0.1.466 — un comentario que dejó la automatización (sin persona y
+        // con su marca): al migrar sigue sin persona y apunta a la automatización
+        // nueva.
+        await pg.db.insert(comments).values({
+            tenantId: tenantA,
+            listId: clientesId,
+            recordId: clienteRecId,
+            userId: 0,
+            body: 'Llegó un aviso del sistema externo.',
+            metadata: { automation: { id: hookAuto!.id, name: 'Entrante' } },
+        });
 
         const [comercial] = await pg.db
             .insert(dashboards)
@@ -898,8 +909,14 @@ describe('Migración de empresa (v0.1.197)', () => {
         const newViews = await pg.db.select().from(savedViews).where(eq(savedViews.tenantId, tenantB));
         expect(newViews[0]!.config).toEqual({ group_by_field_id: newEstado.id });
         const newComments = await pg.db.select().from(comments).where(eq(comments.tenantId, tenantB));
-        expect(newComments).toHaveLength(2);
-        const raiz = newComments.find((c) => c.parentId === null)!;
+        expect(newComments).toHaveLength(3);
+        const delSistema = newComments.find((c) => c.userId === 0)!;
+        const [autoNueva] = await pg.db
+            .select({ id: automations.id })
+            .from(automations)
+            .where(and(eq(automations.tenantId, tenantB), eq(automations.name, 'Entrante')));
+        expect(delSistema.metadata).toEqual({ automation: { id: autoNueva!.id, name: 'Entrante' } });
+        const raiz = newComments.find((c) => c.parentId === null && c.userId !== 0)!;
         const hijo = newComments.find((c) => c.parentId !== null)!;
         expect(hijo.parentId).toBe(raiz.id);
         expect(hijo.recordId).toBe(newCliente.id);

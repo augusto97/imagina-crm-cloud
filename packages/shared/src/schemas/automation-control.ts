@@ -245,8 +245,11 @@ export const ON_ERROR_MAX_STEPS = 10;
  */
 export const RETRYABLE_ACTIONS: readonly string[] = ['call_webhook', 'connector_action', 'send_email', 'reply_email', 'ask_ai', 'request_signature'];
 
-/** Los contenedores no fallan por sí mismos: cada paso de adentro tiene lo suyo. */
-export const ON_ERROR_EXEMPT_ACTIONS: readonly string[] = ['if_else', SWITCH_ACTION];
+/**
+ * Los contenedores no fallan por sí mismos: cada paso de adentro tiene lo suyo.
+ * v0.1.466 — «Comprobar y detener» tampoco: si no se cumple, termina (no falla).
+ */
+export const ON_ERROR_EXEMPT_ACTIONS: readonly string[] = ['if_else', SWITCH_ACTION, 'stop_unless'];
 
 /** Los pasos que no pueden ir dentro de «Si falla» (esperar no tiene un "después" claro). */
 export const ON_ERROR_FORBIDDEN_INSIDE: readonly string[] = ['wait', 'wait_approval'];

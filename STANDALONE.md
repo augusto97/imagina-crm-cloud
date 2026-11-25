@@ -4319,6 +4319,32 @@ del asistente (ADR-S21):
   `automations` y `ai` del plan, y ver la lista entera. Bitácora
   `automation.ai_draft` sin el texto.
 
+**Addendum v0.1.466 — «Comprobar y detener» y «Agregar un comentario» (E9, E10).**
+
+- **`stop_unless` corta como una espera, no como una falla.** Sus reglas son las
+  de la condición de cada paso (por slug, el mismo evaluador del «Si / sino») y
+  se miran sobre el registro como lo dejaron los pasos anteriores. Si no se
+  cumplen, el motor devuelve un `stop` con el motivo: la corrida termina con
+  estado de éxito y sin Problema (igual que «Continuar sólo si…» de la espera).
+  Dentro de «Repetir por cada vinculado» el `stop` sólo termina ese vinculado
+  (el bucle ya ignoraba los `stop` internos y lo cuenta como omitido); en
+  cualquier otro lugar, ramas incluidas, termina la corrida. Está exento de
+  «Si este paso falla» (`ON_ERROR_EXEMPT_ACTIONS`): no llama afuera ni falla.
+- **El comentario de una automatización no tiene persona.** `user_id` 0 (la
+  convención de «Sistema») y la marca `metadata.automation = {id, name}`, que
+  sólo escribe el servidor: `automation` se suma a
+  `RESERVED_COMMENT_METADATA_KEYS`, así una persona no puede firmar como una
+  automatización. Las FKs que apuntan a una cuenta (`mentions.author_user_id`,
+  `notifications.actor_id`) no se llenan: las menciones avisan por el hub sin
+  fila de autor y el aviso sale sin actor. No se edita; lo borra un
+  administrador o quien puede editar el registro.
+- **Sin bucles.** El evento del hub lleva `fromAutomation` y el despachador no
+  dispara «Cuando se agrega un comentario» con él (como `fromAgent`). Nadie
+  queda siguiendo el registro por ese comentario.
+- **Migrar una empresa** conserva `user_id` 0 en los comentarios sin persona (antes
+  tomaban la persona de respaldo) y traduce `metadata.automation.id` a la
+  automatización nueva.
+
 
 ### ADR-S48 — Portal con contraseña por empresa, pagos del cliente y formularios verificados (v0.1.289)
 

@@ -1,4 +1,4 @@
-import { ASK_AI_ACTION, SWITCH_ACTION, automationConfigIssues, flowChildLists, isUserWritableType, readWaitConfig, type Field } from '@imagina-base/shared';
+import { ADD_COMMENT_ACTION, ASK_AI_ACTION, STOP_UNLESS_ACTION, SWITCH_ACTION, automationConfigIssues, flowChildLists, isUserWritableType, readWaitConfig, type Field } from '@imagina-base/shared';
 import { z } from 'zod';
 import { optionValue } from './bulk-ops';
 import { AiToolError } from './registry';
@@ -74,6 +74,20 @@ export async function translateFlowActions(actions: unknown[], ctx: FlowTranslat
         // de «Si falla» (el cuerpo de un bucle va aparte, con el lado vinculado).
         for (const kid of flowChildLists(act)) if (kid.branch !== 'each') await translateFlowActions(kid.actions, ctx, inLoop);
         if (act.type === 'if_else') continue;
+        // v0.1.466 — «Comprobar y detener»: reglas por slug (como un if_else);
+        // una opción de selección se puede escribir por su etiqueta.
+        if (act.type === STOP_UNLESS_ACTION) {
+            translateStopUnless(cfg, ctx.fields, inLoop);
+            continue;
+        }
+        if (act.type === ADD_COMMENT_ACTION) {
+            if (cfg.target === 'item' && !inLoop) throw new AiToolError('add_comment con target «item» sólo va dentro de for_each_linked.');
+            if (typeof cfg.body !== 'string' || cfg.body.trim() === '') throw new AiToolError('add_comment necesita body: el texto del comentario.');
+            if (cfg.visibility !== undefined && cfg.visibility !== 'internal' && cfg.visibility !== 'client') {
+                throw new AiToolError('add_comment: visibility es "internal" (nota interna, default) o "client" (también la ve el cliente).');
+            }
+            continue;
+        }
         if (act.type === SWITCH_ACTION) {
             translateSwitch(cfg, ctx.fields, ctx.listName);
             continue;
@@ -128,6 +142,34 @@ export async function translateFlowActions(actions: unknown[], ctx: FlowTranslat
                     throw new AiToolError(`for_each_linked: la condición usa «${f}», que no es un campo de «${path.other_list_name}».`);
                 }
             }
+        }
+    }
+}
+
+/**
+ * v0.1.466 — «Comprobar y detener si no se cumple»: las reglas quedan por
+ * SLUG (como las de un if_else: el motor las evalúa así). Se valida que el
+ * campo exista (el de un vinculado como `item.slug` dentro de un bucle; las
+ * variables `payload.`, `respuestas.`… pasan) y el valor de un campo de
+ * selección, de etiqueta a valor.
+ */
+export function translateStopUnless(cfg: Record<string, unknown>, fields: Field[], inLoop: { fields: Field[]; listName: string } | null): void {
+    const raw = Array.isArray(cfg.condition) ? (cfg.condition as Array<Record<string, unknown>>) : [];
+    if (raw.length === 0) throw new AiToolError('stop_unless necesita condition: [{field, op, value}] (al menos una regla).');
+    for (const r of raw) {
+        const slug = String(r.field ?? r.slug ?? '').trim();
+        if (slug === '') throw new AiToolError('stop_unless: cada regla necesita field (slug del campo o una variable como "respuestas.ia.valor").');
+        let f: Field | undefined;
+        if (slug.startsWith('item.')) {
+            if (!inLoop) throw new AiToolError(`stop_unless: «${slug}» sólo existe dentro de for_each_linked.`);
+            f = inLoop.fields.find((x) => x.slug === slug.slice(5));
+            if (!f) throw new AiToolError(`stop_unless: «${slug}» no es un campo de «${inLoop.listName}».`);
+        } else if (!slug.includes('.')) {
+            f = fields.find((x) => x.slug === slug);
+        }
+        if (f && OPTION_TYPES.includes(f.type)) {
+            if (typeof r.value === 'string') r.value = optionValue(f, r.value);
+            else if (Array.isArray(r.value)) r.value = r.value.map((v) => (typeof v === 'string' ? optionValue(f!, v) : v));
         }
     }
 }
@@ -243,7 +285,7 @@ function resolvePath(cfg: Record<string, unknown>, ctx: FlowTranslateCtx): AiRel
 export function assertFlowIssues(input: { trigger_type: string; trigger_config?: Record<string, unknown>; actions: unknown[] }): void {
     // v0.1.460 — también «Según el valor de…», «Preguntarle a la IA» y «Si este paso falla».
     const flowPath =
-        /(\.type|\.response_name|\.relation_field_id|\.config\.actions|\.config\.target|\.config\.source_field_id|\.config\.cases(\.\d+\.value)?|\.config\.(instruction|choices|items(\.\d+\.key)?)|\.on_error\.(mode|actions))$/;
+        /(\.type|\.response_name|\.relation_field_id|\.config\.actions|\.config\.target|\.config\.condition|\.config\.source_field_id|\.config\.cases(\.\d+\.value)?|\.config\.(instruction|choices|items(\.\d+\.key)?)|\.on_error\.(mode|actions))$/;
     const issues = automationConfigIssues({ trigger_type: input.trigger_type, trigger_config: input.trigger_config ?? {}, actions: input.actions }).filter(
         (i) => flowPath.test(i.path) || /esperar|espera /i.test(i.message),
     );

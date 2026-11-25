@@ -232,6 +232,9 @@ const ACTION_LABELS: Record<string, string> = {
     // v0.1.460
     switch: __('Según el valor de…'),
     ask_ai: __('Preguntarle a la IA'),
+    // v0.1.466
+    stop_unless: __('Comprobar y detener'),
+    add_comment: __('Agregar un comentario'),
     wait: __('Esperar'),
     for_each_linked: __('Repetir por cada registro vinculado'),
     engine: __('Motor de automatizaciones'),

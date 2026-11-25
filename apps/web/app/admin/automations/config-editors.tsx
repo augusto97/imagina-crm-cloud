@@ -42,6 +42,7 @@ import {
     RESPONSE_NAME_RE,
     SCHEDULED_EACH_MAX,
     isSmsProvider,
+    readAddCommentConfig,
     scheduleParts,
     scheduleTimeZone,
     timeZoneLabel,
@@ -1279,6 +1280,10 @@ export function ActionConfigEditor({
                 />
             ) : spec.type === 'switch' ? (
                 <SwitchConfig spec={spec} onChange={onChange} fields={fields} actionsCatalog={actionsCatalog ?? []} nestedInline={nestedInline} />
+            ) : spec.type === 'stop_unless' ? (
+                <StopUnlessConfig spec={spec} onChange={onChange} fields={fields} />
+            ) : spec.type === 'add_comment' ? (
+                <AddCommentConfig spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'ask_ai' ? (
                 <AskAiConfig spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'wait' ? (
@@ -1300,11 +1305,101 @@ export function ActionConfigEditor({
             {/* La condición a-nivel-acción no aplica a if_else (la lógica
                  de branch ya vive dentro de su propio config.condition) ni a
                  «Esperar», que tiene su «continuar sólo si…». */}
-            {spec.type !== 'if_else' && spec.type !== 'switch' && spec.type !== 'wait' && spec.type !== 'wait_approval' && (
+            {spec.type !== 'if_else' && spec.type !== 'switch' && spec.type !== 'stop_unless' && spec.type !== 'wait' && spec.type !== 'wait_approval' && (
                 <ActionConditionEditor spec={spec} onChange={onChange} fields={fields} />
             )}
             {/* v0.1.460 — «Si este paso falla» (los contenedores no fallan por sí mismos). */}
             <OnErrorEditor spec={spec} onChange={onChange} fields={fields} actionsCatalog={actionsCatalog ?? []} nestedInline={nestedInline} />
+        </div>
+    );
+}
+
+/**
+ * v0.1.466 — «Comprobar y detener si no se cumple»: el MISMO editor de reglas
+ * que «Si / Entonces / Si no» (campos del registro, del vinculado dentro de
+ * una repetición, `payload.*`, `respuestas.*`, `comentario.*`…). Sin ramas: si
+ * no se cumplen todas, la automatización termina ahí.
+ */
+function StopUnlessConfig({ spec, onChange, fields }: ActionConfigEditorProps): JSX.Element {
+    const condition = Array.isArray(spec.config.condition) ? (spec.config.condition as ConditionRule[]) : [];
+    const condFields = useConditionFields(fields);
+    const item = useLoopItem();
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2.5" data-tour="automation-stop-unless">
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-2.5 imcrm-rounded-xl imcrm-border imcrm-border-primary/20 imcrm-bg-primary/5 imcrm-p-3.5">
+                <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                    <Badge variant="default" dot>
+                        {__('Sigue sólo si')}
+                    </Badge>
+                    <p className="imcrm-text-[12px] imcrm-text-muted-foreground">{__('Se tienen que cumplir todas estas reglas.')}</p>
+                </div>
+                <ConditionEditor value={condition} onChange={(next) => onChange({ ...spec, config: { ...spec.config, condition: next } })} fields={condFields} />
+            </div>
+            <p className="imcrm-text-xs imcrm-text-muted-foreground" data-testid="imcrm-stop-unless-hint">
+                {item
+                    ? sprintf(
+                          __('Mira el registro como quedó después de los pasos de arriba. Si no se cumple, no sigue con los pasos de abajo para este registro de «%s» y la repetición pasa al próximo.'),
+                          item.listName,
+                      )
+                    : __('Mira el registro como quedó después de los pasos de arriba. Si no se cumple, la automatización termina aquí: no es una falla y el historial dice qué regla no se cumplió.')}
+            </p>
+        </div>
+    );
+}
+
+/**
+ * v0.1.466 — «Agregar un comentario»: el texto con variables (en una caja que
+ * crece), nota interna o visible para el cliente y, dentro de una repetición,
+ * en qué registro. Lo firma la automatización y nunca dispara «Cuando se
+ * agrega un comentario».
+ */
+function AddCommentConfig({ spec, onChange, fields }: ActionConfigEditorProps): JSX.Element {
+    const c = readAddCommentConfig(spec.config);
+    const item = useLoopItem();
+    const set = (patch: Record<string, unknown>): void => {
+        const config: Record<string, unknown> = { ...spec.config, ...patch };
+        for (const [k, v] of Object.entries(patch)) if (v === undefined) delete config[k];
+        onChange({ ...spec, config });
+    };
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2.5" data-tour="automation-add-comment">
+            {item !== null && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1" data-testid="imcrm-comment-target">
+                    <Label className="imcrm-text-xs imcrm-text-muted-foreground">{__('¿En qué registro?')}</Label>
+                    <Select value={c.target} onChange={(e) => set({ target: e.target.value === 'item' ? 'item' : undefined })}>
+                        <option value="record">{__('El que disparó la automatización')}</option>
+                        <option value="item">{sprintf(__('El vinculado de esta vuelta («%s»)'), item.listName)}</option>
+                    </Select>
+                </div>
+            )}
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                <Label className="imcrm-text-xs">{__('Comentario')}</Label>
+                <MergeTagInput
+                    value={c.body}
+                    onChange={(v) => set({ body: v === '' ? undefined : v })}
+                    fields={fields}
+                    rows={3}
+                    autoGrow
+                    placeholder={__('Se envió la cotización a {{correo}}. @ventas revisen el seguimiento.')}
+                    aria-label={__('Comentario')}
+                />
+                <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                    {__('Para avisarle a alguien, menciónalo con @ y su correo (por ejemplo @ana@empresa.com o @{{responsable.email}}), o a un equipo con @ y su nombre.')}
+                </p>
+            </div>
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                <Label className="imcrm-text-xs">{__('Quién lo ve')}</Label>
+                <Select value={c.visibility} onChange={(e) => set({ visibility: e.target.value === 'client' ? 'client' : undefined })} aria-label={__('Quién lo ve')}>
+                    <option value="internal">{__('Nota interna (sólo el equipo)')}</option>
+                    <option value="client">{__('Visible para el cliente (en su portal)')}</option>
+                </Select>
+                {c.visibility === 'client' && (
+                    <p className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('El cliente lo ve en su portal y, si no lo apagó, le llega un correo.')}</p>
+                )}
+            </div>
+            <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                {__('En la ficha aparece firmado por esta automatización. Este comentario no dispara «Cuando se agrega un comentario».')}
+            </p>
         </div>
     );
 }
