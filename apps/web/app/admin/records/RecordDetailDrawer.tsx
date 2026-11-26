@@ -45,6 +45,7 @@ import { escapeIntent, FLOATING_MENU_ATTR, isInsideFloatingUi, leaveField, recor
 import { __, sprintf } from '@/lib/i18n';
 import { CAP, useCanAny } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
+import { whenIdle } from '@/lib/whenIdle';
 import type { FieldEntity } from '@/types/field';
 import { useList, useUpdateList } from '@/hooks/useLists';
 import { useDismissLayoutHint, useLayoutHints } from '@/hooks/useLayoutHints';
@@ -94,11 +95,12 @@ import {
     shouldOfferDesignedLayout,
     usesDesignedLayout,
 } from './layout/recordModalMode';
+import { loadDesignedBody, warmDescriptionEditor, warmDesignedRecord } from './layout/warmRecordChunks';
 
 // v0.1.470 — La ficha diseñada y la invitación a probarla van en sus propios
 // chunks: la tabla no paga el motor de la ficha hasta que se abre un registro
 // de una lista que la usa.
-const DrawerDesignedBody = lazy(() => import('./layout/DrawerDesignedBody'));
+const DrawerDesignedBody = lazy(loadDesignedBody);
 const LayoutSuggestion = lazy(() => import('./layout/LayoutSuggestion'));
 
 interface RecordDetailDrawerProps {
@@ -278,6 +280,17 @@ export function RecordDetailDrawer({
     const designed = preview !== null || usesDesignedLayout(listSettings);
     const designedRef = useRef(designed);
     designedRef.current = designed;
+    // v0.1.472 — el código de la ficha se baja antes: la diseñada cuando la
+    // tabla queda quieta, y al abrir, a la par del pedido de los datos.
+    useEffect(() => {
+        if (!designed || open) return;
+        return whenIdle(warmDesignedRecord, { delay: 1500, timeout: 4000 });
+    }, [designed, open]);
+    useEffect(() => {
+        if (!open) return;
+        if (designed) warmDesignedRecord();
+        warmDescriptionEditor();
+    }, [open, designed]);
     // La ficha diseñada se guarda sola: la barra dice «Guardando…/Guardado».
     const [designedSaving, setDesignedSaving] = useState(false);
     const flushRef = useRef<(() => Promise<void>) | null>(null);
@@ -537,7 +550,13 @@ export function RecordDetailDrawer({
     const actionsBar = (
         <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-0.5" data-tour="record-toolbar">
             {!phoneBar && !isGuest && <RecordFollowControls listId={listId} recordId={record.id} compact />}
-            <RecordActionsMenu open={moreOpen} onOpenChange={setMoreOpen} scopeRef={contentRef} showLabel={!phoneBar}>
+            <RecordActionsMenu
+                open={moreOpen}
+                onOpenChange={setMoreOpen}
+                scopeRef={contentRef}
+                showLabel={!phoneBar}
+                deferKey={isGuest ? undefined : record.id}
+            >
                 <RecordActionItems
                     listId={listId}
                     listSlug={listSlug}

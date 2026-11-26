@@ -1,11 +1,13 @@
 import { useMemo } from 'react';
 import { useQueries } from '@tanstack/react-query';
 import {
-    autoRecordLayout,
+    integratedLayoutFlavor,
+    integratedRecordLayout,
+    INTEGRATED_LAYOUT_RELATIONS,
     migrateCrmV2ToV3,
     readRecordLayoutV3,
+    toLayoutFieldLite,
     type AutoLayoutFlavor,
-    type AutoLayoutRelation,
     type LayoutFieldLite,
     type RecordLayoutV3,
 } from '@imagina-base/shared';
@@ -30,8 +32,6 @@ export type LayoutOrigin = 'saved' | 'converted' | 'auto';
  *     desde v0.1.234: su grilla vieja (3 · 6 · 3) dejaba columnas angostas
  *     que escondían los valores.
  */
-const FLAVORS: ReadonlySet<string> = new Set(['contact', 'deal', 'task', 'support']);
-
 export function useRecordLayout(
     list: ListSummary,
     fields: FieldEntity[],
@@ -41,12 +41,13 @@ export function useRecordLayout(
     const settings = useMemo(() => (list.settings ?? {}) as Record<string, unknown>, [list.settings]);
     const savedLayout = useMemo(() => readRecordLayoutV3(settings), [settings]);
     const saved = previewTemplate !== undefined ? null : savedLayout;
-    const templateId = previewTemplate ?? (typeof settings.crm_template_id === 'string' ? settings.crm_template_id : 'auto');
-    const needsAuto = saved === null && templateId !== 'custom';
-    const flavor = (FLAVORS.has(templateId) ? templateId : 'auto') as AutoLayoutFlavor;
+    // v0.1.472 — la misma función que usa el servidor (el bundle de la ficha
+    // trae los datos de sus gráficos con la misma firma de bloques).
+    const flavor = integratedLayoutFlavor(settings, previewTemplate);
+    const needsAuto = saved === null && flavor !== null;
 
     const paths = useRelationPaths(needsAuto ? list.id : undefined);
-    const relations = (paths.data ?? []).slice(0, 4);
+    const relations = (paths.data ?? []).slice(0, INTEGRATED_LAYOUT_RELATIONS);
     const otherFields = useQueries({
         queries: relations.map((p) => ({
             queryKey: fieldsKeys.forList(p.other_list_id),
@@ -60,33 +61,23 @@ export function useRecordLayout(
     return useMemo(() => {
         const lite = fields.map(toLite);
         if (saved) return { layout: saved, origin: 'saved' as const };
-        if (templateId === 'custom') {
+        if (flavor === null) {
             return {
                 layout: migrateCrmV2ToV3(getV2Config(settings as never, fields), lite),
                 origin: 'converted' as const,
             };
         }
         if (paths.isLoading || !othersReady) return { layout: null, origin: 'auto' as const };
-        const rels: AutoLayoutRelation[] = relations.map((p, i) => ({
-            relation_field_id: p.relation_field_id,
-            direction: p.direction,
-            relation_label: p.relation_label,
-            other_list_name: p.other_list_name,
-            other_fields: (otherFields[i]?.data ?? []).map(toLite),
-        }));
-        return { layout: autoRecordLayout({ fields: lite, relations: rels, flavor }), origin: 'auto' as const };
+        const byList = new Map(relations.map((p, i) => [p.other_list_id, (otherFields[i]?.data ?? []).map(toLite)]));
+        return {
+            layout: integratedRecordLayout({ flavor, fields: lite, paths: relations, otherFields: (id) => byList.get(id) ?? [] }),
+            origin: 'auto' as const,
+        };
         // othersKey resume el estado de las queries de campos del otro lado.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [saved, templateId, flavor, fields, paths.isLoading, paths.data, othersReady, othersKey]);
+    }, [saved, flavor, fields, paths.isLoading, paths.data, othersReady, othersKey]);
 }
 
 export function toLite(f: FieldEntity): LayoutFieldLite {
-    return {
-        id: f.id,
-        slug: f.slug,
-        label: f.label,
-        type: f.type,
-        config: f.config as Record<string, unknown>,
-        is_primary: f.is_primary,
-    };
+    return toLayoutFieldLite(f);
 }

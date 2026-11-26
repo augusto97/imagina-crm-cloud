@@ -1,13 +1,17 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import {
-    DATA_BLOCK_TYPES,
-    layoutBlocks,
+    INTEGRATED_LAYOUT_RELATIONS,
+    integratedLayoutFlavor,
+    integratedRecordLayout,
+    layoutDataBlocks,
+    layoutDataSig,
     listRecordsQuerySchema,
     readRecordLayoutV3,
     RECORD_VIEW_ACTIVITY_LIMIT,
     RECORD_VIEW_BACKLINK_ROWS,
     RECORD_VIEW_LINKED_LISTS,
     RECORD_VIEW_SUBTASKS,
+    toLayoutFieldLite,
     type RecordViewBundle,
     type RelationPath,
 } from '@imagina-base/shared';
@@ -221,9 +225,25 @@ export class RecordViewService {
             )
         ).filter((x): x is NonNullable<typeof x> => x !== null);
 
+        // La lista va como la sirve `GET /lists/:id` a quien pide (este bundle
+        // siembra esa misma caché): los ajustes recortados para quien no
+        // administra listas y `my_access` (C4: lo que ve pero no puede cambiar).
+        const who = { ...aclExtras(actor), role: actor.role, userId: actor.userId };
+        const listSettings = (list.settings ?? {}) as Record<string, unknown>;
+        const seenSettings = memberListSettings(listSettings, who, can(who, 'manage_lists'));
+
         const reverse = relations.filter((p) => p.direction === 'reverse');
-        const backlinks = (
-            await mapLimit(reverse, PARALLEL, (p) =>
+        // v0.1.472 — la ficha con una plantilla INTEGRADA (sin diseño guardado)
+        // también trae los datos de sus gráficos y tablas: antes la ficha los
+        // pedía en un segundo viaje, después de este. Se calculan a la par de
+        // los «Vinculados», con los mismos ajustes, campos y relaciones que ve
+        // el front, así la firma de los bloques coincide.
+        const integratedLayout =
+            layout === null && fields
+                ? soft('bloques de la ficha', () => this.integratedLayoutData(tenantId, actor, list.id, recordId, seenSettings, fields, relations, linked))
+                : Promise.resolve(layout);
+        const backlinksTask = (
+            mapLimit(reverse, PARALLEL, (p) =>
                 soft('vinculados', async () => ({
                     relation_field_id: p.relation_field_id,
                     list_id: p.list_id,
@@ -239,17 +259,14 @@ export class RecordViewService {
                     ),
                 })),
             )
-        ).filter((x): x is NonNullable<typeof x> => x !== null);
+        );
+        const [backlinkRows, layoutData] = await Promise.all([backlinksTask, integratedLayout]);
+        const backlinks = backlinkRows.filter((x): x is NonNullable<typeof x> => x !== null);
 
-        // La lista va como la sirve `GET /lists/:id` a quien pide (este bundle
-        // siembra esa misma caché): los ajustes recortados para quien no
-        // administra listas y `my_access` (C4: lo que ve pero no puede cambiar).
-        const who = { ...aclExtras(actor), role: actor.role, userId: actor.userId };
-        const listSettings = (list.settings ?? {}) as Record<string, unknown>;
         return {
             list: {
                 ...list,
-                settings: memberListSettings(listSettings, who, can(who, 'manage_lists')),
+                settings: seenSettings,
                 my_access: myListAccess(listSettings, who),
             },
             fields,
@@ -266,7 +283,7 @@ export class RecordViewService {
             subtasks: subtasks as RecordViewBundle['subtasks'],
             comments,
             activity,
-            layout_data: layout,
+            layout_data: layoutData,
             time,
             data_consents: dataConsents,
             dependencies,
@@ -364,11 +381,52 @@ export class RecordViewService {
         if (settings.record_layout !== 'crm') return null;
         const layout = readRecordLayoutV3(settings);
         if (!layout) return null;
-        const blocks = layoutBlocks(layout)
-            .filter((b) => DATA_BLOCK_TYPES.includes(b.type))
-            .map((b) => ({ id: b.id, type: b.type as 'chart' | 'related', title: b.title, config: b.config }));
+        const blocks = layoutDataBlocks(layout);
         if (blocks.length === 0) return null;
         const data = await this.layoutData.data(tenantId, actor, String(list.id), recordId, { blocks });
-        return { sig: JSON.stringify(blocks), data };
+        return { sig: layoutDataSig(blocks), data };
+    }
+
+    /**
+     * v0.1.472 — Lo mismo para una plantilla integrada: la ficha automática
+     * se arma con la función compartida que usa el front (`useRecordLayout`),
+     * con los ajustes que ve quien pide, los campos de la lista y los de las
+     * listas del otro lado de sus primeras relaciones.
+     */
+    private async integratedLayoutData(
+        tenantId: number,
+        actor: Actor,
+        listId: number,
+        recordId: number,
+        settings: Record<string, unknown>,
+        fields: RecordViewBundle['fields'],
+        paths: RelationPath[],
+        linked: Array<{ list: { id: number }; fields: RecordViewBundle['fields'] }>,
+    ): Promise<RecordViewBundle['layout_data']> {
+        if (settings.record_layout !== 'crm' || readRecordLayoutV3(settings)) return null;
+        const flavor = integratedLayoutFlavor(settings);
+        if (flavor === null) return null;
+        const firstPaths = paths.slice(0, INTEGRATED_LAYOUT_RELATIONS);
+        // Sin los campos de una lista del otro lado, el front la pide aparte y
+        // la ficha no sería la misma: mejor que la pida como siempre.
+        const others = new Map(linked.map((l) => [l.list.id, l.fields.map(toLayoutFieldLite)]));
+        if (firstPaths.some((p) => !others.has(p.other_list_id))) return null;
+        const layout = integratedRecordLayout({
+            flavor,
+            fields: fields.map(toLayoutFieldLite),
+            paths: firstPaths,
+            otherFields: (id) => others.get(id) ?? [],
+        });
+        const blocks = layoutDataBlocks(layout);
+        if (blocks.length === 0) return null;
+        const data = await this.layoutData.data(
+            tenantId,
+            actor,
+            String(listId),
+            recordId,
+            { blocks },
+            { listId, fields, others: new Map(linked.map((l) => [l.list.id, l.fields])) },
+        );
+        return { sig: layoutDataSig(blocks), data };
     }
 }

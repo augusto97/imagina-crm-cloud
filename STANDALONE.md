@@ -2270,6 +2270,23 @@ Seguir) lo cierran cuando ésta se cierra; Esc y un clic afuera lo cierran sin
 cerrar la ficha; flechas para moverse. En el celular el menú ocupa el ancho y
 suma Seguir, Recordarme, «Diseñar esta ficha» y Eliminar.
 
+**La ficha diseñada abre tan rápido como la simple (v0.1.472).** Con la
+ficha diseñada en la ventana (v0.1.470), abrir un registro de una lista con
+una plantilla integrada pasó a tardar ~50 % más. Reglas que quedan: (a) **el
+bundle de la ficha trae los datos de TODOS sus gráficos y vinculados**, también
+los de una plantilla integrada sin diseño guardado: el servidor arma la misma
+ficha que el navegador con UNA función compartida
+(`integratedRecordLayout`, primeras 4 relaciones) y la firma de los bloques
+(`layoutDataSig`) coincide por construcción, así la ficha no hace una segunda
+vuelta; ese cálculo reusa lo que el bundle ya leyó (`preloaded`) y corre en
+paralelo con los vinculados. (b) **El código de la ficha se baja antes de que
+haga falta** (tabla quieta de una lista con ficha diseñada, o al abrir el
+registro a la par de sus datos), no después de los datos. (c) **Lo que no hace
+falta para ver la ficha no compite con ella**: las acciones del menú
+«Acciones» se arman cuando la pestaña queda libre, al acercar el mouse o al
+abrirlo. Medido de punta a punta con un navegador real: plantilla integrada
+0,92 → 0,50 s la primera ficha y 0,53 → 0,31 s las siguientes.
+
 **Plantillas del portal del cliente (v0.1.237).** El portal tiene su propia
 galería (`portalTemplateLayout`, `packages/shared/src/templates/
 portal-templates.ts`): Mi cuenta, Estado de cuenta, Seguimiento de proyecto,

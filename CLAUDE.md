@@ -17829,6 +17829,58 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         página, celular con todo adentro y sin scroll lateral, sin errores de
         JS).
 
+  - [x] **La ficha diseñada vuelve a abrir rápido (v0.1.472, addendum
+        ADR-S26, pregunta del usuario: "siento que ahora el abrir la ficha de
+        registro está un poco más lenta, revisa si al aplicarle un diseño de
+        ficha personalizada la volvió más lenta o si solo es impresión mía")**.
+        No era impresión: medido con un navegador real contra la misma base
+        (abrir un registro desde la tabla hasta que la ficha queda lista),
+        una lista con una plantilla integrada tardaba ~50 % más que la ficha
+        simple. Tres causas, las tres arregladas y medidas: (a) **los gráficos
+        de una plantilla integrada pedían una segunda vuelta al servidor**: el
+        bundle de la ficha (`/records/:id/view`) ya traía los datos de los
+        bloques de un diseño GUARDADO, pero las plantillas integradas
+        (Resumen, Perfil, Oportunidad, Tarea, Ticket, sin diseño propio) se
+        armaban sólo en el navegador y sus gráficos y vinculados se pedían
+        después con un POST a `/layout-data`. Ahora el servidor arma la MISMA
+        ficha con la misma función que el navegador
+        (`integratedRecordLayout` en
+        `packages/shared/src/templates/record-layout-integrated.ts`: la
+        plantilla elegida, sus primeras 4 relaciones y los campos de cada
+        lista del otro lado) y manda sus datos en el bundle con la misma firma
+        (`layoutDataBlocks` + `layoutDataSig`, en su propio módulo
+        `record-layout-data-blocks.ts` para no arrastrar los constructores a
+        la carga inicial); la ficha los usa sin pedir nada más. El cálculo
+        reusa lo que el bundle ya leyó (`RecordLayoutDataService.data` con
+        `preloaded`: sin volver a leer el registro, la lista ni los campos) y
+        corre en paralelo con los vinculados. (b) **El código de la ficha
+        diseñada se bajaba recién al llegar los datos**: ahora se pide cuando
+        la tabla de una lista con ficha diseñada queda quieta y, si no, al
+        abrir el registro, a la par del pedido de sus datos; lo mismo el
+        editor de la descripción (`warmRecordChunks.ts` + `lib/whenIdle.ts`).
+        (c) **El menú «Acciones» preguntaba al servidor al abrir la ficha**
+        (WhatsApp, SMS, agentes, enlaces para actualizar, IA: 5 pedidos que
+        competían con los de la ficha): sus acciones se arman cuando la
+        pestaña queda libre, al acercar el mouse o al abrirlo (`deferKey` en
+        `RecordActionsMenu`); el botón se ve desde el primer momento. Medido
+        (primera ficha del día / siguientes, en segundos; «lenta» = 80 ms de
+        latencia, 20/5 Mbps y CPU ×3): plantilla integrada 0,92/0,53 →
+        **0,50/0,31** y con red lenta 1,68/1,02 → **1,04/0,58**; diseño propio
+        guardado 0,75/0,38 → 0,41/0,34; ficha simple 0,43/0,34 → 0,37/0,28
+        (la referencia de v0.1.469 era 0,36/0,31). Sin migración ni cambios
+        visibles más allá de la velocidad. Novedad en el catálogo (ilustración
+        `ficha-abrir`). Tests: `record-layout-integrated.test` en shared (5:
+        plantilla elegida, igual a la ficha automática, primeras 4 relaciones,
+        firma estable, sólo bloques con datos), caso nuevo en
+        `record-view.spec` (la firma del bundle es la que arma el navegador con
+        sus mismos campos y relaciones, una sola llamada con lo ya leído,
+        nada con la ficha simple ni con el editor anterior),
+        `RecordActionsMenu.test` en el front (5) — shared 1229, front 1049,
+        specs de la ficha y los tableros 82/82, bundle app 825/830 KB gz — +
+        E2E navegador en escritorio y celular 390×844 oscuro (la ficha muestra
+        lo vinculado sin pedir los gráficos aparte, «Acciones» con todas sus
+        acciones también en el registro siguiente, sin errores de JS).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -1,5 +1,11 @@
 import { NotFoundException } from '@nestjs/common';
-import type { RichDoc } from '@imagina-base/shared';
+import {
+    integratedRecordLayout,
+    layoutDataBlocks,
+    layoutDataSig,
+    toLayoutFieldLite,
+    type RichDoc,
+} from '@imagina-base/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
@@ -43,6 +49,7 @@ describe('Bundle de la ficha del registro (Postgres real)', () => {
     let facturaKey: string;
     let clienteRelKey: string;
     const reminderCalls: number[] = [];
+    const layoutCalls: Array<{ blocks: unknown[]; preloaded?: unknown }> = [];
 
     beforeAll(async () => {
         pg = await startPostgres();
@@ -77,7 +84,13 @@ describe('Bundle de la ficha del registro (Postgres real)', () => {
                 throw new Error('proveedor caído');
             },
         };
-        const layoutData = { data: async () => ({}) };
+        // Los bloques que pide la ficha (y lo que el bundle ya tenía leído).
+        const layoutData = {
+            data: async (_t: number, _a: unknown, _l: string, _r: number, req: { blocks: unknown[] }, pre?: unknown) => {
+                layoutCalls.push({ blocks: req.blocks, preloaded: pre });
+                return { calculados: req.blocks.length };
+            },
+        };
         svc = new RecordViewService(
             tenantDb,
             lists,
@@ -182,6 +195,45 @@ describe('Bundle de la ficha del registro (Postgres real)', () => {
             await listsSvc.updatePermissions(tenantId, 'clientes', {
                 permissions: { agent: { view: 'own', create: true, edit: 'own', delete: 'none', fields_hidden: [] } },
             });
+        }
+    });
+
+    it('v0.1.472 — con una plantilla integrada trae los datos de sus gráficos, con la misma firma que arma la ficha', async () => {
+        const cli = await recs.create(tenantId, admin, 'clientes', { data: { [nombreKey]: 'Integrada' } });
+        await recs.create(tenantId, admin, 'facturas', { data: { [facturaKey]: 'F-9', [clienteRelKey]: [cli.id] } });
+        try {
+            // Ficha simple: nada que calcular.
+            layoutCalls.length = 0;
+            const simple = await svc.bundle(tenantId, admin, 'clientes', cli.id);
+            expect(simple.layout_data).toBeNull();
+            expect(layoutCalls).toHaveLength(0);
+
+            await listsSvc.update(tenantId, 'clientes', { settings: { record_layout: 'crm', crm_template_id: 'contact' } });
+            layoutCalls.length = 0;
+            const b = await svc.bundle(tenantId, admin, 'clientes', cli.id);
+            // Lo que arma la ficha en el navegador con lo mismo que trae el bundle.
+            const others = new Map(b.linked_lists.map((l) => [l.list.id, l.fields.map(toLayoutFieldLite)]));
+            const layout = integratedRecordLayout({
+                flavor: 'contact',
+                fields: b.fields.map(toLayoutFieldLite),
+                paths: b.relation_paths ?? [],
+                otherFields: (id) => others.get(id) ?? [],
+            });
+            const blocks = layoutDataBlocks(layout);
+            expect(blocks.length).toBeGreaterThan(0);
+            expect(b.layout_data?.sig).toBe(layoutDataSig(blocks));
+            expect(b.layout_data?.data).toEqual({ calculados: blocks.length });
+            // Sin volver a leer la lista ni sus campos.
+            expect(layoutCalls).toHaveLength(1);
+            expect(layoutCalls[0]!.preloaded).toMatchObject({ listId: clientesId });
+
+            // El diseño del editor anterior (`custom`) se convierte en el navegador: no se calcula aquí.
+            await listsSvc.update(tenantId, 'clientes', { settings: { crm_template_id: 'custom' } });
+            layoutCalls.length = 0;
+            expect((await svc.bundle(tenantId, admin, 'clientes', cli.id)).layout_data).toBeNull();
+            expect(layoutCalls).toHaveLength(0);
+        } finally {
+            await listsSvc.update(tenantId, 'clientes', { settings: { record_layout: null, crm_template_id: null } });
         }
     });
 
