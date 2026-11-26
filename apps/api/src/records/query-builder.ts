@@ -10,8 +10,11 @@ import {
     systemFieldBaseType,
     parseCustomDateRange,
     parseDateRangePreset,
+    parseRollingDateRange,
     presetDateRange,
+    relativeDateValueIssue,
     relativeRangeFor as sharedRelativeRangeFor,
+    rollingDateRange,
     type DateRangePreset,
     type FieldType,
     type FilterCondition,
@@ -231,14 +234,9 @@ function compileCondition(
             // FIJO `{from, to}` (YYYY-MM-DD) para el período personalizado de
             // dashboards. Para datetime el día "to" incluye hasta las
             // 23:59:59 (mismo criterio que computePresetRange).
-            const custom = asCustomRange(cond.value);
-            if (custom !== null) {
-                // v0.1.263 — para un datetime, el día empieza y termina en el
-                // reloj de la empresa (antes, a la medianoche UTC).
-                const range = field.type === 'datetime' ? dayRangeInstants(custom.from, custom.to, now.timeZone) : custom;
-                return sql`(${expr} >= ${range.from} AND ${expr} <= ${range.to})`;
-            }
-            const range = computePresetRange(asPreset(cond.value), field.type, now);
+            // v0.1.469 — y `{days, dir}` («próximos N días», «hace más de N
+            // días»…). Los extremos viajan como PARÁMETROS (regla de oro nº 4).
+            const range = compileRelativeRange(cond.value, field.type, now);
             return sql`(${expr} >= ${range.from} AND ${expr} <= ${range.to})`;
         }
         case 'eq':
@@ -379,12 +377,7 @@ function compileSystem(expr: SQL, base: 'datetime' | 'user', cond: FilterConditi
         const ranged = compileDatetimeComparison(expr, op, cond.value, now.timeZone);
         if (ranged !== null) return ranged;
         if (op === 'between_relative') {
-            const custom = asCustomRange(cond.value);
-            if (custom !== null) {
-                const range = dayRangeInstants(custom.from, custom.to, now.timeZone);
-                return sql`(${expr} >= ${range.from} AND ${expr} <= ${range.to})`;
-            }
-            const range = computePresetRange(asPreset(cond.value), 'datetime', now);
+            const range = compileRelativeRange(cond.value, 'datetime', now);
             return sql`(${expr} >= ${range.from} AND ${expr} <= ${range.to})`;
         }
         return undefined;
@@ -446,8 +439,7 @@ function compileFormulaCondition(
             if (op === 'is_null') return sql`(${expr}) IS NULL`;
             if (op === 'is_not_null') return sql`(${expr}) IS NOT NULL`;
             if (op === 'between_relative') {
-                const custom = asCustomRange(cond.value);
-                const range = custom ?? computePresetRange(asPreset(cond.value), 'date', now);
+                const range = compileRelativeRange(cond.value, 'date', now);
                 return sql`((${expr}) >= ${range.from}::date AND (${expr}) <= ${range.to}::date)`;
             }
             if (op === 'eq' || op === 'neq' || op === 'gt' || op === 'gte' || op === 'lt' || op === 'lte') {
@@ -789,6 +781,28 @@ function asCustomRange(value: unknown): { from: string; to: string } | null {
     return custom;
 }
 
+/**
+ * v0.1.469 — El rango de un `between_relative` para el SQL: rango fijo
+ * `{from, to}`, `{days, dir}` («próximos N días», «hace más de N días»…) o
+ * preset, resuelto con la MISMA función compartida que el evaluador en
+ * memoria (automatizaciones, colores de la tabla). Un valor que no sirve es un
+ * 400 explícito con el motivo (SEC-19), nunca un rango a medias.
+ */
+function compileRelativeRange(value: unknown, type: FieldType, now: QueryClock): Range {
+    const custom = asCustomRange(value);
+    if (custom !== null) {
+        // v0.1.263 — para un datetime, el día empieza y termina en el reloj
+        // de la empresa (antes, a la medianoche UTC).
+        return type === 'datetime' ? dayRangeInstants(custom.from, custom.to, now.timeZone) : custom;
+    }
+    const rolling = parseRollingDateRange(value);
+    if (rolling === 'invalid') {
+        throw new BadRequestException(`Rango de fechas inválido: ${relativeDateValueIssue(value) ?? 'revisa la cantidad de días.'}`);
+    }
+    if (rolling !== null) return rollingDateRange(rolling, type, now);
+    return computePresetRange(asPreset(value), type, now);
+}
+
 function asPreset(value: unknown): DateRangePreset {
     // SEC-19: validar contra el enum. Un preset desconocido dejaba from/to en
     // undefined → TypeError → 500. Ahora es un 400 explícito.
@@ -801,7 +815,7 @@ function asPreset(value: unknown): DateRangePreset {
               ? (value as { preset?: unknown }).preset
               : undefined;
     if (typeof raw !== 'string') {
-        throw new BadRequestException('between_relative requiere el slug de un preset');
+        throw new BadRequestException('between_relative requiere un preset, {days, dir} o {from, to}');
     }
     throw new BadRequestException(`Preset de fecha inválido: ${raw}`);
 }

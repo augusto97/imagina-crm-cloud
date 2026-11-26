@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { emailSchema } from './auth';
 import { billingStatusSchema, planSchema, usageSchema, type BillingStatus, type Plan } from './billing';
-import { idSchema } from './common';
+import { idSchema, partialPatch } from './common';
 import { agencySettingsSchema } from './agency';
 import { billingPolicySchema, disabledModulesSchema, tenantAccessSchema } from './plan-access';
 import { storedSignupAttributionSchema } from './signup-attribution';
@@ -147,7 +147,7 @@ export const updateTenantSchema = z
          * v0.1.449 — sus ajustes de agencia (plan de los clientes, tope). Se
          * mezclan con los guardados (v0.1.454): lo que no viene, no se toca.
          */
-        agency_settings: agencySettingsSchema.partial().optional(),
+        agency_settings: partialPatch(agencySettingsSchema.partial()).optional(),
         /** v0.1.449 — la agencia de la que pasa a ser cliente (`null` = ninguna). */
         agency_id: z.number().int().positive().nullable().optional(),
     })

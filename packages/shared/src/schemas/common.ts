@@ -50,3 +50,33 @@ export const paginated = <T extends z.ZodTypeAny>(item: T) =>
         data: z.array(item),
         meta: listMetaSchema,
     });
+
+/**
+ * `.partial()` como lo hacía Zod 3: lo que no llega en un PATCH queda AFUERA.
+ *
+ * En Zod 4 un campo con `.default()` / `.prefault()` dentro de `.partial()`
+ * se rellena con su valor por defecto aunque no venga en el pedido. Los
+ * servicios mezclan el pedido sobre lo guardado (`{...actual, ...pedido}`),
+ * así que guardar UN ajuste devolvía los demás a su valor de fábrica.
+ * Envuelve el resultado de `.partial()`:
+ *
+ *     export const updateXSchema = partialPatch(xSchema.partial());
+ *
+ * Lo que sí llega se valida igual (con sus defaults internos, como antes).
+ */
+export function partialPatch<T extends z.ZodObject>(schema: T): T {
+    const shape: Record<string, z.ZodType> = {};
+    let changed = false;
+    for (const [key, field] of Object.entries(schema.shape as Record<string, z.ZodType>)) {
+        if (!(field instanceof z.ZodOptional)) continue;
+        const inner = field._zod.def.innerType as z.ZodType;
+        let bare = inner;
+        while (bare instanceof z.ZodDefault || bare instanceof z.ZodPrefault) {
+            bare = bare._zod.def.innerType as z.ZodType;
+        }
+        if (bare === inner) continue;
+        shape[key] = bare.optional();
+        changed = true;
+    }
+    return changed ? (schema.extend(shape) as unknown as T) : schema;
+}

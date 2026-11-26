@@ -491,7 +491,7 @@ describe('Mesa de ayuda (Postgres + Redis + IMAP reales)', () => {
                 { priority: 'alta', first_response_hours: 2, resolution_hours: 4 },
                 { priority: null, first_response_hours: 8, resolution_hours: 40 },
             ],
-            calendar: { days: [1, 2, 3, 4, 5], start: '08:00', end: '18:00', holidays: 'co' },
+            calendar: { source: 'own', days: [1, 2, 3, 4, 5], start: '08:00', end: '18:00', holidays: 'co' },
             at_risk_percent: 75,
             notify_user_ids: [ana.userId],
             notify_roles: [],

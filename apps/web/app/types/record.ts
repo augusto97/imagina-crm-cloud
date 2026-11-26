@@ -57,11 +57,12 @@ export type FilterOperator =
     /**
      * Rango relativo dinámico aplicable a campos `date`/`datetime`.
      * El `value` es el slug del preset (`this_month`, `last_30_days`,
-     * etc., ver `dateRangePresets.ts`). El backend
-     * (`QueryBuilder::compileFilter`) lo resuelve a `[from, to]` con
-     * `wp_timezone()` cada vez que la query se ejecuta — así "este
-     * mes" sigue apuntando a este mes la próxima vez que se carga el
-     * dashboard, no a las fechas fijas de cuando se guardó.
+     * etc., ver `dateRangePresets.ts`), cualquier cantidad de días
+     * `{days: N, dir: 'next'|'last'|'before'|'after'}` (v0.1.469) o un
+     * rango fijo `{from, to}`. El servidor (`relativeRangeFor` de shared)
+     * lo resuelve a `[from, to]` en el reloj de la empresa cada vez que la
+     * query se ejecuta — así "este mes" sigue apuntando a este mes la
+     * próxima vez que se carga, no a las fechas fijas de cuando se guardó.
      */
     | 'between_relative';
 

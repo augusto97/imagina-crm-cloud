@@ -49,7 +49,7 @@ export class HelpdeskModule implements OnModuleInit {
                 await this.sla.tick();
             },
             poll: (job) => this.ingest.run(job.tenantId, job.mailboxId),
-            slaList: (job) => this.sla.reconcileList(job.tenantId, job.listId),
+            slaList: (job) => this.sla.reconcileList(job.tenantId, job.listId, job.openOnly ? { openOnly: true, freshHours: true } : {}),
         });
     }
 }

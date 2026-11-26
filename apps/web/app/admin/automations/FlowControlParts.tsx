@@ -18,6 +18,7 @@ import {
     caseBranch,
     isRetryableAction,
     isUserWritableType,
+    normalizeRelativeDateValue,
     readAskAiConfig,
     readOnError,
     readSwitchConfig,
@@ -31,6 +32,7 @@ import {
     type SwitchOp,
 } from '@imagina-base/shared';
 
+import { RelativeDateRangeInput } from '@/admin/records/RelativeDateRangeInput';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -75,6 +77,8 @@ const OPTION_TYPES = new Set(['select', 'multi_select']);
 const SWITCH_SOURCE_SKIP = new Set(['file', 'relation', 'button', 'lookup']);
 /** Con un campo de selección sólo tiene sentido comparar por opción. */
 const OPTION_OPS: SwitchOp[] = ['eq', 'neq', 'in', 'nin', 'is_null', 'is_not_null'];
+/** v0.1.469 — «está en» (este mes, próximos N días…) sólo para fechas (o una variable, que puede traer una). */
+const DATE_SOURCE_TYPES = new Set(['date', 'datetime', 'created_at', 'updated_at']);
 
 function SectionTitle({ children, hint }: { children: React.ReactNode; hint?: string }): JSX.Element {
     return (
@@ -201,10 +205,18 @@ export function SwitchConfig({
             </div>
 
             {cfg.cases.map((c, i) => {
-                const ops = byOption ? OPTION_OPS : (SWITCH_OPS as readonly SwitchOp[]);
+                const dateSource = cfg.source.kind === 'variable' || DATE_SOURCE_TYPES.has(sourceField?.type ?? '');
+                const ops = byOption
+                    ? OPTION_OPS
+                    : (SWITCH_OPS as readonly SwitchOp[]).filter((op) => op !== 'between_relative' || dateSource || c.op === op);
                 const needsValue = !SWITCH_OPS_WITHOUT_VALUE.includes(c.op);
                 const multi = c.op === 'in' || c.op === 'nin';
-                const values = Array.isArray(c.value) ? c.value.map(String) : c.value === null || c.value === undefined || c.value === '' ? [] : [String(c.value)];
+                const relative = c.op === 'between_relative';
+                const values = Array.isArray(c.value)
+                    ? c.value.map(String)
+                    : c.value === null || c.value === undefined || c.value === '' || typeof c.value === 'object'
+                      ? []
+                      : [String(c.value)];
                 return (
                     <div
                         key={i}
@@ -232,7 +244,13 @@ export function SwitchConfig({
                                 onChange={(e) => {
                                     const op = e.target.value as SwitchOp;
                                     const toMulti = op === 'in' || op === 'nin';
-                                    const value = SWITCH_OPS_WITHOUT_VALUE.includes(op) ? null : toMulti ? values : (values[0] ?? '');
+                                    const value = SWITCH_OPS_WITHOUT_VALUE.includes(op)
+                                        ? null
+                                        : op === 'between_relative'
+                                          ? (normalizeRelativeDateValue(c.value) ?? 'this_month')
+                                          : toMulti
+                                            ? values
+                                            : (values[0] ?? '');
                                     patchCase(i, { op, value });
                                 }}
                                 className="imcrm-h-8"
@@ -245,7 +263,11 @@ export function SwitchConfig({
                                     </option>
                                 ))}
                             </Select>
+                            {needsValue && relative && (
+                                <RelativeDateRangeInput value={c.value} onChange={(v) => patchCase(i, { value: v })} aria-label={__('Rango de fechas')} />
+                            )}
                             {needsValue &&
+                                !relative &&
                                 (byOption ? (
                                     multi ? (
                                         <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-1.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-1.5">

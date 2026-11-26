@@ -3992,4 +3992,51 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ver la idea', href: '/ideas/estado-de-cuenta-mensual' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.469-sla-horario-empresa',
+        version: '0.1.469',
+        date: '2026-11-26',
+        kind: 'improvement',
+        title: 'El SLA usa el horario laboral de tu empresa',
+        summary:
+            'En la mesa de ayuda, el horario hábil del SLA puede ser el mismo de Ajustes → Horario laboral: con el almuerzo, el sábado distinto y los festivos de tu país.',
+        media: { illustration: 'mesa-sla' },
+        body: [
+            '- Está en **Configurar lista → SLA → Horario hábil → Usar el horario laboral de la empresa**.',
+            '- Si cambias el horario o la zona horaria de la empresa, los vencimientos de los tickets abiertos se recalculan solos. Los cerrados no cambian.',
+            '- Si tu lista ya tenía un horario propio para el SLA, lo conserva hasta que elijas el de la empresa.',
+        ].join('\n'),
+        action: { label: 'Ver el SLA', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
+    {
+        key: 'v0.1.469-filtros-n-dias',
+        version: '0.1.469',
+        date: '2026-11-26',
+        kind: 'improvement',
+        title: 'Filtra por cualquier cantidad de días',
+        summary:
+            'En un filtro de fecha ahora puedes elegir «Próximos N días», «Últimos N días», «Hace más de N días» o «Dentro de más de N días» con el número que quieras, o un rango personalizado.',
+        media: { illustration: 'vistas-filtros' },
+        body: [
+            '- Debajo del filtro ves las fechas exactas que abarca, en el formato de tu empresa.',
+            '- Sirve en la tabla, las vistas guardadas, los colores, los tableros, las automatizaciones y los documentos PDF.',
+        ].join('\n'),
+        action: { label: 'Probarlo', href: '/lists' },
+    },
+    {
+        key: 'v0.1.469-ajustes-parciales',
+        version: '0.1.469',
+        date: '2026-11-26',
+        kind: 'fix',
+        title: 'Cambiar un ajuste ya no modifica los demás',
+        summary:
+            'Al guardar sólo una parte de la configuración (por ejemplo desde el asistente o la API), otros ajustes podían volver a su valor de fábrica. Ya no pasa.',
+        media: { illustration: 'mesa-sla' },
+        body: [
+            '- Afectaba al SLA de la mesa de ayuda, a la lista pública, a los informes y a los ajustes de agencia.',
+            '- Si en los últimos días cambiaste alguno de estos, revisa que el resto siga como lo dejaste.',
+        ].join('\n'),
+        audience: { roles: ['admin'] },
+    },
 ];

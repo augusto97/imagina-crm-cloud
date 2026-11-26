@@ -17641,6 +17641,79 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         corre sólo para el cliente con saldo con el PDF adjunto, «Crear el
         estado de cuenta» desde otra lista).
 
+  - [x] **SLA con el horario de la empresa, filtros de N días, personas y
+        equipos al migrar, y ajustes parciales que ya no se pisan (v0.1.469,
+        lo que quedaba pendiente de v0.1.466-468)**. Cuatro partes:
+        (a) **El SLA usa el horario laboral de la empresa** (addendum
+        ADR-S70, idea G15): Configuración de la lista → SLA → Horario hábil
+        elige «Usar el horario laboral de la empresa» (el de Ajustes →
+        Horario laboral: varios tramos por día, el sábado distinto y los
+        festivos de los 33 países, con el resumen en una línea y el enlace a
+        Ajustes; `data-tour="sla-calendar-source"`) o «Un horario propio
+        para el SLA» (el editor de siempre). `calendar.source` sin
+        migración: lo guardado sin el dato se lee como `own` y ninguna lista
+        cambia sola; una política nueva —panel, plantilla «Mesa de ayuda /
+        Tickets», asistente— nace con `company`. Una sola aritmética en
+        shared (`SlaCalendar`, `businessWindowsOfDay`, `slaCalendarFor`).
+        Cambiar el horario o la zona de la empresa recalcula por tandas de
+        200 los tickets ABIERTOS (cola `sla-open-<lista>`, sin caché, y sin
+        Redis en el acto), sin disparar automatizaciones y con los avisos
+        una vez por objetivo; los cerrados no cambian. `get_list_schema`
+        dice el origen. De paso, el selector de festivos del horario propio
+        ya no se corta.
+        (b) **Filtros de fecha con cualquier cantidad de días** (addendum
+        ADR-S33): «en…» suma «Próximos / Últimos / Hace más de / Dentro de
+        más de N días» (1-3650) y «Personalizado…», con una línea que dice
+        el rango real en el formato y la zona de la empresa («Del 26/11/2026
+        al 05/12/2026»). Se guarda `{days, dir}` (el día límite no cuenta en
+        «hace más de» ni en «dentro de más de») y lo resuelve UNA función de
+        shared (`relativeRangeFor`) para el QueryBuilder (tabla, vistas,
+        listas públicas, filtros de tableros, asistente), las condiciones de
+        las automatizaciones (también «Según el valor de…», que gana «está
+        en» para fechas y variables), las reglas de color y el filtro de
+        ítems de los PDF; un valor inválido es 400, regla quitada con aviso
+        en el PDF o error corregible para el asistente/MCP. El selector
+        (`RelativeDateRangeInput`) vive en el `FilterValueInput` compartido.
+        Fuera: el período propio de cada widget y el selector de período del
+        tablero.
+        (c) **Migrar una empresa traduce las personas y equipos de los
+        filtros** (addendum ADR-S23): el VALOR de una condición sobre
+        Persona, Creado por, Modificado por o Equipo seguía con el id del
+        origen. `remapConditionValue` (el id que viajó pasa al nuevo; el que
+        no, sale; una condición vacía se quita; se conservan «Mis equipos»,
+        el 0 de «Sistema» y las variables) en vistas y reglas de color,
+        filtros guardados, tableros, informes, campos (mostrar sólo si,
+        obligatorio si, rollup, Botón), formularios (mostrar sólo si,
+        saltos, pantallas finales), plantillas de documento, ajustes de la
+        lista y las automatizaciones por slug en todas las ramas. Una
+        automatización que pierde una condición llega pausada. **Bug
+        latente**: «Crear un registro» guardaba la lista destino en
+        `target_list` y nunca se traducía (después de migrar fallaba o
+        creaba en otra lista); ahora se traduce o llega pausada.
+        (d) **Guardar un ajuste ya no devuelve los demás a su valor de
+        fábrica** (addendum ADR-S38): desde la migración a Zod 4 (v0.1.465),
+        un campo con `.default()` dentro de `.partial()` se rellenaba aunque
+        no llegara, y los servicios mezclan el pedido sobre lo guardado.
+        Guardar sólo una parte borraba los objetivos y avisos del SLA, los
+        campos visibles de la lista pública, los bloques de un informe, el
+        plan de los clientes de una agencia, y reseteaba las copias, las
+        páginas legales y la ayuda de la plataforma (sobre todo por la API y
+        el asistente). `partialPatch(x.partial())` en `schemas/common.ts`
+        devuelve la semántica de Zod 3 y `partial-patch.test.ts` recorre
+        todos los esquemas exportados para que no vuelva. Novedad «Cambiar
+        un ajuste ya no modifica los demás» para admins.
+        Ayuda: guía `helpdesk` y `filter-save-view`, Aprende (mesa de ayuda
+        y filtros) y novedades del SLA y de los N días. G15 sigue en
+        `docs/ideas.md` sólo para las fórmulas y las plantillas. Tests:
+        `helpdesk-company-hours.spec` (8), `date-ranges-rolling.spec` (6),
+        8 nuevos en `tenant-transfer-remap.spec` y 1 en `tenant-transfer`,
+        regresión del PATCH parcial en `public-lists`, `reports`,
+        `helpdesk-company-hours` y `agency` (fallan sin el arreglo), y en
+        shared `date-ranges-rolling.test` (19), `partial-patch.test` y los
+        del SLA — shared 1213, front 1037, 15 specs relacionados de la API
+        211/211 — + E2E navegador 24/24 del SLA y 28/28 de los filtros en
+        escritorio claro y celular 390×844 oscuro.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

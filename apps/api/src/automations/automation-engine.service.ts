@@ -3139,7 +3139,12 @@ export class AutomationEngine {
             const message = ctx.sim ? 'Se cumple: seguiría con los pasos siguientes.' : 'Se cumplió: siguió con los pasos siguientes.';
             return { log: [ok(A, message, { path: pathKey, ...(ctx.sim ? { _sim: 'info', checks } : {}) })] };
         }
-        const failed = checks.filter((c) => !c.ok).map((c) => conditionRuleText(c.label, c.op, this.ruleValueText(ctx, c.field, c.expected)));
+        // v0.1.469 — una fecha relativa se lee entera («Vence» está en los próximos 10 días).
+        const ymdText = (ymd: string): string =>
+            String(formatEmailFieldValue({ type: 'date', config: {} }, ymd, { ...(ctx.format ?? DEFAULT_FORMAT), timezone: ctx.timeZone ?? FALLBACK_TIME_ZONE }));
+        const failed = checks
+            .filter((c) => !c.ok)
+            .map((c) => conditionRuleText(c.label, c.op, this.ruleValueText(ctx, c.field, c.expected), c.expected, ymdText));
         const extra = failed.length - 2;
         const what = `No se cumplía ${failed.slice(0, 2).join(' ni ')}${extra > 0 ? ` (ni ${extra} regla${extra === 1 ? '' : 's'} más)` : ''}`;
         const where = ctx.item

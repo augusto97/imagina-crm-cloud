@@ -48,6 +48,7 @@ import { ASSIGN_MODE_LABELS, ON_ERROR_EXEMPT_ACTIONS, describeAskAi, describeOnE
 import { APPROVAL_STATUS_LABELS, SUBSCRIPTION_EVENT_LABELS, requestSignatureSummary, signatureTriggerSummary, describeCommentTrigger, readCommentTriggerConfig, readFindRecordsConfig, readUpsertRecordConfig, type SubscriptionEvent, describeWait, describeWaitApproval, describeWebhookRecord, describeWhatsTrigger, readWhatsTriggerConfig, readApprovalTriggerResults, readWebhookRecordConfig, scheduleParts } from '@imagina-base/shared';
 
 import { __, _n, sprintf } from '@/lib/i18n';
+import { formatDateStr } from '@/lib/tenantFormat';
 import type { ActionMeta, ActionSpec, TriggerConfig } from '@/types/automation';
 import type { FieldEntity } from '@/types/field';
 import type { ListSummary } from '@/types/list';
@@ -356,7 +357,12 @@ function fieldLabel(fields: FieldEntity[], slug: string): string {
  * su etiqueta (también `item.slug` y las variables) y el valor de una opción
  * por su etiqueta.
  */
-function conditionRuleParts(fields: FieldEntity[], field: string, op: string, value: unknown): { label: string; op: string; valueText: string } {
+function conditionRuleParts(
+    fields: FieldEntity[],
+    field: string,
+    op: string,
+    value: unknown,
+): { label: string; op: string; valueText: string; value: unknown } {
     const f = fields.find((x) => x.slug === field);
     const options = (f?.config as { options?: Array<{ value?: unknown; label?: unknown }> } | undefined)?.options ?? [];
     const one = (v: unknown): string => {
@@ -364,7 +370,8 @@ function conditionRuleParts(fields: FieldEntity[], field: string, op: string, va
         return hit ? String(hit.label ?? hit.value ?? '') : String(v);
     };
     const values = (Array.isArray(value) ? value : [value]).filter((v) => v !== null && v !== undefined && v !== '');
-    return { label: f?.label ?? field, op, valueText: values.map(one).join(', ') };
+    // v0.1.469 — `value` viaja crudo: una fecha relativa se dice entera («está en los próximos 10 días»).
+    return { label: f?.label ?? field, op, valueText: values.map(one).join(', '), value };
 }
 
 function conditionCount(value: unknown): number {
@@ -747,7 +754,7 @@ export function summarizeAction(
             return what !== '' ? `${base} · «${what.slice(0, 60)}${what.length > 60 ? '…' : ''}»` : base;
         }
         case STOP_UNLESS_ACTION:
-            return __(describeStopUnless(readStopUnlessRules(cfg).map((r) => conditionRuleParts(fields, r.field, r.op, r.value))));
+            return __(describeStopUnless(readStopUnlessRules(cfg).map((r) => conditionRuleParts(fields, r.field, r.op, r.value)), (ymd) => formatDateStr(ymd)));
         case ADD_COMMENT_ACTION: {
             const c = readAddCommentConfig(cfg);
             const text = c.body.trim().replace(/\s+/g, ' ');

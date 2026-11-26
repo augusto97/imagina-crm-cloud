@@ -63,8 +63,11 @@ export function helpdeskSettingsErrors(s: HelpdeskSettings, fields: readonly Fie
             errors[`sla.targets.${i}.priority`] = priority ? `«${t.priority}» no es una opción de «${priority.label}».` : 'Elige el campo de prioridad.';
         }
     });
-    if (sla.calendar.days.length === 0) errors['sla.calendar.days'] = 'Elige al menos un día laborable.';
-    if (sla.calendar.end <= sla.calendar.start) errors['sla.calendar.end'] = 'La hora de fin tiene que ser después de la de inicio.';
+    // v0.1.469 — con el horario laboral de la empresa, el propio no se usa (ni se exige).
+    if (sla.calendar.source === 'own') {
+        if (sla.calendar.days.length === 0) errors['sla.calendar.days'] = 'Elige al menos un día laborable.';
+        if (sla.calendar.end <= sla.calendar.start) errors['sla.calendar.end'] = 'La hora de fin tiene que ser después de la de inicio.';
+    }
     need('sla.notify_assignee_field_id', sla.notify_assignee_field_id, ['user'], 'el responsable');
     const esc = need('sla.escalate_set_field_id', sla.escalate_set_field_id, ['select', 'user', 'checkbox'], 'el escalamiento');
     if (esc?.type === 'select' && sla.escalate_set_value !== null && !optionValues(esc).has(sla.escalate_set_value)) {

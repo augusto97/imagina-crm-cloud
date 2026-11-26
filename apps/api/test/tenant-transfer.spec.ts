@@ -109,9 +109,11 @@ describe('Migración de empresa (v0.1.197)', () => {
     let agentAId: number;
     let equipoFieldId: number;
     let mailboxAId: number;
+    let intrusaId: number;
 
     // Destino
     let tenantB: number;
+    let importWarnings: string[] = [];
 
     beforeAll(async () => {
         pg = await startPostgres();
@@ -772,6 +774,89 @@ describe('Migración de empresa (v0.1.197)', () => {
                 },
             })
             .where(eq(lists.id, clientesId));
+
+        // Condiciones cuyo VALOR es una persona o un equipo: viajan con los ids
+        // NUEVOS de Carlos (se crea de nuevo) y de Ventas. «Intrusa» no es de
+        // ACME (no viaja): la condición que la nombra se descarta.
+        const [intrusa] = await pg.db
+            .insert(users)
+            .values({ email: 'intrusa@otra.test', passwordHash: 'hash-intrusa', name: 'Intrusa' })
+            .returning();
+        intrusaId = intrusa!.id;
+        await pg.db.insert(savedViews).values({
+            tenantId: tenantA,
+            listId: clientesId,
+            name: 'De Carlos',
+            type: 'table',
+            config: {
+                filter_tree: {
+                    type: 'group',
+                    logic: 'and',
+                    children: [
+                        { type: 'condition', field_id: dueñoFieldId, op: 'eq', value: carlosId },
+                        { type: 'condition', field_id: equipoFieldId, op: 'in', value: [teamAId] },
+                        { type: 'group', logic: 'or', children: [{ type: 'condition', field_id: dueñoFieldId, op: 'eq', value: intrusaId }] },
+                    ],
+                },
+                color_rules: [
+                    { id: 'r1', enabled: true, condition: { type: 'condition', field_id: dueñoFieldId, op: 'eq', value: intrusaId }, color: 'red', target: 'row' },
+                    { id: 'r2', enabled: true, condition: { type: 'condition', field_id: equipoFieldId, op: 'eq', value: teamAId }, color: 'green', target: 'row' },
+                ],
+            },
+        });
+        await pg.db
+            .update(dashboards)
+            .set({
+                widgets: [
+                    { type: 'kpi', list_id: facturasId, metric_field_id: estadoFieldId },
+                    { type: 'heading', list_id: 0, config: { text: 'Resumen' } },
+                    {
+                        type: 'kpi',
+                        list_id: clientesId,
+                        config: {
+                            metric: 'count',
+                            filter_tree: {
+                                type: 'group',
+                                logic: 'and',
+                                children: [
+                                    { type: 'condition', field_id: dueñoFieldId, op: 'in', value: [carlosId, intrusaId] },
+                                    { type: 'condition', field_id: equipoFieldId, op: 'in', value: ['$my_teams', teamAId] },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            })
+            .where(eq(dashboards.id, dashboardAId));
+        await pg.db.insert(automations).values([
+            {
+                tenantId: tenantA,
+                listId: clientesId,
+                name: 'Asignada a Carlos',
+                triggerType: 'record_updated',
+                triggerConfig: { field_filters: [{ field: 'dueno', op: 'eq', value: carlosId }] } as never,
+                actions: [
+                    {
+                        type: 'if_else',
+                        config: {
+                            condition: [{ field: 'equipo', op: 'in', value: [teamAId] }],
+                            then_actions: [{ type: 'create_record', config: { target_list: facturasId, values: {} } }],
+                            else_actions: [],
+                        },
+                    },
+                ] as never,
+                isActive: true,
+            },
+            {
+                tenantId: tenantA,
+                listId: clientesId,
+                name: 'De la intrusa',
+                triggerType: 'record_created',
+                triggerConfig: { field_filters: [{ field: 'dueno', op: 'eq', value: String(intrusaId) }] } as never,
+                actions: [] as never,
+                isActive: true,
+            },
+        ]);
     }, 180_000);
 
     afterAll(async () => {
@@ -808,6 +893,7 @@ describe('Migración de empresa (v0.1.197)', () => {
 
         const res = await svc.importTenant({ file, name: 'ACME (migrada)' });
         tenantB = res.tenant_id;
+        importWarnings = res.warnings;
         expect(tenantB).not.toBe(tenantA);
         expect(res.slug).toBe('acme-2');
         expect(res.users_linked).toBe(1);
@@ -907,7 +993,8 @@ describe('Migración de empresa (v0.1.197)', () => {
 
         // ── Vistas, comentarios, menciones, actividad ──────────────────
         const newViews = await pg.db.select().from(savedViews).where(eq(savedViews.tenantId, tenantB));
-        expect(newViews[0]!.config).toEqual({ group_by_field_id: newEstado.id });
+        const porEstado = newViews.find((v) => v.name === 'Por estado')!;
+        expect(porEstado.config).toEqual({ group_by_field_id: newEstado.id });
         const newComments = await pg.db.select().from(comments).where(eq(comments.tenantId, tenantB));
         expect(newComments).toHaveLength(3);
         const delSistema = newComments.find((c) => c.userId === 0)!;
@@ -999,7 +1086,7 @@ describe('Migración de empresa (v0.1.197)', () => {
 
         // ── Automatizaciones ───────────────────────────────────────────
         const newAutos = await pg.db.select().from(automations).where(eq(automations.tenantId, tenantB));
-        expect(newAutos).toHaveLength(3);
+        expect(newAutos).toHaveLength(5);
         // D5 — la agenda: dirección nueva, persona y campo re-apuntados, y la
         // cita colgando del registro NUEVO; el disparador apunta a la página nueva.
         const [newAgenda] = await pg.db.select().from(bookingPages).where(eq(bookingPages.tenantId, tenantB));
@@ -1190,7 +1277,7 @@ describe('Migración de empresa (v0.1.197)', () => {
         expect(permissions.assignment_team_field_id).toBe(newEquipo.id);
         const pub = settings.public as Record<string, unknown>;
         expect(pub.token).toBe(newPublic[0]!.token);
-        expect(pub.view_id).toBe(newViews[0]!.id);
+        expect(pub.view_id).toBe(porEstado.id);
         expect(pub.visible_field_slugs).toEqual(['nombre']);
 
         // ── Bitácora y uso ─────────────────────────────────────────────
@@ -1203,6 +1290,77 @@ describe('Migración de empresa (v0.1.197)', () => {
         // El dominio propio no viaja y el enlace público cambió: ambos avisan.
         expect(res.warnings.some((w) => w.includes('lista(s) pública(s)'))).toBe(true);
     }, 120_000);
+
+    it('las condiciones por persona o equipo apuntan a las personas y equipos NUEVOS', async () => {
+        const [carlosNuevo] = await pg.db.select().from(users).where(eq(users.email, 'carlos@acme.test'));
+        const [ventasNuevo] = await pg.db.select().from(teams).where(eq(teams.tenantId, tenantB));
+        const newCarlos = carlosNuevo!.id;
+        const newTeam = ventasNuevo!.id;
+        expect(newCarlos).not.toBe(carlosId);
+        expect(newTeam).not.toBe(teamAId);
+        const newFields = await pg.db.select().from(fields).where(eq(fields.tenantId, tenantB));
+        const newDueno = newFields.find((f) => f.slug === 'dueno')!.id;
+        const newEquipo = newFields.find((f) => f.slug === 'equipo')!.id;
+        const [newFacturas] = await pg.db
+            .select()
+            .from(lists)
+            .where(and(eq(lists.tenantId, tenantB), eq(lists.slug, 'facturas')));
+
+        // ── Vista: filtro y reglas de color ────────────────────────────
+        const [vista] = await pg.db
+            .select()
+            .from(savedViews)
+            .where(and(eq(savedViews.tenantId, tenantB), eq(savedViews.name, 'De Carlos')));
+        const cfg = vista!.config as { filter_tree: unknown; color_rules: unknown };
+        // La condición sobre la intrusa (no viajó) se descartó, y su grupo, vacío, también.
+        expect(cfg.filter_tree).toEqual({
+            type: 'group',
+            logic: 'and',
+            children: [
+                { type: 'condition', field_id: newDueno, op: 'eq', value: newCarlos },
+                { type: 'condition', field_id: newEquipo, op: 'in', value: [newTeam] },
+            ],
+        });
+        // La regla de color que nombraba a la intrusa se fue entera.
+        expect(cfg.color_rules).toEqual([
+            { id: 'r2', enabled: true, condition: { type: 'condition', field_id: newEquipo, op: 'eq', value: newTeam }, color: 'green', target: 'row' },
+        ]);
+
+        // ── Tablero: el filtro del widget ─────────────────────────────
+        const [tablero] = await pg.db
+            .select()
+            .from(dashboards)
+            .where(and(eq(dashboards.tenantId, tenantB), eq(dashboards.name, 'Comercial')));
+        const widget = (tablero!.widgets as Array<{ config?: { filter_tree?: unknown } }>)[2]!;
+        expect(widget.config!.filter_tree).toEqual({
+            type: 'group',
+            logic: 'and',
+            children: [
+                // La intrusa sale de la lista; Carlos queda con su id nuevo.
+                { type: 'condition', field_id: newDueno, op: 'in', value: [newCarlos] },
+                // «Mis equipos» no es un id: se conserva.
+                { type: 'condition', field_id: newEquipo, op: 'in', value: ['$my_teams', newTeam] },
+            ],
+        });
+
+        // ── Automatizaciones: condiciones por slug ────────────────────
+        const autos = await pg.db.select().from(automations).where(eq(automations.tenantId, tenantB));
+        const asignada = autos.find((a) => a.name === 'Asignada a Carlos')!;
+        expect(asignada.isActive).toBe(true);
+        expect(asignada.triggerConfig).toEqual({ field_filters: [{ field: 'dueno', op: 'eq', value: newCarlos }] });
+        const ifElse = (asignada.actions as Array<{ config: Record<string, unknown> }>)[0]!.config;
+        expect(ifElse.condition).toEqual([{ field: 'equipo', op: 'in', value: [newTeam] }]);
+        // `target_list` de «Crear un registro» (no sigue la convención) apunta a la lista NUEVA.
+        expect((ifElse.then_actions as Array<{ config: { target_list: number } }>)[0]!.config.target_list).toBe(newFacturas!.id);
+        // La que nombraba a la intrusa perdió la condición: llega PAUSADA (sin
+        // ella dispararía con TODOS los registros).
+        const intrusaAuto = autos.find((a) => a.name === 'De la intrusa')!;
+        expect(intrusaAuto.isActive).toBe(false);
+        expect(intrusaAuto.triggerConfig).toEqual({ field_filters: [] });
+
+        expect(importWarnings.some((w) => w.startsWith('2 condición(es)') && w.includes('no viajó'))).toBe(true);
+        expect(importWarnings.some((w) => w.startsWith('1 automatización(es) llegaron PAUSADAS'))).toBe(true);
+    });
 
     it('la empresa original queda intacta', async () => {
         const original = await pg.db.select().from(records).where(eq(records.tenantId, tenantA));

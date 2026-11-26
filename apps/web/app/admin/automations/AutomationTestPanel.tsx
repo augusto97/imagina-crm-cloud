@@ -3,6 +3,7 @@ import { AlertTriangle, Check, CheckCircle2, CircleDashed, FlaskConical, Info, L
 import {
     APPROVAL_RESULT_LABELS,
     APPROVAL_RESULTS,
+    relativeDateLabel,
     type ApprovalResult,
     type AutomationTestRunInput,
     type AutomationTestRunResult,
@@ -31,6 +32,7 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useRecords } from '@/hooks/useRecords';
 import { ApiError } from '@/lib/api';
 import { __, sprintf } from '@/lib/i18n';
+import { formatDateStr } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 import type { ActionMeta, ActionSpec, TriggerConfig } from '@/types/automation';
 import type { FieldEntity } from '@/types/field';
@@ -521,7 +523,9 @@ function ChecksTable({ checks }: { checks: ConditionCheck[] }): JSX.Element {
                     {c.ok ? <Check className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-success" /> : <X className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-destructive" />}
                     <span className="imcrm-font-medium">{c.label}</span>
                     <span className="imcrm-text-muted-foreground">{__(OP_LABELS[c.op] ?? c.op)}</span>
-                    {!['is_null', 'is_empty', 'is_not_null', 'is_not_empty', 'changed'].includes(c.op) && <span>{showValue(c.expected)}</span>}
+                    {!['is_null', 'is_empty', 'is_not_null', 'is_not_empty', 'changed'].includes(c.op) && (
+                        <span>{c.op === 'between_relative' ? (relativeDateLabel(c.expected, (ymd) => formatDateStr(ymd)) ?? showValue(c.expected)) : showValue(c.expected)}</span>
+                    )}
                     <span className="imcrm-text-muted-foreground">· {sprintf(__('tiene: %s'), showValue(c.actual))}</span>
                 </li>
             ))}

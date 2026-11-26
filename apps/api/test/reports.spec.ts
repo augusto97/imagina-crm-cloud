@@ -1,5 +1,5 @@
 import { createServer, type Server } from 'node:net';
-import { openXlsx, type CreateFieldInput, type Field, type ReportBlock } from '@imagina-base/shared';
+import { openXlsx, updateReportSchema, type CreateFieldInput, type Field, type ReportBlock } from '@imagina-base/shared';
 import { eq } from 'drizzle-orm';
 import { PDFDocument } from 'pdf-lib';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -492,6 +492,17 @@ describe('Informes con bloques de varias listas (Postgres real)', () => {
         expect(left).toEqual([]);
         const actions = (await withTenant(pg.db, tenantId, (tx) => tx.select().from(auditLog).where(eq(auditLog.tenantId, tenantId)))).map((a) => a.action);
         expect(actions).toEqual(expect.arrayContaining(['report.create', 'report.duplicate', 'report.delete']));
+    });
+
+    it('renombrar (por el esquema, como el controlador) no borra los bloques ni los ajustes', async () => {
+        const before = await service.get(tenantId, reportId, as('admin'));
+        expect(before.blocks.length).toBeGreaterThan(0);
+        // Zod 4 rellenaba `blocks: []` cuando no llegaba (v0.1.469).
+        const body = updateReportSchema.parse({ name: before.name });
+        expect(Object.keys(body)).toEqual(['name']);
+        const after = await service.update(tenantId, reportId, as('admin'), body);
+        expect(after.blocks).toEqual(before.blocks);
+        expect(after.settings).toEqual(before.settings);
     });
 
     it('RLS: los informes de una empresa no se ven ni se escriben desde otra', async () => {

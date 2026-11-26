@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { partialPatch } from './common';
 import type { Capability } from './membership';
 import { resolveEmbed } from './embeds';
 
@@ -341,15 +342,16 @@ export const platformHelpSchema = z.object({
 export type PlatformHelp = z.infer<typeof platformHelpSchema>;
 
 /** Cada clave presente REEMPLAZA a la guardada (el panel manda la sección entera). */
-export const updatePlatformHelpSchema = z
-    .object({
-        support: helpSupportSchema,
-        videos: platformHelpSchema.shape.videos,
-        hidden: platformHelpSchema.shape.hidden,
-        custom: platformHelpSchema.shape.custom,
-    })
-    .partial()
-    .strict();
+export const updatePlatformHelpSchema = partialPatch(
+    z
+        .object({
+            support: helpSupportSchema,
+            videos: platformHelpSchema.shape.videos,
+            hidden: platformHelpSchema.shape.hidden,
+            custom: platformHelpSchema.shape.custom,
+        })
+        .partial(),
+).strict();
 export type UpdatePlatformHelpInput = z.input<typeof updatePlatformHelpSchema>;
 
 /**

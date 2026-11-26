@@ -25,6 +25,11 @@ describe('valueForOperator (v0.1.191) — el valor cambia de forma con el operad
         expect(valueForOperator('is_null', ['a'])).toBeNull();
         expect(valueForOperator('between_relative', '2026-01-01')).toBe('this_month');
         expect(valueForOperator('between_relative', 'last_week')).toBe('last_week');
+        // v0.1.469 — también se conservan «cualquier cantidad de días» y un rango fijo.
+        expect(valueForOperator('between_relative', { days: '10', dir: 'next' })).toEqual({ days: 10, dir: 'next' });
+        expect(valueForOperator('between_relative', { from: '2026-11-01', to: '2026-11-30' })).toEqual({ from: '2026-11-01', to: '2026-11-30' });
+        expect(valueForOperator('between_relative', { days: 0, dir: 'next' })).toBe('this_month');
+        expect(valueForOperator('between_relative', 'no_existe')).toBe('this_month');
     });
 
     it('isMultiValueOperator / toValueList (tolera el CSV viejo)', () => {

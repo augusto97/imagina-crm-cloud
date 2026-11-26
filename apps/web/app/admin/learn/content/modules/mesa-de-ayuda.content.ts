@@ -337,7 +337,7 @@ export const articles: LearnArticle[] = [
                 items: [
                     'En los ajustes de la lista, abre la pestaña **SLA**.',
                     'Enciende **Medir el SLA de los tickets de esta lista**.',
-                    'Pon los **Objetivos**, el **Horario hábil** y los **Avisos y escalamiento**.',
+                    'Pon los **Objetivos**, el **Horario hábil** (el de la empresa o uno propio) y los **Avisos y escalamiento**.',
                     'Toca **Crear las columnas del SLA** si la lista todavía no las tiene.',
                     'Toca **Guardar el SLA**.',
                 ],
@@ -357,15 +357,21 @@ export const articles: LearnArticle[] = [
                 t: 'settings',
                 title: 'Horario hábil',
                 rows: [
-                    { name: 'Días hábiles', what: 'Por ejemplo, de lunes a viernes.' },
-                    { name: 'Desde / Hasta', what: 'La jornada, por ejemplo de 8:00 a 18:00, en la zona horaria de la empresa.' },
-                    { name: 'Festivos', what: '**De Colombia** o **Ninguno**. Con los de Colombia, un lunes festivo no cuenta.' },
+                    {
+                        name: 'Usar el horario laboral de la empresa',
+                        what: 'El de **Ajustes → Horario laboral**: varios tramos por día (el almuerzo no cuenta), un horario distinto el sábado y los festivos del país que elegiste. Es lo que usa una lista nueva y la plantilla **Mesa de ayuda**.',
+                        tip: 'Si cambias el horario de la empresa o su zona horaria, los vencimientos de los tickets abiertos se recalculan solos.',
+                    },
+                    {
+                        name: 'Un horario propio para el SLA',
+                        what: 'Días, **Desde / Hasta** y festivos (**De Colombia** o **Ninguno**) sólo para esta lista, en la zona horaria de la empresa. Las listas que ya tenían su horario lo conservan.',
+                    },
                 ],
             },
             {
                 t: 'example',
                 title: 'Cómo se cuenta',
-                md: 'Un ticket de prioridad **Alta** (resolución en 8 horas hábiles) llega el viernes a las 16:00, con horario de 8:00 a 18:00. El viernes cuentan 2 horas; el sábado y el domingo no cuentan; el lunes es festivo. Vence el **martes a las 14:00**. Si el martes a las 9:00 le preguntas algo al cliente y lo pones en **Esperando al cliente**, el reloj se detiene hasta que conteste.',
+                md: 'Un ticket de prioridad **Alta** (resolución en 8 horas hábiles) llega el viernes a las 16:00 y la empresa trabaja de 8:00 a 12:00 y de 13:00 a 17:00. El viernes cuenta 1 hora; el sábado y el domingo no cuentan; el lunes es festivo. El martes cuentan 4 horas por la mañana, el almuerzo no, y 3 por la tarde: vence el **martes a las 16:00**. Si el martes a las 9:00 le preguntas algo al cliente y lo pones en **Esperando al cliente**, el reloj se detiene hasta que conteste.',
             },
             { t: 'h', text: 'Avisos y escalamiento' },
             {
@@ -401,7 +407,8 @@ export const articles: LearnArticle[] = [
                 items: [
                     { q: 'Cambié la prioridad de un ticket, ¿se recalcula?', a: 'Sí: los vencimientos se calculan otra vez con los objetivos de la nueva prioridad.' },
                     { q: '¿Qué pasa con los registros que ya existían al activar el SLA?', a: 'Se miden desde que se crearon. Los que ya pasaron su objetivo quedan como vencidos y avisan una vez. Si tienes muchos casos viejos abiertos, ciérralos antes de activar el SLA para no llenar de avisos al equipo.' },
-                    { q: '¿Puedo tener otro horario los sábados?', a: 'El horario es uno para todos los días hábiles. Si atienden los sábados, inclúyelos en los días hábiles.' },
+                    { q: '¿Puedo tener otro horario los sábados?', a: 'Sí: con **Usar el horario laboral de la empresa**, en **Ajustes → Horario laboral** cada día tiene sus tramos (por ejemplo, el sábado de 8:00 a 12:00). El horario propio del SLA es uno solo para todos los días hábiles.' },
+                    { q: 'Si cambio el horario de la empresa, ¿qué pasa con los tickets?', a: 'Los abiertos se recalculan solos con el horario nuevo; los cerrados conservan lo que se midió. Los avisos siguen llegando una sola vez por ticket y por umbral.' },
                 ],
             },
             {

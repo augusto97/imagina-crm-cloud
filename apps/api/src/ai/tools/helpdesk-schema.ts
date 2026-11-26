@@ -6,8 +6,12 @@ import { readHelpdeskMailboxMarker, readHelpdeskSettings, type Field } from '@im
  * estados, las respuestas guardadas y la política de SLA. NUNCA secretos: del
  * buzón sólo viaja la dirección de soporte (ni servidor, ni usuario, ni
  * contraseña). null si la lista no usa la mesa de ayuda.
+ *
+ * v0.1.469 — `business_hours.source` dice de dónde sale el horario del SLA:
+ * `company` (el horario laboral de la empresa, con su resumen) u `own` (el
+ * propio de la política).
  */
-export function describeHelpdeskForModel(listSettings: unknown, fieldById: Map<number, Field>): Record<string, unknown> | null {
+export function describeHelpdeskForModel(listSettings: unknown, fieldById: Map<number, Field>, companyHoursSummary: string | null = null): Record<string, unknown> | null {
     const marker = readHelpdeskMailboxMarker(listSettings);
     const s = readHelpdeskSettings(listSettings);
     if (!marker && !s.sla.enabled) return null;
@@ -47,12 +51,20 @@ export function describeHelpdeskForModel(listSettings: unknown, fieldById: Map<n
                       first_response_hours: t.first_response_hours,
                       resolution_hours: t.resolution_hours,
                   })),
-                  business_hours: {
-                      days: p.calendar.days,
-                      start: p.calendar.start,
-                      end: p.calendar.end,
-                      holidays: p.calendar.holidays === 'co' ? 'festivos de Colombia' : 'ninguno',
-                  },
+                  business_hours:
+                      p.calendar.source === 'company'
+                          ? {
+                                source: 'company',
+                                summary: companyHoursSummary,
+                                note: 'Usa el horario laboral de la empresa (Ajustes → Horario laboral): varios tramos por día y los festivos de su país. Cambiarlo ahí recalcula los vencimientos de los tickets abiertos.',
+                            }
+                          : {
+                                source: 'own',
+                                days: p.calendar.days,
+                                start: p.calendar.start,
+                                end: p.calendar.end,
+                                holidays: p.calendar.holidays === 'co' ? 'festivos de Colombia' : 'ninguno',
+                            },
                   at_risk_percent: p.at_risk_percent,
                   notify: { user_ids: p.notify_user_ids, roles: p.notify_roles, team_ids: p.notify_team_ids, assignee_field: slug(p.notify_assignee_field_id) },
                   escalate: {

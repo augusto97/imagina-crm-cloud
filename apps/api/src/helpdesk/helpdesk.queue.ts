@@ -16,6 +16,8 @@ export interface HelpdeskPollJob {
 export interface HelpdeskSlaListJob {
     tenantId: number;
     listId: number;
+    /** v0.1.469 — sólo los tickets abiertos, con el horario de la empresa leído sin caché. */
+    openOnly?: boolean;
 }
 
 /**
@@ -28,7 +30,8 @@ export interface HelpdeskSlaListJob {
  *    no apilan dos lecturas del mismo buzón (y además hay un candado en Redis
  *    por buzón, para varios nodos).
  *  - `sla-list`: recalcular el SLA de los tickets de una lista (cambió la
- *    política o se activó).
+ *    política o se activó). Con `openOnly`, sólo los abiertos: cambió el
+ *    horario laboral de la empresa o su zona (v0.1.469).
  *
  * Por qué NO hay IDLE (conexión abierta esperando avisos del servidor): con
  * varios nodos habría que elegir quién mantiene la conexión de cada buzón,
@@ -53,10 +56,16 @@ export class HelpdeskQueue {
             .catch((err) => this.logger.error(`No se pudo encolar la lectura del buzón #${mailboxId}: ${String(err)}`));
     }
 
-    enqueueSlaList(tenantId: number, listId: number): void {
+    /** ¿Hay cola? (sin Redis —tests— quien encola hace el trabajo en el acto). */
+    get available(): boolean {
+        return this.queue !== null;
+    }
+
+    enqueueSlaList(tenantId: number, listId: number, opts: { openOnly?: boolean } = {}): void {
         if (!this.queue) return;
-        const data: HelpdeskSlaListJob = { tenantId, listId };
-        addDedupedJob(this.queue, 'sla-list', data, { jobId: `sla-list-${listId}`, delay: 500 })
+        const data: HelpdeskSlaListJob = { tenantId, listId, ...(opts.openOnly ? { openOnly: true } : {}) };
+        // Un id propio para «sólo abiertos»: no se come (ni lo come) un recálculo completo pendiente.
+        addDedupedJob(this.queue, 'sla-list', data, { jobId: `${opts.openOnly ? 'sla-open' : 'sla-list'}-${listId}`, delay: 500 })
             .catch((err) => this.logger.error(`No se pudo encolar el SLA de la lista #${listId}: ${String(err)}`));
     }
 }

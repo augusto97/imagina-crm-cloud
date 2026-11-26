@@ -430,7 +430,14 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.468**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.469**
+(**lo pendiente de v0.1.466-468** — el SLA de la mesa de ayuda puede usar el
+horario laboral de la empresa (G15; cambiarlo recalcula los tickets abiertos),
+filtros de fecha con cualquier cantidad de días («próximos / últimos / hace
+más de / dentro de más de N días» y personalizado), migrar una empresa re-apunta
+las personas y equipos de los filtros y condiciones, y un PATCH parcial ya no
+devuelve los demás ajustes a su valor de fábrica (regresión de Zod 4); sin
+migración; addenda ADR-S70, S33, S23 y S38). Antes **v0.1.468**
 (**estado de cuenta del cliente** — la tabla de ítems de un documento PDF se
 puede filtrar («Mostrar sólo los ítems que…», por id de campo, con el acceso de
 quien genera, y los totales suman sólo lo filtrado), plantilla «Estado de
@@ -2383,6 +2390,57 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-26 · conversación** — El usuario pidió «haz lo que falta» de
+  v0.1.466-468 y planteó que al abrir un registro desde la lista se viera la
+  ficha DISEÑADA en la ventana flotante («hasta ahora ese diseño casi no tiene
+  uso»). Verificado: la ficha diseñada es opcional por lista
+  (`record_layout: 'crm'`, ninguna plantilla la activa) y sólo se ve en la
+  página del registro; la ventana flotante (`RecordDetailDrawer`) siempre
+  muestra la ficha simple. **Aprobado** (las tres opciones recomendadas): (1)
+  la ventana flotante muestra la ficha diseñada cuando la lista la usa (celular
+  a pantalla completa; anterior/siguiente, página completa y cerrar; botones
+  del registro en la barra; «Guardado»; aside de comentarios/actividad sólo si
+  el diseño no los trae) con «Diseñar esta ficha» para administradores; (2) las
+  listas NUEVAS desde una plantilla, la IA, un archivo o Airtable nacen con la
+  ficha diseñada que encaja (ventas → Oportunidad, soporte → Ticket, contactos
+  → Perfil, tareas → Tarea, resto → Resumen; en blanco sigue simple); (3) a
+  las listas existentes se les SUGIERE una vez a cada administrador («Probar»
+  sin guardar → «Usar este diseño» / «Ahora no»), sin cambiar nada para el
+  resto. Plan: **v0.1.469** = los tres pendientes (SLA con el horario laboral
+  de la empresa, filtros «próximos/últimos/hace más de N días», re-apuntar
+  personas y equipos de los filtros al migrar una empresa); **v0.1.470** = la
+  ficha diseñada en la ventana flotante. **Después preguntó** qué pasa con los
+  campos que no están en la ficha diseñada: **aprobado** que al final aparezca
+  una sección «Otros campos (N)» con los que el diseño no ubicó (casilla
+  «Mostrar al final los campos que no están en el diseño», encendida de
+  fábrica; lista «Campos sin ubicar (N)» en el editor; nunca en el portal), y
+  que **plegada o abierta sea un ajuste de cada lista** («Cómo empieza:
+  Plegada / Abierta», plegada de fábrica). Va en v0.1.470.
+- **2026-11-26 · v0.1.469** — **Lo pendiente de v0.1.466-468** (sin
+  migración; addenda ADR-S70, S33, S23 y S38). (1) **SLA con el horario
+  laboral de la empresa** (G15): Configuración de la lista → SLA → Horario
+  hábil elige el de la empresa o uno propio; lo guardado antes sigue con el
+  propio y lo nuevo nace con el de la empresa; cambiar el horario o la zona de
+  la empresa recalcula sólo los tickets ABIERTOS. (2) **Filtros de fecha con N
+  días** (1-3650) y personalizado, con la línea del rango real; valen en la
+  tabla, vistas, listas públicas, tableros, automatizaciones, colores y el
+  filtro de ítems de los PDF (fuera: el período propio de los widgets y el
+  selector de período del tablero). (3) **Migrar una empresa re-apunta las
+  personas y equipos** de los filtros y condiciones (vistas, tableros,
+  informes, campos, formularios, PDF y automatizaciones en todas las ramas);
+  una automatización que pierde una condición llega pausada; bug latente de
+  «Crear un registro» (`target_list` no se traducía) arreglado. (4)
+  **Encontrado en el camino — regresión de Zod 4 (v0.1.465)**: un PATCH
+  parcial rellenaba con valores de fábrica lo que no llegaba y los servicios
+  lo mezclaban sobre lo guardado → guardar un ajuste borraba objetivos y
+  avisos del SLA, campos visibles de la lista pública, bloques de un informe,
+  el plan de los clientes de una agencia, y reseteaba copias, páginas legales
+  y ayuda de la plataforma (sobre todo vía API y asistente). Arreglado con
+  `partialPatch` + una prueba que recorre todos los esquemas; novedad para
+  admins pidiendo revisar esos ajustes si los cambiaron en los últimos días.
+  Fuera de alcance del re-apuntado: condiciones sobre relaciones, valores de
+  acciones, plantillas guardadas y puntos de los cálculos de formularios.
+  G15 sigue en el banco sólo para fórmulas y plantillas.
 - **2026-11-25 · v0.1.468** — **Estado de cuenta del cliente + tabla de
   ítems con filtro** (idea J4, vista por el usuario en otra app; addendum
   ADR-S35; sin migración). (1) La tabla de ítems de un documento gana

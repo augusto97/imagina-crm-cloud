@@ -3,10 +3,13 @@ import {
     addBusinessMinutes,
     businessMinutesBetween,
     businessWindowOfDay,
+    businessWindowsOfDay,
     computeSlaClock,
+    slaCalendarFor,
     type BusinessCalendar,
     type SlaClockInput,
 } from './business-hours';
+import { companyCalendar, type CompanyHours } from './company-hours';
 
 /** Lunes a viernes de 8 a 18 en Bogotá (UTC−5), sin trabajar los festivos de Colombia. */
 const CO: BusinessCalendar = { timeZone: 'America/Bogota', days: [1, 2, 3, 4, 5], start: '08:00', end: '18:00', holidays: 'co' };
@@ -127,5 +130,110 @@ describe('E5 — el reloj del SLA de un ticket', () => {
         expect(computeSlaClock({ ...base, first_response_minutes: null, resolution_minutes: null }).status).toBeNull();
         const onlyFirst = { ...base, resolution_minutes: null, first_response_at: '2026-10-27T14:00:00Z' };
         expect(computeSlaClock(onlyFirst, new Date('2026-10-27T15:00:00Z')).status).toBe('cumplido');
+    });
+});
+
+/**
+ * v0.1.469 (G15) — El mismo reloj sobre el HORARIO LABORAL de la empresa:
+ * varios tramos por día (el almuerzo), el sábado distinto y los festivos del
+ * país elegido (llegan ya resueltos).
+ */
+describe('G15 — el reloj del SLA con el horario laboral de la empresa', () => {
+    const lunch = [
+        { start: '08:00', end: '12:00' },
+        { start: '13:00', end: '17:00' },
+    ];
+    /** Lunes a viernes 8–12 y 13–17, sábado 8–12. */
+    const hours: CompanyHours = { week: [[], lunch, lunch, lunch, lunch, lunch, [{ start: '08:00', end: '12:00' }]], holiday_country: 'CO', regional_holidays: false };
+    const noSat: CompanyHours = { ...hours, week: hours.week.map((d, i) => (i === 6 ? [] : d)) };
+    /** Bogotá (UTC−5) con el festivo del 2 de noviembre de 2026 (Todos los Santos trasladado). */
+    const BOG = companyCalendar(hours, 'America/Bogota', new Set(['2026-11-02']));
+
+    it('los tramos de un día: dos con el almuerzo, uno el sábado, ninguno el domingo ni el festivo', () => {
+        expect(businessWindowsOfDay('2026-10-27', BOG)).toEqual([
+            [at('2026-10-27T13:00:00Z'), at('2026-10-27T17:00:00Z')],
+            [at('2026-10-27T18:00:00Z'), at('2026-10-27T22:00:00Z')],
+        ]);
+        expect(businessWindowsOfDay('2026-10-31', BOG)).toEqual([[at('2026-10-31T13:00:00Z'), at('2026-10-31T17:00:00Z')]]);
+        expect(businessWindowsOfDay('2026-11-01', BOG)).toEqual([]);
+        expect(businessWindowsOfDay('2026-11-02', BOG)).toEqual([]);
+        // El calendario propio es el caso de un tramo por día.
+        expect(businessWindowsOfDay('2026-10-27', CO)).toEqual([businessWindowOfDay('2026-10-27', CO)]);
+        expect(businessWindowsOfDay('2026-11-02', CO)).toEqual([]);
+    });
+
+    it('el ALMUERZO no cuenta: 2 h desde el martes 11:00 vencen a las 14:00', () => {
+        expect(out(addBusinessMinutes(at('2026-10-27T16:00:00Z'), 2 * H, BOG))).toBe('2026-10-27T19:00:00.000Z');
+        expect(businessMinutesBetween(at('2026-10-27T16:00:00Z'), at('2026-10-27T19:00:00Z'), BOG)).toBe(2 * H);
+        // Llegar justo al almuerzo: cuenta desde las 13:00.
+        expect(out(addBusinessMinutes(at('2026-10-27T17:00:00Z'), 30, BOG))).toBe('2026-10-27T18:30:00.000Z');
+    });
+
+    it('el viernes 16:00 con 4 h y lun–vie 8–12 / 13–17 vence el lunes a las 11:00 (cruza el fin de semana)', () => {
+        // viernes 6-nov 16-17 (1 h) → sáb y dom cerrados → lunes 9-nov 8-11 (3 h).
+        expect(out(addBusinessMinutes(at('2026-11-06T21:00:00Z'), 4 * H, companyCalendar(noSat, 'America/Bogota')))).toBe('2026-11-09T16:00:00.000Z');
+    });
+
+    it('el SÁBADO distinto: 4 h desde el viernes 16:00 vencen el sábado a las 11:00', () => {
+        // viernes 6-nov 16-17 (1 h) → sábado 7-nov 8-11 (3 h).
+        expect(out(addBusinessMinutes(at('2026-11-06T21:00:00Z'), 4 * H, BOG))).toBe('2026-11-07T16:00:00.000Z');
+    });
+
+    it('llegar JUSTO al cierre: empieza a contar con la próxima apertura; un vencimiento al cierre queda al cierre', () => {
+        // Martes 17:00 en punto (cerró) + 1 h → miércoles 9:00.
+        expect(out(addBusinessMinutes(at('2026-10-27T22:00:00Z'), H, BOG))).toBe('2026-10-28T14:00:00.000Z');
+        // Martes 16:00 + 1 h → martes 17:00 (no el día siguiente).
+        expect(out(addBusinessMinutes(at('2026-10-27T21:00:00Z'), H, BOG))).toBe('2026-10-27T22:00:00.000Z');
+    });
+
+    it('el festivo del PAÍS elegido: México, 16 de noviembre de 2026 (Revolución), en su zona', () => {
+        const MX = companyCalendar(noSat, 'America/Mexico_City', new Set(['2026-11-16']));
+        // Viernes 13-nov 16:00 CDMX (22:00Z) + 4 h: viernes 16-17 (1 h) → lunes festivo → martes 8-11 (3 h) → 11:00 CDMX = 17:00Z.
+        expect(out(addBusinessMinutes(at('2026-11-13T22:00:00Z'), 4 * H, MX))).toBe('2026-11-17T17:00:00.000Z');
+        // Sin el festivo, el lunes cuenta.
+        expect(out(addBusinessMinutes(at('2026-11-13T22:00:00Z'), 4 * H, companyCalendar(noSat, 'America/Mexico_City')))).toBe('2026-11-16T17:00:00.000Z');
+    });
+
+    it('una zona con CAMBIO DE HORA: Madrid cruza el fin del horario de verano (25-oct-2026)', () => {
+        const MAD = companyCalendar({ ...noSat, week: noSat.week.map((d) => (d.length ? [{ start: '09:00', end: '17:00' }] : [])) }, 'Europe/Madrid');
+        // Viernes 23-oct 16:00 CEST (14:00Z) + 4 h: viernes 16-17 (1 h) → lunes 26-oct 9-12 CET (3 h) → 12:00 CET = 11:00Z.
+        expect(out(addBusinessMinutes(at('2026-10-23T14:00:00Z'), 4 * H, MAD))).toBe('2026-10-26T11:00:00.000Z');
+    });
+
+    it('las pausas detienen el reloj igual; una abierta no vence; sin días laborables nunca avanza', () => {
+        const start = at('2026-10-27T13:00:00Z'); // martes 8:00
+        // 8-12 (4 h) con 9-10 en pausa → 3 h; falta 1 h → 13-14.
+        expect(out(addBusinessMinutes(start, 4 * H, BOG, [{ from: '2026-10-27T14:00:00Z', to: '2026-10-27T15:00:00Z' }]))).toBe('2026-10-27T19:00:00.000Z');
+        expect(addBusinessMinutes(start, 4 * H, BOG, [{ from: '2026-10-27T14:00:00Z', to: null }])).toBeNull();
+        expect(addBusinessMinutes(start, H, companyCalendar({ ...hours, week: [[], [], [], [], [], [], []] }, 'America/Bogota'))).toBeNull();
+        expect(businessMinutesBetween(start, at('2026-10-28T13:00:00Z'), companyCalendar({ ...hours, week: [[], [], [], [], [], [], []] }, 'America/Bogota'))).toBe(0);
+    });
+
+    it('el reloj de un ticket con el horario de la empresa: vencimientos, riesgo y la próxima revisión', () => {
+        const input: SlaClockInput = {
+            started_at: '2026-10-27T16:00:00Z', // martes 11:00
+            first_response_minutes: 2 * H,
+            resolution_minutes: 8 * H,
+            first_response_at: null,
+            resolved_at: null,
+            pauses: [],
+            calendar: BOG,
+            at_risk_percent: 50,
+        };
+        const r = computeSlaClock(input, new Date('2026-10-27T16:30:00Z'));
+        // 2 h: 11-12 + 13-14 → 14:00. El 50 % (1 h) → 12:00.
+        expect(r.first_response.due).toBe('2026-10-27T19:00:00.000Z');
+        expect(r.first_response.risk_at).toBe('2026-10-27T17:00:00.000Z');
+        // 8 h: martes 11-12 (1) + 13-17 (4) → miércoles 8-11 (3) → 11:00.
+        expect(r.resolution.due).toBe('2026-10-28T16:00:00.000Z');
+        expect(r.status).toBe('a_tiempo');
+        expect(r.next_check_at).toBe('2026-10-27T17:00:00.000Z');
+    });
+
+    it('slaCalendarFor: el de la empresa con `company`, el propio con `own` (o si el de la empresa no está a mano)', () => {
+        const cfg = { days: [1, 2, 3, 4, 5], start: '08:00', end: '18:00', holidays: 'co' as const };
+        expect(slaCalendarFor({ ...cfg, source: 'company' }, 'America/Bogota', BOG)).toBe(BOG);
+        expect(slaCalendarFor({ ...cfg, source: 'own' }, 'America/Bogota', BOG)).toEqual({ ...cfg, timeZone: 'America/Bogota' });
+        expect(slaCalendarFor({ ...cfg, source: 'company' }, 'America/Bogota', null)).toEqual({ ...cfg, timeZone: 'America/Bogota' });
     });
 });

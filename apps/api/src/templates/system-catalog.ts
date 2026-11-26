@@ -424,7 +424,8 @@ const soporte: SystemTemplate = {
                                 { priority: 'baja', first_response_hours: 24, resolution_hours: 72 },
                                 { priority: null, first_response_hours: 8, resolution_hours: 24 },
                             ],
-                            calendar: { days: [1, 2, 3, 4, 5], start: '08:00', end: '18:00', holidays: 'co' },
+                            // v0.1.469 — el reloj corre con el horario laboral de la empresa (Ajustes → Horario laboral).
+                            calendar: { source: 'company', days: [1, 2, 3, 4, 5], start: '08:00', end: '18:00', holidays: 'co' },
                             at_risk_percent: 75,
                             notify_assignee_field_id: ref('asignado'),
                             escalate_roles: ['admin'],

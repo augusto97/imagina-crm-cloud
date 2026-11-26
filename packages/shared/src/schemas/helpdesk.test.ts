@@ -12,6 +12,7 @@ import {
     slaTargetsFor,
     slaTriggerMatches,
     ticketToken,
+    updateHelpdeskSettingsSchema,
 } from './helpdesk';
 
 describe('D2 — mesa de ayuda (puro)', () => {
@@ -61,6 +62,30 @@ describe('D2 — mesa de ayuda (puro)', () => {
         expect(slaTargetsFor(policy, 'alta')?.first_response_hours).toBe(1);
         expect(slaTargetsFor(policy, 'baja')?.first_response_hours).toBe(8);
         expect(slaTargetsFor({ priority_field_id: null, targets: [] }, null)).toBeNull();
+    });
+
+    it('v0.1.469 — de dónde sale el horario del SLA: lo guardado sin el dato sigue con el propio; lo nuevo, el de la empresa', () => {
+        // Guardado antes de v0.1.469 (sin `source`): sigue exactamente como antes.
+        const old = readHelpdeskSettings({ helpdesk: { sla: { enabled: true, calendar: { days: [1, 2, 3, 4, 5], start: '08:00', end: '18:00', holidays: 'co' } } } });
+        expect(old.sla.calendar.source).toBe('own');
+        expect(old.sla.calendar.end).toBe('18:00');
+        // Un calendario guardado a medias tampoco pasa a la empresa por un valor por defecto.
+        expect(readHelpdeskSettings({ helpdesk: { sla: { calendar: {} } } }).sla.calendar.source).toBe('own');
+        // Una lista que nunca guardó la mesa de ayuda (o una política sin calendario): la empresa.
+        expect(readHelpdeskSettings({}).sla.calendar.source).toBe('company');
+        expect(readHelpdeskSettings({ helpdesk: { sla: { enabled: true } } }).sla.calendar.source).toBe('company');
+        expect(readHelpdeskSettings({ helpdesk: 'roto' }).sla.calendar.source).toBe('company');
+        // El elegido se respeta.
+        expect(readHelpdeskSettings({ helpdesk: { sla: { calendar: { source: 'company', days: [1] } } } }).sla.calendar).toMatchObject({ source: 'company', days: [1] });
+    });
+
+    it('v0.1.469 — un PATCH sin `source` no le cambia el origen a la política (sin valores por defecto)', () => {
+        const noCal = updateHelpdeskSettingsSchema.parse({ sla: { enabled: true } });
+        expect(noCal.sla?.calendar).toBeUndefined();
+        const partial = updateHelpdeskSettingsSchema.parse({ sla: { calendar: { end: '17:00' } } });
+        expect(partial.sla?.calendar).toEqual({ end: '17:00' });
+        expect(updateHelpdeskSettingsSchema.parse({ sla: { calendar: { source: 'company' } } }).sla?.calendar).toEqual({ source: 'company' });
+        expect(updateHelpdeskSettingsSchema.safeParse({ sla: { calendar: { source: 'otro' } } }).success).toBe(false);
     });
 
     it('el buzón: el host va limpio y la dirección de soporte es un correo', () => {

@@ -1,5 +1,5 @@
 import { foldSearchText } from '../field-types/search';
-import { parseCustomDateRange, parseDateRangePreset } from '../field-types/date-ranges';
+import { normalizeRelativeDateValue, parseRollingDateRange, ROLLING_DATE_MAX_DAYS, ROLLING_DATE_MIN_DAYS } from '../field-types/date-ranges';
 import type { FilterCondition, FilterGroup, FilterNode, FilterOperator } from './filter';
 
 /**
@@ -214,15 +214,17 @@ function asId(v: unknown): number | string | null {
 
 type Outcome =
     | { ok: true; value: unknown; dropped?: number }
-    | { ok: false; reason: 'bad_value' | 'unknown_option' };
+    | { ok: false; reason: 'bad_value' | 'unknown_option'; badDays?: boolean };
 
 /** Valida (y normaliza) el valor de una condición según el tipo del campo. */
 function cleanValue(field: DocFilterField, kind: ValueKind, op: FilterOperator, value: unknown): Outcome {
     if (NULLARY.has(op)) return { ok: true, value: undefined };
     if (op === 'between_relative') {
-        if (parseDateRangePreset(value) !== null) return { ok: true, value };
-        const custom = parseCustomDateRange(value);
-        return custom !== null && custom !== 'invalid' ? { ok: true, value: custom } : { ok: false, reason: 'bad_value' };
+        // Preset («este mes»), rango fijo `{from, to}` o, desde v0.1.469,
+        // `{days, dir}` («próximos 10 días», «hace más de 45 días»).
+        const relative = normalizeRelativeDateValue(value);
+        if (relative !== null) return { ok: true, value: relative };
+        return { ok: false, reason: 'bad_value', badDays: parseRollingDateRange(value) === 'invalid' };
     }
     const many = op === 'in' || op === 'nin';
     if (kind === 'choice') {
@@ -317,9 +319,9 @@ export function cleanDocItemsFilter(
     const byId = new Map(fields.map((f) => [f.id, f]));
     const hidden = opts.hiddenIds instanceof Set ? opts.hiddenIds : new Set(opts.hiddenIds ?? []);
     let nodes = 0;
-    const add = (reason: DocFilterIssueReason, field: DocFilterField | null, fieldId: number | null): void => {
+    const add = (reason: DocFilterIssueReason, field: DocFilterField | null, fieldId: number | null, message?: string): void => {
         const label = field?.label?.trim() || field?.slug || null;
-        issues.push({ reason, field_id: fieldId, field_label: label, message: issueMessage(reason, label) });
+        issues.push({ reason, field_id: fieldId, field_label: label, message: message ?? issueMessage(reason, label) });
     };
 
     const cleanCondition = (c: Record<string, unknown>): FilterCondition | null => {
@@ -349,7 +351,15 @@ export function cleanDocItemsFilter(
         }
         const out = cleanValue(field, rule.value, op, c.value);
         if (!out.ok) {
-            add(out.reason, field, fieldId);
+            const label = field.label?.trim() || field.slug || null;
+            add(
+                out.reason,
+                field,
+                fieldId,
+                out.badDays
+                    ? `La regla sobre ${label ? `«${label}»` : 'un campo'} pide una cantidad de días de ${ROLLING_DATE_MIN_DAYS} a ${ROLLING_DATE_MAX_DAYS}: se ignora.`
+                    : undefined,
+            );
             return null;
         }
         if (out.dropped && out.dropped > 0) {

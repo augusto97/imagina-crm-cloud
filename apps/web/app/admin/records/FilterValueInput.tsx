@@ -5,21 +5,16 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { asDisplayField } from '@/lib/fieldTypeCatalog';
 import { __ } from '@/lib/i18n';
-import { formatDateStr } from '@/lib/tenantFormat';
 import type { FieldEntity } from '@/types/field';
 import type { FilterOperator } from '@/types/record';
 
-import {
-    DATE_RANGE_PRESETS,
-    computePresetRange,
-    type DateRangePresetId,
-} from './dateRangePresets';
 import { extractFieldOptions } from './fieldOptions';
 import { FilterOptionPicker } from './FilterOptionPicker';
 import { datetimeFilterToInput, datetimeInputToFilter } from './filterDatetime';
 import { FilterTeamPicker } from './FilterTeamPicker';
 import { FilterUserPicker } from './FilterUserPicker';
 import { isMultiValueOperator, toValueList } from './filterValue';
+import { RelativeDateRangeInput } from './RelativeDateRangeInput';
 
 interface FilterValueInputProps {
     listId: number | undefined;
@@ -52,56 +47,12 @@ export function FilterValueInput({
     // persona; el ID automático, como texto.
     const field: FieldEntity =
         rawField.type === 'created_at' || rawField.type === 'updated_at' ? { ...rawField, type: 'date' } : asDisplayField(rawField);
-    // Operador "rango relativo": el valor es el slug del preset
-    // (`this_month`, `last_year`, etc.). Persistimos el slug, no las
-    // fechas resueltas — el backend las computa en cada query.
+    // Operador "rango relativo" (`es en…`): un preset (`this_month`), cualquier
+    // cantidad de días (`{days, dir}`, v0.1.469) o un rango fijo (`{from, to}`).
+    // Se guarda la REGLA, no las fechas resueltas: el servidor las calcula en
+    // cada consulta, en el reloj de la empresa.
     if (op === 'between_relative') {
-        // v0.1.286 — un RANGO FIJO (`{from, to}`: llega desde un tablero, al
-        // abrir el segmento de un gráfico o con un período personalizado) se
-        // muestra tal cual; elegir un preset lo reemplaza.
-        const fixed = value !== null && typeof value === 'object' && !Array.isArray(value)
-            && typeof (value as { from?: unknown }).from === 'string' && typeof (value as { to?: unknown }).to === 'string'
-            ? (value as { from: string; to: string })
-            : null;
-        if (fixed) {
-            return (
-                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
-                    <Select value="" onChange={(e) => { if (e.target.value !== '') onChange(e.target.value); }}>
-                        <option value="">{`${formatDateStr(fixed.from)} → ${formatDateStr(fixed.to)}`}</option>
-                        {DATE_RANGE_PRESETS.filter((p) => p.id !== 'custom').map((p) => (
-                            <option key={p.id} value={p.id}>
-                                {p.label}
-                            </option>
-                        ))}
-                    </Select>
-                </div>
-            );
-        }
-        const current = typeof value === 'string' && value !== '' ? value : 'this_month';
-        const fieldType = field.type === 'datetime' ? 'datetime' : 'date';
-        // Preview del rango actual para que el usuario sepa qué
-        // está filtrando (especialmente útil para "esta semana" /
-        // "este trimestre" donde la lectura mental no es obvia).
-        const previewRange = computePresetRange(current as DateRangePresetId, fieldType);
-        return (
-            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
-                <Select
-                    value={current}
-                    onChange={(e) => onChange(e.target.value)}
-                >
-                    {DATE_RANGE_PRESETS.filter((p) => p.id !== 'custom').map((p) => (
-                        <option key={p.id} value={p.id}>
-                            {p.label}
-                        </option>
-                    ))}
-                </Select>
-                {previewRange && (
-                    <span className="imcrm-text-[10px] imcrm-text-muted-foreground">
-                        {previewRange.from.slice(0, 10)} → {previewRange.to.slice(0, 10)}
-                    </span>
-                )}
-            </div>
-        );
+        return <RelativeDateRangeInput value={value} onChange={onChange} aria-label={__('Rango de fechas')} />;
     }
 
     const multi = isMultiValueOperator(op);

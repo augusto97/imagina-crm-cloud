@@ -19,6 +19,8 @@
  * se lee con tolerancia (un valor raro cae al default, nunca rompe la corrida).
  */
 
+import { normalizeRelativeDateValue, relativeDateConditionText } from '../field-types/date-ranges';
+
 export const STOP_UNLESS_ACTION = 'stop_unless';
 export const ADD_COMMENT_ACTION = 'add_comment';
 
@@ -94,16 +96,30 @@ export const CONDITION_OP_TEXT: Record<string, string> = {
  * «Responsable» está vacío. `valueText` ya viene legible (la etiqueta de la
  * opción, no su valor interno).
  */
-export function conditionRuleText(label: string, op: string, valueText: string): string {
+export function conditionRuleText(
+    label: string,
+    op: string,
+    valueText: string,
+    value?: unknown,
+    formatDate?: (ymd: string) => string,
+): string {
+    // v0.1.469 — una fecha relativa se dice entera: «Vence» está en los
+    // próximos 10 días, «Último contacto» fue hace más de 45 días.
+    if (op === 'between_relative' && value !== undefined && normalizeRelativeDateValue(value) !== null) {
+        return relativeDateConditionText(label, value, formatDate);
+    }
     const opText = CONDITION_OP_TEXT[op] ?? op;
     if (NO_VALUE_OPS.includes(op)) return `«${label}» ${opText}`;
     return `«${label}» ${opText} «${valueText === '' ? '(vacío)' : valueText}»`;
 }
 
 /** Resumen de «Comprobar y detener» para el editor y el historial. */
-export function describeStopUnless(rules: ReadonlyArray<{ label: string; op: string; valueText: string }>): string {
+export function describeStopUnless(
+    rules: ReadonlyArray<{ label: string; op: string; valueText: string; value?: unknown }>,
+    formatDate?: (ymd: string) => string,
+): string {
     if (rules.length === 0) return 'Falta elegir la condición';
-    const first = conditionRuleText(rules[0]!.label, rules[0]!.op, rules[0]!.valueText);
+    const first = conditionRuleText(rules[0]!.label, rules[0]!.op, rules[0]!.valueText, rules[0]!.value, formatDate);
     const more = rules.length > 1 ? ` y ${rules.length - 1} regla${rules.length - 1 === 1 ? '' : 's'} más` : '';
     return `Sigue sólo si ${first}${more}; si no, se detiene`;
 }
