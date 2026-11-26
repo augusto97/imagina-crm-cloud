@@ -1531,6 +1531,19 @@ se arma con otro nombre y se renombra al final, así una request cortada nunca
 deja un archivo a medias en el listado. Queda pendiente el caso de la empresa
 con cientos de miles de registros, donde conviene encolarlo como los snapshots.
 
+**Addendum v0.1.469 — personas y equipos en los filtros.** El `field_id`
+de cada filtro ya se traducía; ahora también el VALOR de una condición sobre
+Persona, Creado por, Modificado por o Equipo (`remapConditionValue` en
+`tenant-transfer.remap.ts`): el id que viajó pasa al nuevo, el que no viajó
+sale de la lista y una condición que queda sin valor se quita (nunca queda
+con el número del origen); se conservan «Mis equipos», el 0 de «Sistema» y
+las variables. Cubre vistas, filtros guardados, tableros, informes, campos
+(mostrar sólo si, obligatorio si, rollup, Botón), formularios, plantillas de
+documento, ajustes de la lista y las automatizaciones por slug en todas las
+ramas. Una automatización que pierde una condición —o cuya lista destino de
+«Crear un registro» no viajó (`target_list` no se traducía: bug arreglado)—
+llega pausada, y el import avisa cuántas.
+
 ### ADR-S24 — Sincronizar una tienda: la tienda es la fuente, la app es un espejo vivo (v0.1.206)
 
 **Contexto.** Las acciones de WooCommerce (v0.1.205) escriben en la tienda,
@@ -2837,6 +2850,18 @@ laborable» / «hasta el horario laboral» que están en curso.
 
 ---
 
+**Addendum v0.1.469 — cualquier cantidad de días en las fechas
+relativas.** `between_relative` acepta, además de los presets, `{days: N,
+dir}` con N de 1 a 3650: `next` (de hoy a hoy+N−1), `last` (de hoy−N+1 a
+hoy), `before` (antes de hoy−N; el día límite no cuenta) y `after` (después
+de hoy+N), más el rango personalizado `{from, to}`. Lo resuelve una sola
+función de shared (`relativeRangeFor`) con el reloj y la zona de la empresa,
+y la usan el QueryBuilder (tabla, vistas, listas públicas, filtros de
+tableros, asistente), las condiciones de las automatizaciones, las reglas de
+color y el filtro de ítems de los PDF. Un valor inválido responde 400 (o la
+regla se quita con aviso en el PDF). Fuera: el período propio de cada widget
+y el selector de período del tablero, que siguen con presets.
+
 ### ADR-S34 — Correos diseñados por bloques, compatibles con Gmail y Outlook (v0.1.265)
 
 **Contexto.** La acción «Enviar email» de las automatizaciones era un cuadro de
@@ -3272,6 +3297,19 @@ presupuesto pasó a 285/830) porque Zod 4 arma cada esquema con todos sus
 métodos y no se recorta; a cambio, en el servidor una automatización de 14
 pasos se valida en 8 µs en vez de 537 y la query del listado en 3 en vez de
 17. Las páginas públicas (formulario, widget, tienda) siguen sin cargar Zod.
+
+**Addendum v0.1.469 — `.partial()` sin valores por defecto.** En Zod 4 un
+campo con `.default()` / `.prefault()` dentro de `.partial()` se rellena
+aunque no llegue (en Zod 3 quedaba afuera). Los servicios que mezclan el
+pedido sobre lo guardado (`{...actual, ...pedido}`) devolvían así los demás
+ajustes a su valor de fábrica: el SLA de la mesa de ayuda, la lista pública,
+los informes (`blocks: []`), el plan de los clientes de una agencia, las
+copias, las páginas legales y la ayuda de la plataforma. Regla nueva: un
+esquema de PATCH se arma con `partialPatch(x.partial())`
+(`packages/shared/src/schemas/common.ts`), que deja la semántica de Zod 3, y
+`partial-patch.test.ts` recorre TODOS los esquemas exportados y falla si
+alguno tiene un `optional(default)` u `optional(prefault)`. Pruebas de
+integración por servicio que fallan sin el arreglo.
 
 ### ADR-S39 — Formularios públicos que crean registros (v0.1.275)
 
@@ -4417,7 +4455,7 @@ laborable u horario laboral (E8).**
   empresa en una línea en el prompt, como la zona, y aceptan los dos modos en
   `propose_create_automation`.
 - **Fuera de esta versión**: que el SLA de la mesa de ayuda (ADR-S70) use este
-  horario en lugar del suyo (sigue en `docs/ideas.md`, G15).
+  horario en lugar del suyo (llegó en v0.1.469, addendum de ADR-S70).
 
 
 ### ADR-S48 — Portal con contraseña por empresa, pagos del cliente y formularios verificados (v0.1.289)
@@ -5765,6 +5803,20 @@ ticket es un registro común (vistas, filtros, Mi trabajo, tableros, portal).
 Quedan fuera OAuth para IMAP y los horarios hábiles por equipo.
 
 ---
+
+**Addendum v0.1.469 — el SLA puede usar el horario laboral de la empresa
+(G15).** La política del SLA gana `calendar.source`: `company` (el horario
+de Ajustes → Horario laboral de v0.1.467, con varios tramos por día, el
+sábado distinto y los festivos de los 33 países) u `own` (el editor de
+siempre). Lo guardado sin el dato se lee como `own` (ninguna lista cambia
+sola); una política nueva —panel, plantilla, asistente— nace con `company`.
+La aritmética es una sola (`businessMinutesBetween` / `addBusinessMinutes` /
+`computeSlaClock` sobre un `SlaCalendar`, con `businessWindowsOfDay` y
+`slaCalendarFor` en shared). Cambiar el horario o la zona de la empresa
+recalcula por tandas de 200 los tickets ABIERTOS de las listas que lo usan
+(cola `sla-open-<lista>`, el contexto se lee sin caché); los cerrados
+conservan lo medido. Cambiar el origen de una política usa el recálculo
+completo de siempre.
 
 ### ADR-S71 — Agentes de IA (v0.1.317)
 
