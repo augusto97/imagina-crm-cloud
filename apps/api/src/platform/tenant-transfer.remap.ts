@@ -1,3 +1,4 @@
+import { FILTER_OPERATORS, FORM_CONDITION_OPS, mapFlowChildLists, REQUIRED_IF_OPS, SHOW_IF_OPS } from '@imagina-base/shared';
 import { cleanResolvedButtonConfig } from '../buttons/button-portable';
 
 /**
@@ -154,6 +155,11 @@ const EXPLICIT_ARRAYS: Record<string, keyof IdMaps> = {
  */
 const NUMERIC_ONLY: Record<string, keyof IdMaps> = {
     plan_id: 'subscriptionPlan',
+    // La lista destino de «Crear un registro» la guardan el editor y el
+    // asistente como `target_list` (no sigue la convención `*_list_id`): sin
+    // esto llegaba con el id del origen y la acción fallaba («la lista destino
+    // no existe») o, en otro servidor, creaba en OTRA lista de la empresa.
+    target_list: 'list',
 };
 /** Arrays de list ids con nombre propio. */
 const LIST_ID_ARRAY_KEYS = new Set(['related_lists']);
@@ -290,18 +296,395 @@ export function remapRichDoc(doc: unknown, maps: IdMaps): unknown {
     return out;
 }
 
+// ── Condiciones que nombran a una persona o a un equipo ────────────────────
+
+/**
+ * Los FILTROS y las CONDICIONES apuntan a su campo por id (`field_id`, que
+ * traduce `remapJson` por convención) o por slug (automatizaciones), pero su
+ * VALOR es dato: en un campo Persona («Responsable es Ana») ese dato es el id
+ * de una persona, y en un campo Equipo («Equipo es Ventas») el de un equipo, y
+ * los dos se regeneran al importar. Sin esto, la vista «Lo de Ana» del
+ * servidor nuevo mostraba lo de quien tuviera aquí el número viejo de Ana.
+ *
+ * Regla (la misma en todos los lugares): un id que resuelve se cambia por el
+ * nuevo; uno que no resuelve (esa persona o ese equipo no viajó) se QUITA de la
+ * lista, y si la condición se queda sin valor se DESCARTA entera: nunca queda
+ * con el número viejo. Lo que no es un id se conserva tal cual: el «Yo» de los
+ * equipos (`$my_teams`), las variables de una automatización (`{{…}}`) y el
+ * `0` de «Sistema» en «Modificado por». (El «Yo» de una persona se guarda como
+ * su id y se traduce como cualquier otro.)
+ */
+
+/** Tipos cuyo valor guardado es el id de una persona. */
+const PERSON_VALUE_TYPES = new Set(['user', 'created_by', 'updated_by']);
+
+/** Cuenta las condiciones que se descartaron (para avisar o pausar). */
+export interface ConditionRemapReport {
+    dropped: number;
+}
+
+/** El mapa con el que se traduce el valor de una condición sobre un campo de este tipo (o null si no hace falta). */
+export function conditionValueMap(type: string, maps: IdMaps): Map<number, number> | null {
+    if (PERSON_VALUE_TYPES.has(type)) return maps.user;
+    if (type === 'team') return maps.team;
+    return null;
+}
+
+const DROP_VALUE = Symbol('drop-value');
+
+/** Un elemento del valor: el id nuevo, `DROP_VALUE` si no viajó, o el original si no es un id. */
+function remapConditionId(raw: unknown, map: Map<number, number>): unknown {
+    if (typeof raw === 'number') {
+        if (!Number.isInteger(raw) || raw <= 0) return raw;
+        return map.get(raw) ?? DROP_VALUE;
+    }
+    if (typeof raw === 'string' && /^\s*\d+\s*$/.test(raw)) {
+        const n = Number(raw);
+        if (n <= 0) return raw;
+        const id = map.get(n);
+        return id === undefined ? DROP_VALUE : String(id);
+    }
+    return raw;
+}
+
+/**
+ * LA función que traduce el VALOR de una condición sobre un campo de tipo
+ * `type` (la usan todos los lugares de abajo). Devuelve el valor nuevo, o
+ * `null` si la condición se queda sin valor y hay que descartarla. Un valor
+ * vacío (condición a medio armar) se conserva: no nombra a nadie.
+ */
+export function remapConditionValue(value: unknown, type: string, maps: IdMaps): { value: unknown } | null {
+    const map = conditionValueMap(type, maps);
+    if (!map) return { value };
+    if (Array.isArray(value)) {
+        const out = value.map((v) => remapConditionId(v, map)).filter((v) => v !== DROP_VALUE);
+        return value.length > 0 && out.length === 0 ? null : { value: out };
+    }
+    const one = remapConditionId(value, map);
+    return one === DROP_VALUE ? null : { value: one };
+}
+
+/** Los operadores de una condición por `field_id` (filtros, colores, «Mostrar sólo si…», «Obligatorio si…»). */
+const CONDITION_OPS = new Set<string>([...FILTER_OPERATORS, ...SHOW_IF_OPS, ...FORM_CONDITION_OPS, ...REQUIRED_IF_OPS]);
+
+const DROP_NODE = Symbol('drop-node');
+
+function isIdCondition(o: Record<string, unknown>): boolean {
+    if (o.type !== undefined && o.type !== 'condition') return false;
+    if (typeof o.op !== 'string' || !CONDITION_OPS.has(o.op)) return false;
+    if (typeof o.field_id !== 'number' && typeof o.field_id !== 'string') return false;
+    const id = Number(o.field_id);
+    return Number.isInteger(id) && id > 0;
+}
+
+/**
+ * Recorre un jsonb y traduce el valor de toda condición por `field_id`, con el
+ * tipo del campo por su id VIEJO: corre ANTES de `remapJson`, que es quien
+ * cambia los `field_id`. Cubre, sin nombrarlos uno por uno, el `filter_tree`
+ * de las vistas, los tableros, los informes, los filtros guardados, los
+ * documentos, los resúmenes (rollup), el «Deshabilitado si…» de un botón, los
+ * diseños de la ficha y del portal y las automatizaciones (`records_filter`,
+ * `match_filter`, «Editar en lote», «Repetir por cada vinculado»); el espejo
+ * `filters` de las vistas; las reglas de color; el «Mostrar sólo si…» y el
+ * «Obligatorio si…» de los campos, y las condiciones de los formularios.
+ *
+ * Una condición descartada sale de su lista; un grupo anidado que queda vacío
+ * por eso también se va (un grupo vacío no filtra nada, como en
+ * `cleanDocItemsFilter`) y la raíz se conserva aunque quede vacía; una regla de
+ * color sin su condición se va entera, y una condición suelta (`required_if`,
+ * `show_if`, el `when` de un formulario) queda en `null` («no aplica»).
+ */
+export function remapIdConditions(
+    value: unknown,
+    fieldTypeByOldId: Map<number, string>,
+    maps: IdMaps,
+    report?: ConditionRemapReport,
+): unknown {
+    const out = walkIdConditions(value, fieldTypeByOldId, maps, report ?? { dropped: 0 }, null);
+    return out === DROP_NODE ? null : out;
+}
+
+function walkIdConditions(
+    value: unknown,
+    types: Map<number, string>,
+    maps: IdMaps,
+    report: ConditionRemapReport,
+    parentKey: string | null,
+): unknown {
+    if (Array.isArray(value)) {
+        const out: unknown[] = [];
+        for (const v of value) {
+            const r = walkIdConditions(v, types, maps, report, parentKey);
+            if (r !== DROP_NODE) out.push(r);
+        }
+        return out;
+    }
+    if (value === null || typeof value !== 'object') return value;
+    const o = value as Record<string, unknown>;
+    if (isIdCondition(o)) {
+        if (!('value' in o)) return o;
+        const res = remapConditionValue(o.value, types.get(Number(o.field_id)) ?? '', maps);
+        if (res === null) {
+            report.dropped += 1;
+            return DROP_NODE;
+        }
+        return res.value === o.value ? o : { ...o, value: res.value };
+    }
+    const out: Record<string, unknown> = {};
+    for (const [key, raw] of Object.entries(o)) {
+        const r = walkIdConditions(raw, types, maps, report, key);
+        if (r === DROP_NODE) {
+            // Una regla de color (`{condition, color}`) sin su condición no es nada.
+            if (key === 'condition') return DROP_NODE;
+            out[key] = null;
+        } else {
+            out[key] = r;
+        }
+    }
+    const emptied = (key: string): boolean =>
+        Array.isArray(o[key]) && (o[key] as unknown[]).length > 0 && Array.isArray(out[key]) && (out[key] as unknown[]).length === 0;
+    // El grupo anidado de un filtro (la raíz se conserva, aunque quede vacía).
+    if (o.type === 'group' && parentKey === 'children' && emptied('children')) return DROP_NODE;
+    // El grupo «todas / alguna» de un formulario: sin reglas no es válido.
+    if (typeof o.match === 'string' && emptied('rules')) return DROP_NODE;
+    // El «Mostrar sólo si…» de un campo: sin condiciones, se muestra siempre.
+    if (typeof o.logic === 'string' && !('children' in o) && emptied('conditions')) return DROP_NODE;
+    return out;
+}
+
+/**
+ * Lo que hace falta para saber el TIPO del campo de una condición que lo
+ * nombra por SLUG (las automatizaciones), y la lista de los vinculados de una
+ * relación. Todo por ids VIEJOS.
+ */
+export interface ConditionFieldIndex {
+    byId: Map<number, { type: string; listId: number; targetListId: number | null }>;
+    /** Lista vieja → slug → tipo. */
+    bySlug: Map<number, Map<string, string>>;
+    /** Id viejo → tipo (lo que pide `remapIdConditions`). */
+    types: Map<number, string>;
+}
+
+export function buildConditionFieldIndex(
+    rows: Iterable<{ id?: unknown; listId?: unknown; slug?: unknown; type?: unknown; config?: unknown }>,
+): ConditionFieldIndex {
+    const byId: ConditionFieldIndex['byId'] = new Map();
+    const bySlug: ConditionFieldIndex['bySlug'] = new Map();
+    const types: ConditionFieldIndex['types'] = new Map();
+    for (const f of rows) {
+        const id = Number(f.id);
+        const listId = Number(f.listId);
+        if (!Number.isFinite(id) || !Number.isFinite(listId)) continue;
+        const type = String(f.type ?? '');
+        const target = Number((f.config as { target_list_id?: unknown } | null | undefined)?.target_list_id);
+        byId.set(id, { type, listId, targetListId: Number.isInteger(target) && target > 0 ? target : null });
+        types.set(id, type);
+        if (typeof f.slug === 'string') {
+            let bySlugOfList = bySlug.get(listId);
+            if (!bySlugOfList) {
+                bySlugOfList = new Map();
+                bySlug.set(listId, bySlugOfList);
+            }
+            bySlugOfList.set(f.slug, type);
+        }
+    }
+    return { byId, bySlug, types };
+}
+
+/** De qué lista son los slugs: la del registro que disparó y, dentro de un bucle, la del vinculado (`item.`). */
+interface SlugScope {
+    listId: number | null;
+    itemListId: number | null;
+}
+
+function slugTypeOf(index: ConditionFieldIndex, scope: SlugScope, token: unknown): string {
+    if (typeof token !== 'string') return '';
+    let slug = token.trim();
+    let listId = scope.listId;
+    if (slug.startsWith('before.')) {
+        slug = slug.slice('before.'.length);
+    } else if (slug.startsWith('item.')) {
+        slug = slug.slice('item.'.length);
+        listId = scope.itemListId;
+    } else if (slug.includes('.')) {
+        // `respuestas.x`, `comentario.x`, `campo.email`…: no guardan un id.
+        return '';
+    }
+    if (listId === null) return '';
+    return index.bySlug.get(listId)?.get(slug) ?? '';
+}
+
+/**
+ * Una condición por slug (`[{field|slug, op, value}]` unidas por «y», o la
+ * legacy `{slug: valor}`): traduce el valor de las reglas sobre un campo
+ * Persona o Equipo; la que se queda sin valor se descarta.
+ */
+function remapSlugCondition(cond: unknown, typeOf: (token: unknown) => string, maps: IdMaps, report: ConditionRemapReport): unknown {
+    if (Array.isArray(cond)) {
+        return cond.flatMap((rule) => {
+            if (!rule || typeof rule !== 'object' || !('value' in rule)) return [rule];
+            const r = rule as Record<string, unknown>;
+            const res = remapConditionValue(r.value, typeOf(r.field ?? r.slug), maps);
+            if (res === null) {
+                report.dropped += 1;
+                return [];
+            }
+            return [res.value === r.value ? r : { ...r, value: res.value }];
+        });
+    }
+    if (cond !== null && typeof cond === 'object') {
+        const out: Record<string, unknown> = {};
+        for (const [slug, v] of Object.entries(cond as Record<string, unknown>)) {
+            const res = remapConditionValue(v, typeOf(slug), maps);
+            if (res === null) {
+                report.dropped += 1;
+                continue;
+            }
+            out[slug] = res.value;
+        }
+        return out;
+    }
+    return cond;
+}
+
+/** La lista (vieja) de los registros vinculados por una relación, vista desde `listId` (en cualquier sentido). */
+function linkedListOf(index: ConditionFieldIndex, relationFieldId: unknown, listId: number | null): number | null {
+    const f = index.byId.get(Number(relationFieldId));
+    if (!f) return null;
+    return f.listId === listId ? f.targetListId : f.listId;
+}
+
+function oldListIdOf(raw: unknown): number | null {
+    const n = Number(raw);
+    return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+function remapStepSlugConditions(
+    raw: unknown,
+    scope: SlugScope,
+    index: ConditionFieldIndex,
+    maps: IdMaps,
+    report: AutomationRemapReport,
+): unknown {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw;
+    const step: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
+    const typeOf = (token: unknown): string => slugTypeOf(index, scope, token);
+    // «Continuar sólo si…» de cada paso.
+    if (step.condition !== undefined) step.condition = remapSlugCondition(step.condition, typeOf, maps, report);
+    const type = String(step.type ?? '');
+    let eachScope: SlugScope = scope;
+    if (step.config && typeof step.config === 'object' && !Array.isArray(step.config)) {
+        const cfg: Record<string, unknown> = { ...(step.config as Record<string, unknown>) };
+        // «Si / sino», «Comprobar y detener» y la reanudación de «Esperar».
+        for (const key of ['condition', 'resume_condition'] as const) {
+            if (cfg[key] !== undefined) cfg[key] = remapSlugCondition(cfg[key], typeOf, maps, report);
+        }
+        // «Buscar registros»: los slugs son de la lista donde se busca.
+        if (type === 'find_records' && cfg.conditions !== undefined) {
+            const where: SlugScope = { listId: oldListIdOf(cfg.list_id ?? cfg.target_list) ?? scope.listId, itemListId: scope.itemListId };
+            cfg.conditions = remapSlugCondition(cfg.conditions, (t) => slugTypeOf(index, where, t), maps, report);
+        }
+        // «Según el valor de…»: una rama que se queda sin valor conserva sus
+        // pasos (sin valor no se puede activar: el editor pide elegir otro).
+        if (type === 'switch' && Array.isArray(cfg.cases)) {
+            const sourceType =
+                cfg.source_field_id !== undefined && cfg.source_field_id !== null
+                    ? (index.byId.get(Number(cfg.source_field_id))?.type ?? '')
+                    : typeOf(cfg.source_variable);
+            cfg.cases = cfg.cases.map((c) => {
+                if (!c || typeof c !== 'object' || !('value' in c)) return c;
+                const kase = c as Record<string, unknown>;
+                const res = remapConditionValue(kase.value, sourceType, maps);
+                if (res === null) {
+                    report.dropped += 1;
+                    return { ...kase, value: null };
+                }
+                return res.value === kase.value ? kase : { ...kase, value: res.value };
+            });
+        }
+        if (type === 'create_record') {
+            const target = oldListIdOf(cfg.target_list);
+            if (target !== null && !maps.list.has(target)) report.lostTargets += 1;
+        }
+        // «Repetir por cada vinculado»: adentro, `item.<slug>` es de la otra lista.
+        if (type === 'for_each_linked') {
+            eachScope = { listId: scope.listId, itemListId: linkedListOf(index, cfg.relation_field_id, scope.listId) };
+        }
+        step.config = cfg;
+    }
+    return mapFlowChildLists(step, (acts, branch) =>
+        acts.map((a) => remapStepSlugConditions(a, branch === 'each' ? eachScope : scope, index, maps, report)),
+    );
+}
+
+/** Lo que una automatización perdió al importarse (quien importa la pausa y avisa). */
+export interface AutomationRemapReport extends ConditionRemapReport {
+    /** «Crear un registro» cuya lista destino no viajó (en `null` crearía en la lista propia). */
+    lostTargets: number;
+}
+
+/** Para traducir las condiciones de una automatización (todo por ids VIEJOS). */
+export interface AutomationConditionContext {
+    /** La lista de la automatización: de ahí son los slugs de sus condiciones. */
+    listId: number;
+    index: ConditionFieldIndex;
+    report?: AutomationRemapReport;
+}
+
+/**
+ * Las condiciones de una automatización: las del disparador (`field_filters`
+ * y el «de / a» de «Cuando cambia un campo») y las de cada paso en todas sus
+ * ramas (por slug), más las que van por `field_id` (`remapIdConditions`).
+ */
+function remapAutomationConditions(
+    triggerConfig: Record<string, unknown>,
+    actions: unknown,
+    maps: IdMaps,
+    ctx: AutomationConditionContext,
+): { triggerConfig: Record<string, unknown>; actions: unknown } {
+    const report = ctx.report ?? { dropped: 0, lostTargets: 0 };
+    const types = ctx.index.types;
+    const scope: SlugScope = { listId: ctx.listId, itemListId: null };
+    const typeOf = (token: unknown): string => slugTypeOf(ctx.index, scope, token);
+    const trigger: Record<string, unknown> = { ...triggerConfig };
+    if (trigger.field_filters !== undefined) trigger.field_filters = remapSlugCondition(trigger.field_filters, typeOf, maps, report);
+    const changedType = typeOf(trigger.field);
+    for (const key of ['from_value', 'to_value'] as const) {
+        if (trigger[key] === undefined || trigger[key] === null) continue;
+        const res = remapConditionValue(trigger[key], changedType, maps);
+        if (res === null) {
+            report.dropped += 1;
+            trigger[key] = null;
+        } else {
+            trigger[key] = res.value;
+        }
+    }
+    const steps = Array.isArray(actions) ? actions.map((a) => remapStepSlugConditions(a, scope, ctx.index, maps, report)) : actions;
+    return {
+        triggerConfig: remapIdConditions(trigger, types, maps, report) as Record<string, unknown>,
+        actions: remapIdConditions(steps, types, maps, report),
+    };
+}
+
 /**
  * `lists.settings` mezcla tres vocabularios: ids por convención (los cubre
  * `remapJson`), SLUGS (que no se tocan porque viajan con el campo) y dos
  * lugares con forma propia: las CLAVES de `permissions.users` son ids de
  * usuario, y el token público es una credencial de la instancia vieja.
+ *
+ * Con `conditions`, además, los filtros de los bloques de la ficha y del portal
+ * («Vinculados», «Gráfico») traducen sus personas y equipos.
  */
 export function remapListSettings(
     settings: Record<string, unknown>,
     maps: IdMaps,
     newPublicToken: string | null,
+    conditions?: { fieldTypeByOldId: Map<number, string>; report?: ConditionRemapReport },
 ): Record<string, unknown> {
-    const out = remapJson(settings, maps) as Record<string, unknown>;
+    const source = conditions
+        ? (remapIdConditions(settings, conditions.fieldTypeByOldId, maps, conditions.report) as Record<string, unknown>)
+        : settings;
+    const out = remapJson(source, maps) as Record<string, unknown>;
 
     const permissions = out.permissions;
     if (permissions !== null && typeof permissions === 'object') {
@@ -408,8 +791,27 @@ export function remapListSettings(
  * los VALORES fijos de «Origen y etiquetas» que son ids de otra cosa: una
  * persona (campo Persona) o un equipo (campo Equipo). Uno que no viajó se
  * descarta (dejarlo le asignaría el registro a OTRA persona).
+ *
+ * Las condiciones («Mostrar sólo si…», saltos y pantallas finales) sobre una
+ * pregunta de Equipo traducen su valor con `remapIdConditions`. Un salto cuya
+ * condición se descartó se quita: con `when: null` saltaría SIEMPRE.
  */
-export function remapFormConfig(config: Record<string, unknown>, fieldTypeByOldId: Map<number, string>, maps: IdMaps): Record<string, unknown> {
+export function remapFormConfig(
+    original: Record<string, unknown>,
+    fieldTypeByOldId: Map<number, string>,
+    maps: IdMaps,
+    report?: ConditionRemapReport,
+): Record<string, unknown> {
+    const config = remapIdConditions(original, fieldTypeByOldId, maps, report) as Record<string, unknown>;
+    const jumpsBefore = (original.settings as Record<string, unknown> | undefined)?.jumps;
+    const jumpsAfter = (config.settings as Record<string, unknown> | undefined)?.jumps;
+    if (Array.isArray(jumpsBefore) && Array.isArray(jumpsAfter) && jumpsBefore.length === jumpsAfter.length) {
+        (config.settings as Record<string, unknown>).jumps = jumpsAfter.filter((j, i) => {
+            const was = (jumpsBefore[i] as { when?: unknown } | null)?.when;
+            const now = (j as { when?: unknown } | null)?.when;
+            return !(was !== null && was !== undefined && (now === null || now === undefined));
+        });
+    }
     const before = (config.settings as Record<string, unknown> | undefined)?.record_values as { fixed?: unknown } | undefined;
     const typeOfOld = new Map<number, string>();
     if (before && Array.isArray(before.fixed)) {
@@ -474,14 +876,16 @@ export function remapWidgetConfig(config: Record<string, unknown>, maps: IdMaps)
  * es una PERSONA: la clave es su id de usuario como texto («30»). Se traducen
  * con el mapa de usuarios; una que no viajó se descarta (dejarla le aplicaría
  * el límite o el plegado a OTRA persona). `fieldTypeByOldId` es por el id
- * VIEJO del campo.
+ * VIEJO del campo. Los filtros de la vista (`filter_tree`, su espejo `filters`)
+ * y las reglas de color traducen sus personas y equipos (`remapIdConditions`).
  */
 export function remapViewConfig(
     config: Record<string, unknown>,
     fieldTypeByOldId: Map<number, string>,
     maps: IdMaps,
+    report?: ConditionRemapReport,
 ): Record<string, unknown> {
-    const out = remapJson(config, maps) as Record<string, unknown>;
+    const out = remapJson(remapIdConditions(config, fieldTypeByOldId, maps, report), maps) as Record<string, unknown>;
     const isUserField = (raw: unknown): boolean => {
         const id = typeof raw === 'number' ? raw : Number(raw);
         return Number.isFinite(id) && fieldTypeByOldId.get(id) === 'user';
@@ -572,21 +976,28 @@ export function remapViewConfig(
 
 /**
  * Las condiciones y merge tags de una automatización hablan por SLUG, así que
- * sobreviven solas; lo que sí hay que traducir son los ids de `actions[]`
- * (campo, lista destino, conexión) y del trigger, recorriendo las ramas del
- * `if_else`. `remapJson` ya cubre las claves por convención más
+ * sus CAMPOS sobreviven solos; lo que sí hay que traducir son los ids de
+ * `actions[]` (campo, lista destino, conexión) y del trigger, recorriendo las
+ * ramas del `if_else`. `remapJson` ya cubre las claves por convención más
  * `connection_id`, que no sigue ninguna.
+ *
+ * Con `conditions` (la lista vieja de la automatización y el índice de
+ * campos), también el VALOR de las condiciones sobre un campo Persona o Equipo
+ * — en el disparador, en cada paso y en todas sus ramas — y la lista destino
+ * de «Crear un registro» (`target_list`, que no sigue la convención).
  */
 export function remapAutomation(
     triggerConfig: Record<string, unknown>,
     actions: unknown,
     maps: IdMaps,
+    conditions?: AutomationConditionContext,
 ): { triggerConfig: Record<string, unknown>; actions: unknown } {
-    const trigger = remapJson(triggerConfig, maps) as Record<string, unknown>;
+    const pre = conditions ? remapAutomationConditions(triggerConfig, actions, maps, conditions) : { triggerConfig, actions };
+    const trigger = remapJson(pre.triggerConfig, maps) as Record<string, unknown>;
     // El token del webhook entrante se re-emite en el destino: la URL vieja
     // apunta a la instancia de origen.
     delete trigger.webhook_token;
-    return { triggerConfig: trigger, actions: fixSignatureTemplates(actions, remapJson(actions, maps), maps) };
+    return { triggerConfig: trigger, actions: fixSignatureTemplates(pre.actions, remapJson(pre.actions, maps), maps) };
 }
 
 /**

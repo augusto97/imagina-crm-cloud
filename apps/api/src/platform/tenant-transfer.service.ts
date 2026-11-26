@@ -120,8 +120,12 @@ import { FILE_STORAGE, TENANT_STORAGE, type FileStorage, type TenantStorageResol
 import {
     emptyMaps,
     mapId,
+    buildConditionFieldIndex,
+    type AutomationRemapReport,
+    type ConditionRemapReport,
     remapAutomation,
     remapButtonConfig,
+    remapIdConditions,
     remapJson,
     remapListSettings,
     remapRecordData,
@@ -837,6 +841,12 @@ export class TenantTransferService {
         const fieldRows = await this.readAll(rows('fields'));
         const fieldTypeByOldId = new Map<number, string>();
         for (const f of fieldRows) fieldTypeByOldId.set(Number(f.id), String(f.type));
+        // Las condiciones sobre un campo Persona o Equipo guardan ids de personas
+        // y de equipos en su VALOR: se traducen en cada lugar que guarda un filtro
+        // (`remapIdConditions`), y las automatizaciones, por slug, con este índice.
+        // Cuenta las que se descartaron porque esa persona o ese equipo no viajó.
+        const conditionIndex = buildConditionFieldIndex(fieldRows);
+        const conditionReport: ConditionRemapReport = { dropped: 0 };
         counts.fields = await this.insertMapped(
             tx,
             fieldRows,
@@ -883,7 +893,15 @@ export class TenantTransferService {
         for (const f of fieldRows) {
             const newId = maps.field.get(Number(f.id));
             if (newId === undefined) continue;
-            let config = remapJson((f.config as Row | null) ?? {}, maps) as Row;
+            // «Mostrar sólo si…», «Obligatorio si…» y el filtro de un resumen
+            // (rollup). El botón se rehace entero más abajo (cuenta ahí).
+            const conditionsIn = remapIdConditions(
+                (f.config as Row | null) ?? {},
+                fieldTypeByOldId,
+                maps,
+                String(f.type) === 'button' ? undefined : conditionReport,
+            );
+            let config = remapJson(conditionsIn, maps) as Row;
             // Fórmulas (A1): los ids viven DENTRO del texto (`{#12}`).
             if (String(f.type) === 'formula') config = remapFormulaConfig(config, (id) => mapId(maps.field, id)) as Row;
             // C1 — el valor por defecto de un campo «Equipo» son ids de equipo.
@@ -1120,7 +1138,7 @@ export class TenantTransferService {
                 name: String(v.name),
                 type: String(v.type),
                 // v0.1.297 — además de los ids de campo, las columnas/carriles por persona del kanban.
-                config: remapViewConfig((v.config as Row | null) ?? {}, fieldTypeByOldId, maps) as Row,
+                config: remapViewConfig((v.config as Row | null) ?? {}, fieldTypeByOldId, maps, conditionReport) as Row,
                 isDefault: Boolean(v.isDefault),
                 position: Number(v.position ?? 0),
                 icon: typeof v.icon === 'string' ? v.icon : null,
@@ -1240,7 +1258,7 @@ export class TenantTransferService {
                 listId,
                 userId: mapId(maps.user, f.userId),
                 name: String(f.name),
-                filterTree: remapJson((f.filterTree as Row | null) ?? {}, maps) as Row,
+                filterTree: remapJson(remapIdConditions((f.filterTree as Row | null) ?? {}, fieldTypeByOldId, maps, conditionReport), maps) as Row,
             };
         });
 
@@ -1415,7 +1433,7 @@ export class TenantTransferService {
                 listId: maps.list.get(Number(d.listId))!,
                 name: String(d.name),
                 filename: String(d.filename ?? ''),
-                design: remapJson((d.design as Row | null) ?? {}, maps) as Row,
+                design: remapJson(remapIdConditions((d.design as Row | null) ?? {}, fieldTypeByOldId, maps, conditionReport), maps) as Row,
                 nextNumber: Number(d.nextNumber ?? 1),
                 portalVisible: d.portalVisible === true,
                 createdBy: mapId(maps.user, d.createdBy),
@@ -1499,7 +1517,7 @@ export class TenantTransferService {
                 name: String(f.name),
                 token: randomBytes(18).toString('base64url'),
                 enabled: f.enabled === true,
-                config: remapFormConfig((f.config as Row | null) ?? {}, fieldTypeByOldId, maps) as Row,
+                config: remapFormConfig((f.config as Row | null) ?? {}, fieldTypeByOldId, maps, conditionReport) as Row,
                 submissionsCount: Number(f.submissionsCount ?? 0),
                 lastSubmittedAt: this.date(f.lastSubmittedAt),
                 createdBy: mapId(maps.user, f.createdBy),
@@ -1716,14 +1734,21 @@ export class TenantTransferService {
         // 8. Automatizaciones (+ URL nueva del webhook entrante).
         const autoRows = await this.readAll(rows('automations'));
         const autoMap = new Map<number, number>();
+        // Una automatización que perdió una condición (esa persona o ese
+        // equipo no viajó) o la lista destino de «Crear un registro» llega
+        // PAUSADA: sin la condición haría lo suyo con TODOS los registros.
+        let automationsPaused = 0;
         for (const a of autoRows) {
             const listId = mapId(maps.list, a.listId);
             if (listId === null) continue;
-            const { triggerConfig, actions } = remapAutomation(
-                (a.triggerConfig as Row | null) ?? {},
-                a.actions ?? [],
-                maps,
-            );
+            const lost: AutomationRemapReport = { dropped: 0, lostTargets: 0 };
+            const { triggerConfig, actions } = remapAutomation((a.triggerConfig as Row | null) ?? {}, a.actions ?? [], maps, {
+                listId: Number(a.listId),
+                index: conditionIndex,
+                report: lost,
+            });
+            const pause = lost.dropped > 0 || lost.lostTargets > 0;
+            if (pause) automationsPaused += 1;
             if (String(a.triggerType) === 'incoming_webhook') {
                 triggerConfig.webhook_token = randomBytes(24).toString('base64url');
             }
@@ -1737,7 +1762,7 @@ export class TenantTransferService {
                     triggerType: String(a.triggerType),
                     triggerConfig: triggerConfig as never,
                     actions: actions as never,
-                    isActive: Boolean(a.isActive),
+                    isActive: Boolean(a.isActive) && !pause,
                     folder: typeof a.folder === 'string' ? a.folder : null,
                 })
                 .returning({ id: automations.id });
@@ -1781,7 +1806,9 @@ export class TenantTransferService {
             if (String(f.type) !== 'button') continue;
             const newId = maps.field.get(Number(f.id));
             if (newId === undefined) continue;
-            const config = remapButtonConfig((f.config as Row | null) ?? {}, maps, autoMap) as Row;
+            // Su «Deshabilitado si…» puede nombrar a una persona o a un equipo.
+            const withConditions = remapIdConditions((f.config as Row | null) ?? {}, fieldTypeByOldId, maps, conditionReport) as Row;
+            const config = remapButtonConfig(withConditions, maps, autoMap) as Row;
             await tx.update(fields).set({ config }).where(eq(fields.id, newId));
         }
 
@@ -1812,10 +1839,14 @@ export class TenantTransferService {
         });
 
         // v0.1.288 — versiones: las mismas traducciones de ids que la automatización.
+        const autoListByOldId = new Map(autoRows.map((a) => [Number(a.id), Number(a.listId)]));
         counts.automation_versions = await this.insertPlain(tx, rows('automation_versions'), automationVersions, (v) => {
             const automationId = mapId(autoMap, v.automationId);
             if (automationId === null) return null;
-            const { triggerConfig, actions } = remapAutomation((v.triggerConfig as Row | null) ?? {}, v.actions ?? [], maps);
+            const { triggerConfig, actions } = remapAutomation((v.triggerConfig as Row | null) ?? {}, v.actions ?? [], maps, {
+                listId: autoListByOldId.get(Number(v.automationId)) ?? 0,
+                index: conditionIndex,
+            });
             return {
                 tenantId,
                 automationId,
@@ -1849,8 +1880,8 @@ export class TenantTransferService {
             userId: mapId(maps.user, d.userId),
             name: String(d.name),
             description: (d.description as string | null) ?? null,
-            widgets: remapJson(d.widgets ?? [], maps),
-            settings: remapJson((d.settings as Row | null) ?? {}, maps) as Row,
+            widgets: remapJson(remapIdConditions(d.widgets ?? [], fieldTypeByOldId, maps, conditionReport), maps),
+            settings: remapJson(remapIdConditions((d.settings as Row | null) ?? {}, fieldTypeByOldId, maps, conditionReport), maps) as Row,
             isDefault: Boolean(d.isDefault),
             position: Number(d.position ?? 0),
             visibility: String(d.visibility ?? 'workspace'),
@@ -1865,8 +1896,8 @@ export class TenantTransferService {
             tenantId,
             name: String(r.name),
             description: (r.description as string | null) ?? null,
-            blocks: remapJson(r.blocks ?? [], maps) as unknown[],
-            settings: remapJson((r.settings as Row | null) ?? {}, maps) as Row,
+            blocks: remapJson(remapIdConditions(r.blocks ?? [], fieldTypeByOldId, maps, conditionReport), maps) as unknown[],
+            settings: remapJson(remapIdConditions((r.settings as Row | null) ?? {}, fieldTypeByOldId, maps, conditionReport), maps) as Row,
             visibility: String(r.visibility ?? 'workspace'),
             allowedRoles: r.allowedRoles ?? [],
             position: Number(r.position ?? 0),
@@ -2050,11 +2081,10 @@ export class TenantTransferService {
         for (const l of listRows) {
             const newId = maps.list.get(Number(l.id));
             if (newId === undefined) continue;
-            const settings = remapListSettings(
-                (l.settings as Row | null) ?? {},
-                maps,
-                publicTokens.get(Number(l.id)) ?? null,
-            );
+            const settings = remapListSettings((l.settings as Row | null) ?? {}, maps, publicTokens.get(Number(l.id)) ?? null, {
+                fieldTypeByOldId,
+                report: conditionReport,
+            });
             await tx.update(lists).set({ settings }).where(eq(lists.id, newId));
         }
 
@@ -2311,6 +2341,16 @@ export class TenantTransferService {
         if (publicTokens.size > 0) {
             warnings.push(
                 `${publicTokens.size} lista(s) pública(s) tienen un enlace NUEVO: hay que volver a repartirlo.`,
+            );
+        }
+        if (conditionReport.dropped > 0) {
+            warnings.push(
+                `${conditionReport.dropped} condición(es) de filtros, vistas, tableros, informes, campos o formularios nombraban a una persona o a un equipo que no viajó y se quitaron: revísalas (ahora muestran más que antes).`,
+            );
+        }
+        if (automationsPaused > 0) {
+            warnings.push(
+                `${automationsPaused} automatización(es) llegaron PAUSADAS porque una condición nombraba a una persona o a un equipo que no viajó (o la lista donde crean registros no viajó): revisa sus condiciones y actívalas.`,
             );
         }
         const sheetSyncRowsIn = await this.readAll(rows('sheet_syncs'));

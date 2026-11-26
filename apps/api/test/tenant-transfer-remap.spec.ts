@@ -1,16 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { parseViewConfig } from '@imagina-base/shared';
 import {
+    buildConditionFieldIndex,
     emptyMaps,
     mapId,
     remapAutomation,
+    remapConditionValue,
     remapFormConfig,
+    remapIdConditions,
     remapJson,
     remapListSettings,
     remapRecordData,
     remapRichDoc,
     remapViewConfig,
     remapWidgetConfig,
+    type AutomationRemapReport,
+    type ConditionRemapReport,
     type IdMaps,
 } from '../src/platform/tenant-transfer.remap';
 
@@ -690,5 +695,344 @@ describe('v0.1.457 — condiciones de campos y sólo lectura por rol', () => {
         expect(settings.permissions.permissions.agent!.readonly_field_ids).toEqual([110]);
         expect(settings.permissions.users['130']!.readonly_field_ids).toEqual([111]);
         expect(settings.permissions.teams['180']!.readonly_field_ids).toEqual([112]);
+    });
+});
+
+describe('condiciones cuyo valor es una persona o un equipo', () => {
+    // Personas: 30→130 y 31→131 viajan; 32 NO. Equipos: 80→180 viaja; 81 NO.
+    function conditionMaps(): IdMaps {
+        const m = maps();
+        m.team.set(80, 180);
+        m.field.set(13, 113).set(14, 114).set(15, 115).set(16, 116).set(17, 117);
+        return m;
+    }
+    // Lista 1: responsable (Persona), equipo (Equipo), estado (selección),
+    // modificado_por y la relación «proyectos» hacia la lista 2. Lista 2: dueno
+    // (Persona), un «responsable» que ahí es TEXTO y una relación hacia la 1.
+    const fieldRows = [
+        { id: 10, listId: 1, slug: 'responsable', type: 'user' },
+        { id: 11, listId: 1, slug: 'equipo', type: 'team' },
+        { id: 12, listId: 1, slug: 'estado', type: 'select' },
+        { id: 13, listId: 1, slug: 'modificado_por', type: 'updated_by' },
+        { id: 14, listId: 1, slug: 'proyectos', type: 'relation', config: { target_list_id: 2 } },
+        { id: 15, listId: 2, slug: 'dueno', type: 'user' },
+        { id: 16, listId: 2, slug: 'responsable', type: 'text' },
+        { id: 17, listId: 2, slug: 'cliente', type: 'relation', config: { target_list_id: 1 } },
+    ];
+    const index = buildConditionFieldIndex(fieldRows);
+    const types = new Map(fieldRows.map((f) => [f.id, f.type]));
+
+    it('traduce un valor suelto y una lista, quita lo que no viajó y conserva lo que no es un id', () => {
+        const m = conditionMaps();
+        expect(remapConditionValue(30, 'user', m)).toEqual({ value: 130 });
+        expect(remapConditionValue('31', 'user', m)).toEqual({ value: '131' });
+        expect(remapConditionValue([30, 32, '31'], 'user', m)).toEqual({ value: [130, '131'] });
+        // Se queda sin valor: la condición se descarta (nunca con el id viejo).
+        expect(remapConditionValue(32, 'user', m)).toBeNull();
+        expect(remapConditionValue([32], 'created_by', m)).toBeNull();
+        expect(remapConditionValue([81], 'team', m)).toBeNull();
+        // El «Yo» de los equipos, el 0 de «Sistema», las variables y lo vacío no son ids.
+        expect(remapConditionValue(['$my_teams', 81, 80], 'team', m)).toEqual({ value: ['$my_teams', 180] });
+        expect(remapConditionValue('$my_teams', 'team', m)).toEqual({ value: '$my_teams' });
+        expect(remapConditionValue(0, 'updated_by', m)).toEqual({ value: 0 });
+        expect(remapConditionValue('{{responsable}}', 'user', m)).toEqual({ value: '{{responsable}}' });
+        expect(remapConditionValue('', 'user', m)).toEqual({ value: '' });
+        expect(remapConditionValue(null, 'user', m)).toEqual({ value: null });
+        expect(remapConditionValue([], 'team', m)).toEqual({ value: [] });
+        // Otro tipo de campo: el valor es dato, no se toca.
+        expect(remapConditionValue(32, 'number', m)).toEqual({ value: 32 });
+        expect(remapConditionValue('30', 'select', m)).toEqual({ value: '30' });
+    });
+
+    it('vista: filtro, su espejo y reglas de color; el grupo que queda vacío se va y la raíz se conserva', () => {
+        const m = conditionMaps();
+        const report: ConditionRemapReport = { dropped: 0 };
+        const out = remapViewConfig(
+            {
+                filter_tree: {
+                    type: 'group',
+                    logic: 'and',
+                    children: [
+                        { type: 'condition', field_id: 10, op: 'eq', value: 30 },
+                        { type: 'condition', field_id: 13, op: 'neq', value: 0 },
+                        {
+                            type: 'group',
+                            logic: 'or',
+                            children: [
+                                { type: 'condition', field_id: 11, op: 'in', value: [80, 81] },
+                                { type: 'condition', field_id: 10, op: 'eq', value: 32 },
+                            ],
+                        },
+                        { type: 'group', logic: 'and', children: [{ type: 'condition', field_id: 10, op: 'eq', value: 32 }] },
+                        { type: 'condition', field_id: 10, op: 'is_null' },
+                        { type: 'condition', field_id: 12, op: 'eq', value: '32' },
+                    ],
+                },
+                filters: [
+                    { field_id: 10, op: 'eq', value: 30 },
+                    { field_id: 10, op: 'eq', value: 32 },
+                ],
+                color_rules: [
+                    { id: 'a', enabled: true, condition: { type: 'condition', field_id: 10, op: 'eq', value: 32 }, color: 'red', target: 'row' },
+                    { id: 'b', enabled: true, condition: { type: 'condition', field_id: 11, op: 'eq', value: 80 }, color: 'green', target: 'row' },
+                ],
+            },
+            types,
+            m,
+            report,
+        );
+        expect(out.filter_tree).toEqual({
+            type: 'group',
+            logic: 'and',
+            children: [
+                { type: 'condition', field_id: 110, op: 'eq', value: 130 },
+                { type: 'condition', field_id: 113, op: 'neq', value: 0 },
+                { type: 'group', logic: 'or', children: [{ type: 'condition', field_id: 111, op: 'in', value: [180] }] },
+                { type: 'condition', field_id: 110, op: 'is_null' },
+                { type: 'condition', field_id: 112, op: 'eq', value: '32' },
+            ],
+        });
+        expect(out.filters).toEqual([{ field_id: 110, op: 'eq', value: 130 }]);
+        expect(out.color_rules).toEqual([
+            { id: 'b', enabled: true, condition: { type: 'condition', field_id: 111, op: 'eq', value: 180 }, color: 'green', target: 'row' },
+        ]);
+        // La del grupo OR, el grupo AND entero, la del espejo y la regla de color.
+        expect(report.dropped).toBe(4);
+
+        // Una raíz que se queda sin condiciones sigue siendo un filtro válido (vacío).
+        const root = remapJson(
+            remapIdConditions({ type: 'group', logic: 'and', children: [{ type: 'condition', field_id: 10, op: 'eq', value: 32 }] }, types, m),
+            m,
+        );
+        expect(root).toEqual({ type: 'group', logic: 'and', children: [] });
+    });
+
+    it('campo: «Mostrar sólo si…», «Obligatorio si…» y el filtro de un resumen', () => {
+        const m = conditionMaps();
+        const out = remapJson(
+            remapIdConditions(
+                {
+                    show_if: { logic: 'and', conditions: [{ field_id: 10, op: 'eq', value: 32 }] },
+                    validation: { required_if: { field_id: 11, op: 'eq', value: '80', message: 'Falta' } },
+                    filter_tree: { type: 'group', logic: 'and', children: [{ type: 'condition', field_id: 15, op: 'in', value: [30, 31] }] },
+                },
+                types,
+                m,
+            ),
+            m,
+        );
+        expect(out).toEqual({
+            // Sin condiciones: el campo se muestra siempre.
+            show_if: null,
+            validation: { required_if: { field_id: 111, op: 'eq', value: '180', message: 'Falta' } },
+            filter_tree: { type: 'group', logic: 'and', children: [{ type: 'condition', field_id: 115, op: 'in', value: [130, 131] }] },
+        });
+        const gone = remapIdConditions({ validation: { required_if: { field_id: 10, op: 'eq', value: '32', message: 'x' } } }, types, m);
+        expect(gone).toEqual({ validation: { required_if: null } });
+    });
+
+    it('formulario: una pregunta sin condición se muestra siempre y un salto sin condición se quita', () => {
+        const m = conditionMaps();
+        const report: ConditionRemapReport = { dropped: 0 };
+        const out = remapFormConfig(
+            {
+                items: [
+                    { id: 'q1', type: 'field', field_id: 11, show_if: { field_id: 11, op: 'eq', value: 81 } },
+                    { id: 'q2', type: 'field', field_id: 12, show_if: { match: 'any', rules: [{ field_id: 11, op: 'in', value: [80] }] } },
+                ],
+                settings: {
+                    jumps: [
+                        { id: 'jmp1', from: 'start', when: { match: 'all', rules: [{ field_id: 11, op: 'eq', value: 81 }] }, to: 'end' },
+                        { id: 'jmp2', from: 'start', when: null, to: 'end' },
+                        { id: 'jmp3', from: 'start', when: { field_id: 11, op: 'eq', value: 80 }, to: 'end' },
+                    ],
+                    endings: [{ id: 'end1', title: 'Hola', message: '', when: { field_id: 11, op: 'eq', value: 81 } }],
+                },
+            },
+            types,
+            m,
+            report,
+        ) as { items: Array<{ show_if: unknown }>; settings: { jumps: Array<{ id: string; when: unknown }>; endings: Array<{ when: unknown }> } };
+        expect(out.items[0]!.show_if).toBeNull();
+        expect(out.items[1]!.show_if).toEqual({ match: 'any', rules: [{ field_id: 111, op: 'in', value: [180] }] });
+        // jmp1 perdió su condición: con `when: null` saltaría SIEMPRE, así que se quita.
+        expect(out.settings.jumps.map((j) => j.id)).toEqual(['jmp2', 'jmp3']);
+        expect(out.settings.jumps[1]!.when).toEqual({ field_id: 111, op: 'eq', value: 180 });
+        // Una pantalla final sin condición sólo se usa desde un salto.
+        expect(out.settings.endings[0]!.when).toBeNull();
+        expect(report.dropped).toBe(3);
+    });
+
+    it('tablero y ficha: los filtros de cada widget y de los bloques del diseño', () => {
+        const m = conditionMaps();
+        const widgets = remapJson(
+            remapIdConditions(
+                [{ type: 'kpi', list_id: 1, config: { filter_tree: { type: 'group', logic: 'and', children: [{ type: 'condition', field_id: 11, op: 'in', value: ['$my_teams', 80] }] } } }],
+                types,
+                m,
+            ),
+            m,
+        );
+        expect(widgets).toEqual([
+            { type: 'kpi', list_id: 101, config: { filter_tree: { type: 'group', logic: 'and', children: [{ type: 'condition', field_id: 111, op: 'in', value: ['$my_teams', 180] }] } } },
+        ]);
+        const settings = remapListSettings(
+            { record_layout_v3: { blocks: [{ type: 'linked', filter_tree: { type: 'group', logic: 'and', children: [{ type: 'condition', field_id: 15, op: 'eq', value: 30 }] } }] } },
+            m,
+            null,
+            { fieldTypeByOldId: types },
+        ) as { record_layout_v3: { blocks: Array<{ filter_tree: unknown }> } };
+        expect(settings.record_layout_v3.blocks[0]!.filter_tree).toEqual({
+            type: 'group',
+            logic: 'and',
+            children: [{ type: 'condition', field_id: 115, op: 'eq', value: 130 }],
+        });
+    });
+
+    it('automatización: condiciones por slug en el disparador, en «Si / sino» y dentro de «Repetir por cada vinculado»', () => {
+        const m = conditionMaps();
+        const report: AutomationRemapReport = { dropped: 0, lostTargets: 0 };
+        const { triggerConfig, actions } = remapAutomation(
+            {
+                field: 'responsable',
+                from_value: '30',
+                to_value: '32',
+                field_filters: [
+                    { field: 'responsable', op: 'eq', value: 31 },
+                    { field: 'equipo', op: 'in', value: [81] },
+                    { field: 'estado', op: 'eq', value: '30' },
+                ],
+                records_filter: { type: 'group', logic: 'and', children: [{ type: 'condition', field_id: 10, op: 'eq', value: 30 }] },
+            },
+            [
+                {
+                    type: 'if_else',
+                    condition: [{ slug: 'before.responsable', op: 'eq', value: 30 }],
+                    config: {
+                        condition: [
+                            { field: 'responsable', op: 'in', value: [30, 32] },
+                            { field: 'responsable', op: 'eq', value: '{{asignado.id}}' },
+                        ],
+                        then_actions: [
+                            {
+                                type: 'if_else',
+                                // Legacy plano `{slug: valor}`.
+                                config: { condition: { responsable: 32, estado: 'abierto' }, then_actions: [], else_actions: [] },
+                            },
+                        ],
+                        else_actions: [{ type: 'create_record', config: { target_list: 2, values: {} } }],
+                    },
+                },
+                {
+                    type: 'for_each_linked',
+                    config: {
+                        relation_field_id: 14,
+                        filter_tree: { type: 'group', logic: 'and', children: [{ type: 'condition', field_id: 15, op: 'eq', value: 31 }] },
+                        actions: [
+                            {
+                                type: 'update_field',
+                                // `item.responsable` es TEXTO en la lista 2 (no se toca);
+                                // `responsable` sin prefijo es la Persona de la lista 1.
+                                condition: [
+                                    { field: 'item.dueno', op: 'eq', value: 30 },
+                                    { field: 'item.responsable', op: 'eq', value: '30' },
+                                    { field: 'responsable', op: 'eq', value: 31 },
+                                ],
+                                config: { field_id: 15, value: 'x' },
+                            },
+                        ],
+                    },
+                },
+                {
+                    type: 'stop_unless',
+                    config: { condition: [{ field: 'equipo', op: 'eq', value: 80 }] },
+                    on_error: { mode: 'steps', actions: [{ type: 'wait', config: { resume_condition: [{ field: 'responsable', op: 'eq', value: 32 }] } }] },
+                },
+                {
+                    type: 'switch',
+                    config: {
+                        source_field_id: 10,
+                        cases: [
+                            { label: 'Ana', op: 'eq', value: 30, actions: [] },
+                            { label: 'Ex', op: 'eq', value: 32, actions: [{ type: 'create_record', config: { target_list: 9, values: {} } }] },
+                        ],
+                        default_actions: [],
+                    },
+                },
+                { type: 'find_records', config: { list_id: 2, conditions: [{ field: 'dueno', op: 'eq', value: 31 }, { field: 'responsable', op: 'eq', value: '31' }] } },
+            ],
+            m,
+            { listId: 1, index, report },
+        );
+        expect(triggerConfig).toEqual({
+            field: 'responsable',
+            from_value: '130',
+            to_value: null,
+            field_filters: [
+                { field: 'responsable', op: 'eq', value: 131 },
+                { field: 'estado', op: 'eq', value: '30' },
+            ],
+            records_filter: { type: 'group', logic: 'and', children: [{ type: 'condition', field_id: 110, op: 'eq', value: 130 }] },
+        });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- se navega el árbol de acciones en las aserciones
+        type Step = { condition?: unknown; config: Record<string, any>; on_error?: { actions: Array<{ config: Record<string, unknown> }> } };
+        const steps = actions as Step[];
+        expect(steps[0]!.condition).toEqual([{ slug: 'before.responsable', op: 'eq', value: 130 }]);
+        expect(steps[0]!.config.condition).toEqual([
+            { field: 'responsable', op: 'in', value: [130] },
+            { field: 'responsable', op: 'eq', value: '{{asignado.id}}' },
+        ]);
+        expect(steps[0]!.config.then_actions[0].config.condition).toEqual({ estado: 'abierto' });
+        expect(steps[0]!.config.else_actions[0].config.target_list).toBe(102);
+        expect(steps[1]!.config.filter_tree.children[0]).toEqual({ type: 'condition', field_id: 115, op: 'eq', value: 131 });
+        expect(steps[1]!.config.actions[0].condition).toEqual([
+            { field: 'item.dueno', op: 'eq', value: 130 },
+            { field: 'item.responsable', op: 'eq', value: '30' },
+            { field: 'responsable', op: 'eq', value: 131 },
+        ]);
+        expect(steps[2]!.config.condition).toEqual([{ field: 'equipo', op: 'eq', value: 180 }]);
+        expect(steps[2]!.on_error!.actions[0]!.config.resume_condition).toEqual([]);
+        // La rama que nombraba a quien no viajó conserva sus pasos, sin valor
+        // (así no se puede activar hasta elegir a otra persona).
+        expect(steps[3]!.config.cases.map((c: { value: unknown }) => c.value)).toEqual([130, null]);
+        expect(steps[3]!.config.cases[1].actions).toHaveLength(1);
+        expect(steps[4]!.config.list_id).toBe(102);
+        expect(steps[4]!.config.conditions).toEqual([
+            { field: 'dueno', op: 'eq', value: 131 },
+            { field: 'responsable', op: 'eq', value: '31' },
+        ]);
+        // El «a» del disparador, el equipo del disparador, el legacy, la espera
+        // y la rama del «Según el valor de…» (el 32 del «in» sólo achica la lista).
+        expect(report.dropped).toBe(5);
+        // «Crear un registro» con una lista destino que no viajó.
+        expect(report.lostTargets).toBe(1);
+    });
+
+    it('automatización: «Repetir por cada vinculado» por una relación que vive en la OTRA lista', () => {
+        const m = conditionMaps();
+        const { actions } = remapAutomation(
+            {},
+            [
+                {
+                    type: 'for_each_linked',
+                    config: { relation_field_id: 17, actions: [{ type: 'update_field', condition: [{ field: 'item.dueno', op: 'eq', value: 30 }], config: {} }] },
+                },
+            ],
+            m,
+            { listId: 1, index },
+        );
+        type Each = { config: { actions: Array<{ condition: unknown }> } };
+        expect((actions as Each[])[0]!.config.actions[0]!.condition).toEqual([{ field: 'item.dueno', op: 'eq', value: 130 }]);
+    });
+
+    it('sin contexto de condiciones, `remapAutomation` hace lo de siempre (y `target_list` igual se traduce)', () => {
+        const m = conditionMaps();
+        const { triggerConfig, actions } = remapAutomation(
+            { field_filters: [{ field: 'responsable', op: 'eq', value: 30 }] },
+            [{ type: 'create_record', config: { target_list: '1', values: {} } }],
+            m,
+        );
+        expect(triggerConfig.field_filters).toEqual([{ field: 'responsable', op: 'eq', value: 30 }]);
+        expect((actions as Array<{ config: { target_list: unknown } }>)[0]!.config.target_list).toBe('101');
     });
 });
