@@ -222,6 +222,7 @@ import { can } from '../../authz/can';
 import { redactAutomationSecrets } from '../../automations/automation-secrets';
 import { canonicalPublicSettings } from '../../public-lists/public-lists.service';
 import { AiToolError, AiToolRegistry, type AiToolContext, type AiToolResult } from './registry';
+import { assertRelativeDateRule, RELATIVE_DATE_AI_HELP } from './relative-dates';
 import { buildButtonConfig, buttonSpec, describeButtonForModel, type ButtonFieldRef } from './button-ai';
 import { aclExtras, readonlyFieldIdsFor, resolvePermissions } from '../../lists/list-acl';
 import { describeHelpdeskForModel } from './helpdesk-schema';
@@ -383,12 +384,15 @@ type FieldSpec = z.infer<typeof fieldSpec>;
 export const filterRuleSpec = z.object({
     field: fieldSlugSchema.describe('Slug del campo'),
     op: filterOperatorSchema,
-    value: z.unknown().optional().describe('Para select usar el `value` de la opción; para in/nin un array; fechas AAAA-MM-DD'),
+    value: z.unknown().optional().describe(`Para select usar el \`value\` de la opción; para in/nin un array; fechas AAAA-MM-DD. ${RELATIVE_DATE_AI_HELP}`),
 });
 export type FilterRuleSpec = z.infer<typeof filterRuleSpec>;
 
 /** Reglas AND del modelo → filter tree del motor (ids resueltos por el llamador). */
 export function rulesToFilterTree(rules: FilterRuleSpec[], resolveId: (slug: string) => unknown): FilterGroup {
+    // v0.1.469 — un `between_relative` con un valor que no sirve ({days: 0})
+    // vuelve al modelo como error corregible, no como un 400 al consultar.
+    for (const r of rules) assertRelativeDateRule(r.op, r.value, `El filtro sobre «${r.field}»`);
     return {
         type: 'group',
         logic: 'and',
@@ -408,7 +412,7 @@ export function rulesToFilterTree(rules: FilterRuleSpec[], resolveId: (slug: str
 const colorRuleSpec = z.object({
     field: fieldSlugSchema.describe('Slug del campo de la condición'),
     op: filterOperatorSchema,
-    value: z.unknown().optional().describe('Mismo formato que un filtro: el `value` de la opción en un select, AAAA-MM-DD en fechas, un preset («today», «this_week», «last_7_days»…) con between_relative'),
+    value: z.unknown().optional().describe(`Mismo formato que un filtro: el \`value\` de la opción en un select, AAAA-MM-DD en fechas. ${RELATIVE_DATE_AI_HELP}`),
     color: viewRowColorSchema.describe(`Uno de: ${VIEW_ROW_COLORS.join(', ')}`),
     target: z.enum(['row', 'cell']).optional().describe('row = pinta toda la fila (default); cell = sólo la celda de `column`'),
     column: fieldSlugSchema.optional().describe('Con target=cell: la columna a pintar (default: el campo de la condición)'),
@@ -668,7 +672,7 @@ export const automationSpec = z.object({
                 'sla_alert (un SLA de la mesa de ayuda entró en riesgo o se venció; las acciones usan {{sla.alerta}}, {{sla.objetivo}}, {{sla.vence}}, {{sla.prioridad}}, {{sla.estado}}): {sla_alerts?: [at_risk|breached] (vacío = las dos), sla_targets?: [first_response|resolution] (vacío = los dos), field_filters?}. ' +
                 'comment_added (alguien comentó en el registro: el equipo en la app, el cliente desde el portal o respondiendo por correo; NO se dispara con lo que comenta un agente de IA; las acciones usan {{comentario.texto}}, {{comentario.autor}}, {{comentario.de}} (equipo|cliente), {{comentario.origen}} (app|portal|correo), {{comentario.visibilidad}}, {{comentario.es_respuesta}}): {comment_from?: any|team|client, comment_visibility?: any|internal|client, comment_replies?: any|top (sólo comentarios nuevos, no respuestas)|replies, comment_contains? (palabras separadas por coma: sólo si el texto contiene alguna, sin importar tildes ni mayúsculas), field_filters?}. ' +
                 'signature_event (cambió una FIRMA ELECTRÓNICA de un documento del registro; las acciones usan {{firma.evento}}, {{firma.titulo}}, {{firma.numero}}, {{firma.estado}}, {{firma.firmante}}, {{firma.firmante_email}}, {{firma.firmaron}}, {{firma.total}}, {{firma.motivo}}, {{firma.siguiente}}, {{firma.siguiente_email}}, {{firma.enlace}} (el de quien firma ahora), {{firma.pdf}} (el firmado, cuando firmaron todos), {{firma.verificar}}, {{firma.codigo}}): {signature_events?: [requested|signed|completed|declined|expired|voided] (vacío = todos; completed = firmaron todos), signature_templates?: [id o nombre de las plantillas de documento_templates: sólo las firmas de esos documentos], field_filters?}. ' +
-                'record_matches (un registro EMPIEZA a cumplir una condición: por una edición, al crearse o por el paso del tiempo con fechas relativas — se revisa cada 15 minutos; dispara UNA vez por entrada y no otra vez mientras la siga cumpliendo; si sale y vuelve a entrar, dispara de nuevo; al activarla, los que YA la cumplen no disparan): {match_filters: [{field: slug, op, value}] (todas se tienen que cumplir; ej. [{field: "estado", op: "eq", value: "pendiente"}, {field: "vence", op: "between_relative", value: "next_7_days"}]), match_on_create?: true (default: también cuando el registro se crea ya cumpliéndola)}. ' +
+                'record_matches (un registro EMPIEZA a cumplir una condición: por una edición, al crearse o por el paso del tiempo con fechas relativas — se revisa cada 15 minutos; dispara UNA vez por entrada y no otra vez mientras la siga cumpliendo; si sale y vuelve a entrar, dispara de nuevo; al activarla, los que YA la cumplen no disparan): {match_filters: [{field: slug, op, value}] (todas se tienen que cumplir; ej. [{field: "estado", op: "eq", value: "pendiente"}, {field: "vence", op: "between_relative", value: {days: 10, dir: "next"}}] — «vence en los próximos 10 días»; between_relative acepta un preset como "next_7_days" o {days: N, dir: "next"|"last"|"before"|"after"}), match_on_create?: true (default: también cuando el registro se crea ya cumpliéndola)}. ' +
                 'file_added (se subió un archivo a un campo de archivos del registro; las acciones usan {{archivo.nombre}}, {{archivo.tipo}}, {{archivo.tamano}}, {{archivo.campo}}, {{archivo.enlace}} (enlace firmado que sirve en un correo, dura 30 días), {{archivo.cantidad}}): {file_field?: slug de un campo de archivos (vacío = cualquiera), file_kind?: any|image|pdf, field_filters?}.',
         ),
     actions: z
@@ -5053,8 +5057,15 @@ export class StructureTools implements AiProposalApplier {
                 bad.add(s);
         };
         const checkCondition = (c: unknown): void => {
-            if (Array.isArray(c)) for (const r of c) check((r as { field?: string; slug?: string }).field ?? (r as { slug?: string }).slug);
-            else if (c && typeof c === 'object') for (const k of Object.keys(c)) check(k);
+            if (Array.isArray(c)) {
+                for (const r of c) {
+                    const rule = r as { field?: string; slug?: string; op?: unknown; value?: unknown };
+                    const field = rule.field ?? rule.slug;
+                    check(field);
+                    // v0.1.469 — una fecha relativa con un valor que no sirve ({days: 0}) es corregible.
+                    assertRelativeDateRule(rule?.op, rule?.value, `La condición sobre «${field ?? '?'}»`);
+                }
+            } else if (c && typeof c === 'object') for (const k of Object.keys(c)) check(k);
         };
         const checkTags = (v: unknown): void => {
             if (typeof v !== 'string') return;

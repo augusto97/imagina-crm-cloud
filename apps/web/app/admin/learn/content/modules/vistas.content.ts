@@ -348,7 +348,26 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Fechas que se actualizan solas' },
             {
                 t: 'p',
-                md: 'Con la condición **en** eliges un rango relativo en vez de fechas fijas, y la vista sigue funcionando la semana siguiente sin tocarla. Debajo de cada filtro de fecha también aparecen **Rangos rápidos** para elegirlos con un clic.\n\nLos rangos son: **Hoy**, **Ayer**, **Esta semana**, **Semana pasada**, **Este mes**, **Mes pasado**, **Últimos 7 días**, **Últimos 15 días**, **Últimos 30 días**, **Últimos 90 días**, **Próximos 7 días**, **Próximos 30 días**, **De hoy en adelante**, **Este trimestre**, **Trimestre pasado**, **Este año**, **Año pasado** y **Personalizado**.',
+                md: 'Con la condición **en** eliges un rango relativo en vez de fechas fijas, y la vista sigue funcionando la semana siguiente sin tocarla. Debajo de cada filtro de fecha también aparecen **Rangos rápidos** para elegirlos con un clic.\n\nLos rangos fijos son: **Hoy**, **Ayer**, **Esta semana**, **Semana pasada**, **Este mes**, **Mes pasado**, **Últimos 7 días**, **Últimos 15 días**, **Últimos 30 días**, **Últimos 90 días**, **Próximos 7 días**, **Próximos 30 días**, **De hoy en adelante**, **Antes de hoy (vencido)**, **Este trimestre**, **Trimestre pasado**, **Este año** y **Año pasado**. Con **Personalizado…** eliges dos fechas fijas.',
+            },
+            {
+                t: 'settings',
+                title: 'Cualquier cantidad de días',
+                rows: [
+                    { name: 'Próximos N días…', what: 'De hoy a dentro de N−1 días. «Próximos 10 días» incluye hoy y los 9 que siguen.', tip: '«Vence en los próximos 10 días» para avisar antes de que se pase.' },
+                    { name: 'Últimos N días…', what: 'De hace N−1 días a hoy.', tip: '«Creado en los últimos 3 días» para revisar lo nuevo.' },
+                    { name: 'Hace más de N días…', what: 'Antes de hace N días. El día de hace exactamente N días no entra.', tip: '«Último contacto hace más de 45 días» para retomar a los clientes olvidados.' },
+                    { name: 'Dentro de más de N días…', what: 'Después de dentro de N días.', tip: '«Entrega dentro de más de 30 días» para lo que todavía puede esperar.' },
+                ],
+            },
+            {
+                t: 'p',
+                md: 'Escribe la cantidad de días (de 1 a 3650) y debajo verás qué abarca hoy, en el formato de fecha de tu empresa: «Del 26/11/2026 al 05/12/2026», «Antes del 12/10/2026». Los mismos rangos sirven en los colores de la tabla, en las condiciones de las automatizaciones (también en **Según el valor de…** y **Comprobar y detener**), en el filtro de ítems de los documentos PDF y en los filtros de los widgets.',
+            },
+            {
+                t: 'example',
+                title: 'Clientes sin contacto',
+                md: 'En una lista de clientes con el campo **Último contacto**, filtra «Último contacto **en** Hace más de 45 días» y guárdala como la vista «Para llamar». Cada mañana muestra a quienes no llamas hace más de mes y medio, sin cambiar nada.',
             },
             {
                 t: 'callout',

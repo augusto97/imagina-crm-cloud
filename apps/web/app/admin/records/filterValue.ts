@@ -1,3 +1,5 @@
+import { normalizeRelativeDateValue } from '@imagina-base/shared';
+
 import type { FilterOperator } from '@/types/record';
 
 import { isNullaryOperator } from './operators';
@@ -37,12 +39,10 @@ export function toValueList(value: unknown): string[] {
 export function valueForOperator(nextOp: FilterOperator, value: unknown): unknown {
     if (isNullaryOperator(nextOp)) return null;
     if (nextOp === 'between_relative') {
-        // El valor pasa de ser una fecha (string ISO) a un preset slug.
-        // Si no es ya un preset válido, default a este mes.
-        if (typeof value !== 'string' || value === '' || value.includes('-')) {
-            return 'this_month';
-        }
-        return value;
+        // El valor pasa de ser una fecha (string ISO) a un rango relativo. Se
+        // conserva si ya es uno que sirve (un preset, `{days, dir}` o `{from,
+        // to}`, v0.1.469); si no, «Este mes».
+        return normalizeRelativeDateValue(value) ?? 'this_month';
     }
     if (isMultiValueOperator(nextOp)) {
         if (Array.isArray(value)) return value;

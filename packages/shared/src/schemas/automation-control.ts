@@ -14,6 +14,7 @@
  * se lee con tolerancia (un valor raro cae al default, nunca rompe la corrida).
  */
 import { evaluateConditionOp, type ConditionOptions } from '../field-types/conditions';
+import { relativeDateLabel, relativeDateValueIssue } from '../field-types/date-ranges';
 import { RESPONSE_NAME_RE } from './automation-flow';
 
 export const SWITCH_ACTION = 'switch';
@@ -61,6 +62,8 @@ export const SWITCH_OPS = [
     'lte',
     'is_null',
     'is_not_null',
+    // v0.1.469 — una fecha: «este mes», «próximos 10 días», «hace más de 30 días».
+    'between_relative',
 ] as const;
 export type SwitchOp = (typeof SWITCH_OPS)[number];
 export const SWITCH_OPS_WITHOUT_VALUE: readonly SwitchOp[] = ['is_null', 'is_not_null'];
@@ -80,6 +83,7 @@ export const SWITCH_OP_LABELS: Record<SwitchOp, string> = {
     lte: 'es menor o igual que',
     is_null: 'está vacío',
     is_not_null: 'tiene un valor',
+    between_relative: 'está en',
 };
 
 /** De dónde sale el valor que decide la rama: un campo (por id) o una variable. */
@@ -148,6 +152,8 @@ export function switchValueText(value: unknown, labelOf?: (v: string) => string)
 export function switchCaseLabel(c: SwitchCase, index: number, labelOf?: (v: string) => string): string {
     if (c.label !== '') return c.label;
     if (SWITCH_OPS_WITHOUT_VALUE.includes(c.op)) return SWITCH_OP_LABELS[c.op].replace(/^./, (m) => m.toUpperCase());
+    // v0.1.469 — «Próximos 10 días», «Hace más de 30 días», «Este mes».
+    if (c.op === 'between_relative') return relativeDateLabel(c.value) ?? `Rama ${index + 1}`;
     const v = switchValueText(c.value, labelOf);
     if (v === '') return `Rama ${index + 1}`;
     return c.op === 'eq' ? v : `${SWITCH_OP_LABELS[c.op]} ${v}`;
@@ -214,6 +220,9 @@ export function switchIssues(cfg: Record<string, unknown> | null | undefined, at
     s.cases.forEach((c, i) => {
         if (caseNeedsValue(c)) {
             out.push({ path: `${at}.config.cases.${i}.value`, message: `En la rama «${switchCaseLabel(c, i)}» falta el valor con el que se compara.` });
+        } else if (c.op === 'between_relative') {
+            const issue = relativeDateValueIssue(c.value);
+            if (issue) out.push({ path: `${at}.config.cases.${i}.value`, message: `En la rama ${i + 1}: ${issue}` });
         }
     });
     return out;
