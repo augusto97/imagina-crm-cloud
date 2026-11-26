@@ -270,6 +270,10 @@ describe('v0.1.458 — «Importar de Airtable» (Postgres + Redis reales, Airtab
         const clientes = await listByName('Clientes');
         const proyectos = await listByName('Proyectos');
         const tareas = await listByName('Tareas');
+        // v0.1.470 — cada lista nace con la ficha diseñada que le corresponde.
+        expect(clientes.settings).toMatchObject({ record_layout: 'crm', crm_template_id: 'contact' });
+        expect(proyectos.settings).toMatchObject({ record_layout: 'crm', crm_template_id: 'task' });
+        expect(tareas.settings).toMatchObject({ record_layout: 'crm', crm_template_id: 'task' });
         const cf = await fieldsOf(clientes.id);
         const pf = await fieldsOf(proyectos.id);
         const tf = await fieldsOf(tareas.id);

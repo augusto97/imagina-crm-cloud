@@ -290,6 +290,7 @@ export class OnboardingService {
             result = await this.blueprints.materialize(tenantId, actor.userId, blueprint, {
                 groupId: folder?.id ?? null,
                 includeRecords: opts.includeSamples,
+                suggestRecordLayout: true,
             });
         } catch (err) {
             // Si no llegó a crearse ninguna lista, la carpeta no queda vacía en el menú.

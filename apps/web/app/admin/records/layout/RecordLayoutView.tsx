@@ -1,12 +1,12 @@
-import { Fragment, useMemo, type CSSProperties, type ReactNode } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router';
+import { Fragment, useEffect, useMemo, useState, type CSSProperties, type MutableRefObject, type ReactNode } from 'react';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { ArrowLeft, Check, Loader2, Paintbrush, Trash2 } from 'lucide-react';
-import type { LayoutSection, RecordLayoutV3 } from '@imagina-base/shared';
+import { readUnplacedFieldsOpen, unplacedLayoutFields, type AutoLayoutFlavor, type LayoutSection, type RecordLayoutV3 } from '@imagina-base/shared';
 
 import { useContainerWidth } from '@/admin/dashboards/widgets/useContainerWidth';
 import { Button } from '@/components/ui/button';
 import { WidgetDataOverrideContext } from '@/hooks/useDashboards';
-import { __ } from '@/lib/i18n';
+import { __, sprintf } from '@/lib/i18n';
 import { CAP, useCanAny } from '@/lib/permissions';
 import { useGuestAccess } from '@/hooks/useGuests';
 import { useIsGuest } from '@/lib/guest';
@@ -29,7 +29,8 @@ import { RecordAgentRuns, RecordAiSummaryCard } from '@/admin/records/ai/RecordA
 import { RecordDuplicateBanner } from '../duplicates/DuplicateHints';
 import { lockedReasonsFor, recordGoneInSource, useStoreRules } from '../storeRules';
 import { LayoutBlockView } from './LayoutBlocks';
-import { LayoutContext, useLayoutCtx, type LayoutCtx } from './LayoutContext';
+import { LayoutContext, useConditionHiddenIds, useLayoutCtx, type LayoutCtx } from './LayoutContext';
+import { designRecordHref, layoutHasConversation, readUnplacedOpenPref, writeUnplacedOpenPref } from './recordModalMode';
 import { LayoutHeader } from './LayoutHeader';
 import { resolveTheme, tint } from './layoutTheme';
 import { planSection } from './sectionPlan';
@@ -53,6 +54,22 @@ interface Props {
      * siquiera aparecía en la ficha diseñada.
      */
     actions?: ReactNode;
+    /**
+     * v0.1.470 — dentro de la ventana flotante: sin la barra propia (la
+     * ventana pone las acciones, el «Guardando…» y «Diseñar esta ficha» en la
+     * suya).
+     */
+    embedded?: boolean;
+    /** Avisa si hay un cambio guardándose (la barra de la ventana lo dice). */
+    onSavingChange?: (saving: boolean) => void;
+    /** La ventana descarga lo pendiente antes de cerrar o pasar a otro registro. */
+    flushRef?: MutableRefObject<(() => Promise<void>) | null>;
+    /** Le dice a la ventana si el diseño ya trae la conversación (sin panel al costado). */
+    onConversationInLayout?: (has: boolean) => void;
+    /** «Probar»: la ficha con esta plantilla integrada, SIN guardarla. */
+    previewTemplate?: AutoLayoutFlavor;
+    /** Abrir otro registro (un duplicado, una subtarea) en la misma ventana. */
+    onOpenRecord?: (id: number) => void;
 }
 
 /**
@@ -62,8 +79,23 @@ interface Props {
  * corresponde, gráficos y tablas de los registros vinculados. Se guarda
  * sola, campo por campo.
  */
-export function RecordLayoutView({ list, record, fields, currentUserId, isAdmin, onDelete, deleting, actions }: Props): JSX.Element {
-    const { layout, origin } = useRecordLayout(list, fields);
+export function RecordLayoutView({
+    list,
+    record,
+    fields,
+    currentUserId,
+    isAdmin,
+    onDelete,
+    deleting,
+    actions,
+    embedded = false,
+    onSavingChange,
+    flushRef,
+    onConversationInLayout,
+    previewTemplate,
+    onOpenRecord,
+}: Props): JSX.Element {
+    const { layout, origin } = useRecordLayout(list, fields, previewTemplate);
     const canEditByCaps = useCanAny(CAP.EDIT_RECORDS, CAP.EDIT_OWN_RECORDS);
     // C3 — un invitado edita sólo con «Puede editar» y nunca borra.
     const guest = useGuestAccess(list.id, record.id);
@@ -86,6 +118,22 @@ export function RecordLayoutView({ list, record, fields, currentUserId, isAdmin,
     const fieldsById = useMemo(() => new Map(fields.map((f) => [f.id, f])), [fields]);
     const theme = resolveTheme(layout?.theme);
 
+    // v0.1.470 — lo que la ventana flotante necesita saber de la ficha.
+    useEffect(() => {
+        onSavingChange?.(save.saving);
+    }, [save.saving, onSavingChange]);
+    useEffect(() => {
+        if (!flushRef) return;
+        flushRef.current = save.flush;
+        return () => {
+            if (flushRef.current === save.flush) flushRef.current = null;
+        };
+    }, [flushRef, save.flush]);
+    const hasConversation = layout === null ? null : layoutHasConversation(layout);
+    useEffect(() => {
+        if (hasConversation !== null) onConversationInLayout?.(hasConversation);
+    }, [hasConversation, onConversationInLayout]);
+
     const ctx: LayoutCtx = {
         list,
         record,
@@ -107,8 +155,10 @@ export function RecordLayoutView({ list, record, fields, currentUserId, isAdmin,
         <LayoutContext.Provider value={ctx}>
             <WidgetDataOverrideContext.Provider value={override}>
                 <div className="imcrm-lay-root imcrm-flex imcrm-flex-col" style={{ gap: theme.gap }} data-testid="imcrm-record-layout">
+                    {!embedded && (
                     <Toolbar
                         list={list}
+                        recordId={record.id}
                         saving={save.saving}
                         // v0.1.336 — en una lista de la tienda o del sitio, sólo lo que la fuente ya borró.
                         onDelete={(storeRules && !recordGoneInSource(storeRules, record)) || guest.isGuest ? null : onDelete}
@@ -118,6 +168,7 @@ export function RecordLayoutView({ list, record, fields, currentUserId, isAdmin,
                         origin={origin}
                         actions={actions}
                     />
+                    )}
                     {layout === null ? (
                         <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-py-10 imcrm-text-sm imcrm-text-muted-foreground">
                             <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" /> {__('Preparando la ficha…')}
@@ -128,13 +179,15 @@ export function RecordLayoutView({ list, record, fields, currentUserId, isAdmin,
                             renderHeader={(header) => (
                                 <>
                                     {header}
-                                    <ImplicitApprovals layout={layout} />
+                                    <ImplicitApprovals layout={layout} onOpenRecord={onOpenRecord} />
                                 </>
                             )}
                             footer={
                                 guest.isGuest ? null : (
                                     <>
-                                        <ImplicitSubtasks layout={layout} />
+                                        {/* v0.1.470 — lo que el diseño no ubica, para que nunca falte un campo. */}
+                                        {previewTemplate === undefined && <ImplicitUnplaced layout={layout} origin={origin} />}
+                                        <ImplicitSubtasks layout={layout} onOpenRecord={onOpenRecord} />
                                         <ImplicitPayments layout={layout} />
                                         {/* Ley 1581 — autorización de tratamiento de datos (formulario/portal). */}
                                         <RecordDataConsentLine listId={list.id} recordId={record.id} />
@@ -150,11 +203,58 @@ export function RecordLayoutView({ list, record, fields, currentUserId, isAdmin,
 }
 
 /**
+ * v0.1.470 — Una ficha diseñada nunca esconde campos: los de la lista que
+ * el diseño no ubica en ningún lado (un campo creado después de diseñarla,
+ * por ejemplo) van al final de la primera pestaña, en «Otros campos (N)»,
+ * editables con las mismas reglas que el resto. Sólo en un diseño propio
+ * (las plantillas integradas ya ubican todos), nunca en el portal, y el
+ * diseño puede apagarla o hacerla empezar abierta.
+ */
+function ImplicitUnplaced({ layout, origin }: { layout: RecordLayoutV3; origin: LayoutOrigin }): JSX.Element | null {
+    const ctx = useLayoutCtx();
+    const [params] = useSearchParams();
+    const conditionHidden = useConditionHiddenIds();
+    const hiddenSlugs = ctx.list.my_access?.hidden_field_slugs;
+    const unplaced = useMemo(
+        () => unplacedLayoutFields(layout, ctx.fields, { hiddenSlugs }).filter((f) => !conditionHidden.has(f.id)),
+        [layout, ctx.fields, hiddenSlugs, conditionHidden],
+    );
+    const startOpen = readUnplacedFieldsOpen(layout);
+    const [open, setOpen] = useState(() => readUnplacedOpenPref(ctx.list.id, startOpen));
+    const tab = params.get('tab');
+    const first = layout.pages[0]!;
+    const onFirst = tab === null || tab === first.id || !layout.pages.some((p) => p.id === tab);
+    if (!onFirst || origin === 'auto' || ctx.preview === true || ctx.mode === 'portal' || unplaced.length === 0) return null;
+    return (
+        <div className="imcrm-mt-3" data-tour="record-unplaced-fields">
+            <LayoutBlockView
+                testId="imcrm-unplaced-fields"
+                block={{
+                    id: '__unplaced',
+                    type: 'fields',
+                    title: sprintf(
+                        /* translators: %d: cantidad de campos */
+                        __('Otros campos (%d)'),
+                        unplaced.length,
+                    ),
+                    config: { field_ids: unplaced.map((f) => f.id), layout: 'grid', columns: 2, icon: 'database' },
+                }}
+                open={open}
+                onOpenChange={(next) => {
+                    setOpen(next);
+                    writeUnplacedOpenPref(ctx.list.id, next);
+                }}
+            />
+        </div>
+    );
+}
+
+/**
  * Un diseño que no incluye el bloque «Subtareas» no esconde las que existen:
  * si el registro tiene subtareas (o es una), se muestran al final de la
  * primera pestaña. Quien quiera ubicarlas en otro lado agrega el bloque.
  */
-function ImplicitSubtasks({ layout }: { layout: RecordLayoutV3 }): JSX.Element | null {
+function ImplicitSubtasks({ layout, onOpenRecord }: { layout: RecordLayoutV3; onOpenRecord?: (id: number) => void }): JSX.Element | null {
     const ctx = useLayoutCtx();
     const [params] = useSearchParams();
     const tab = params.get('tab');
@@ -164,7 +264,7 @@ function ImplicitSubtasks({ layout }: { layout: RecordLayoutV3 }): JSX.Element |
     const r = ctx.record;
     const has = (r.subtask_count ?? 0) > 0 || (r.parent_id !== null && r.parent_id !== undefined);
     if (!onFirst || placed || !has) return null;
-    return <RecordSubtasks listId={ctx.list.id} listSlug={ctx.list.slug} record={r} fields={ctx.fields} />;
+    return <RecordSubtasks listId={ctx.list.id} listSlug={ctx.list.slug} record={r} fields={ctx.fields} onOpenRecord={onOpenRecord} />;
 }
 
 /**
@@ -203,7 +303,7 @@ function ImplicitPayments({ layout }: { layout: RecordLayoutV3 }): JSX.Element |
  * solicitudes no ocupa lugar. Quien quiera ubicarla en otro lado agrega el
  * bloque.
  */
-function ImplicitApprovals({ layout }: { layout: RecordLayoutV3 }): JSX.Element | null {
+function ImplicitApprovals({ layout, onOpenRecord }: { layout: RecordLayoutV3; onOpenRecord?: (id: number) => void }): JSX.Element | null {
     const ctx = useLayoutCtx();
     const isGuest = useIsGuest();
     const navigate = useNavigate();
@@ -240,7 +340,7 @@ function ImplicitApprovals({ layout }: { layout: RecordLayoutV3 }): JSX.Element 
                         listSlug={ctx.list.slug}
                         recordId={ctx.record.id}
                         fields={ctx.fields}
-                        onOpenRecord={(id) => navigate(`/lists/${ctx.list.slug}/records/${id}`)}
+                        onOpenRecord={onOpenRecord ?? ((id) => navigate(`/lists/${ctx.list.slug}/records/${id}`))}
                         className="imcrm-mb-3"
                     />
                 )}
@@ -280,6 +380,7 @@ export interface LayoutBodyProps {
 /** Cabecera + pestañas + secciones de una plantilla (también la usa el editor). */
 export function LayoutBody({ layout, pageId: controlled, onPageChange, renderHeader, renderSection, footer }: LayoutBodyProps): JSX.Element {
     const [params, setParams] = useSearchParams();
+    const location = useLocation();
     const pageId = controlled ?? params.get('tab');
     const page = layout.pages.find((p) => p.id === pageId) ?? layout.pages[0]!;
     const gap = resolveTheme(layout.theme).gap;
@@ -290,7 +391,8 @@ export function LayoutBody({ layout, pageId: controlled, onPageChange, renderHea
         const next = new URLSearchParams(params);
         if (id === layout.pages[0]!.id) next.delete('tab');
         else next.set('tab', id);
-        setParams(next, { replace: true });
+        // El estado de la entrada (la ventana flotante marca la suya) se conserva.
+        setParams(next, { replace: true, state: location.state });
     };
     return (
         <>
@@ -388,6 +490,7 @@ export function SectionTitle({ text }: { text: string }): JSX.Element {
 
 function Toolbar({
     list,
+    recordId,
     saving,
     onDelete,
     deleteLabel,
@@ -397,6 +500,7 @@ function Toolbar({
     actions,
 }: {
     list: ListSummary;
+    recordId: number;
     saving: boolean;
     onDelete: (() => void) | null;
     deleteLabel?: string;
@@ -405,6 +509,7 @@ function Toolbar({
     origin: LayoutOrigin;
     actions?: ReactNode;
 }): JSX.Element {
+    const location = useLocation();
     return (
         <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-x-3 imcrm-gap-y-1" data-testid="imcrm-record-layout-toolbar">
             <Button asChild variant="ghost" size="sm" className="imcrm-gap-2 imcrm-text-muted-foreground">
@@ -429,10 +534,17 @@ function Toolbar({
                 </span>
                 {actions}
                 {canDesign && (
-                    <Button asChild variant="ghost" size="sm" className="imcrm-gap-2" title={origin === 'auto' ? __('Diseño automático: personalízalo') : undefined}>
-                        <Link to={`/lists/${list.slug}/template-editor`}>
+                    <Button
+                        asChild
+                        variant="ghost"
+                        size="sm"
+                        className="imcrm-gap-2"
+                        title={origin === 'auto' ? __('Diseño automático: personalízalo') : __('Diseñar esta ficha')}
+                        data-tour="record-modal-design"
+                    >
+                        <Link to={designRecordHref(list.slug, recordId, `${location.pathname}${location.search}`)} data-testid="imcrm-record-design">
                             <Paintbrush className="imcrm-h-4 imcrm-w-4" />
-                            <span className="imcrm-hidden sm:imcrm-inline">{__('Diseñar ficha')}</span>
+                            <span className="imcrm-hidden sm:imcrm-inline">{__('Diseñar esta ficha')}</span>
                         </Link>
                     </Button>
                 )}

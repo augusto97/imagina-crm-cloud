@@ -462,6 +462,9 @@ describe('F7 — «Empezar fácil» (Postgres + Redis reales, modelo falso)', ()
 
         const cuentas = created.find((l) => l.name === 'Cuentas')!;
         const facturas = created.find((l) => l.name === 'Facturas')!;
+        // v0.1.470 — nacen con la ficha diseñada que les corresponde.
+        expect(cuentas.settings).toMatchObject({ record_layout: 'crm', crm_template_id: 'contact' });
+        expect(facturas.settings).toMatchObject({ record_layout: 'crm', crm_template_id: 'auto' });
         const cFields = await fields.listByListId(tenantId, cuentas.id);
         expect(cFields.map((f) => f.slug)).toEqual(['nombre', 'email', 'plan', 'mensualidad']);
         const fFields = await fields.listByListId(tenantId, facturas.id);

@@ -18,7 +18,8 @@ export interface ListSummary {
      * (rol, rol propio, equipos y acceso personal): los campos que ve pero no
      * puede cambiar. Los ajustes de permisos sólo le llegan a quien administra.
      */
-    my_access?: { readonly_field_ids: number[] };
+    /** v0.1.470 — también los campos que quien mira no ve (para «Otros campos»). */
+    my_access?: { readonly_field_ids: number[]; hidden_field_slugs?: string[] };
 }
 
 export interface CreateListInput {

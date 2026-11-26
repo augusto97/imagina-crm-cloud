@@ -12,7 +12,7 @@ import { tenants, users } from '../db/schema';
 import { FieldsRepository } from '../fields/fields.repository';
 import { ListsRepository } from '../lists/lists.repository';
 import { can } from '../authz/can';
-import { guestSafeListSettings, memberListSettings, readonlyFieldIdsFor } from '../lists/list-acl';
+import { guestSafeListSettings, memberListSettings, myListAccess } from '../lists/list-acl';
 import type { TenantContext } from '../tenancy/tenant.guard';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { ViewsRepository } from '../views/views.repository';
@@ -106,7 +106,7 @@ export class BootstrapService {
                     created_at: l.createdAt.toISOString(),
                     updated_at: l.updatedAt.toISOString(),
                     // C4 — los campos que esta persona ve pero no puede cambiar.
-                    my_access: { readonly_field_ids: [...readonlyFieldIdsFor((l.settings ?? {}) as Record<string, unknown>, who)] },
+                    my_access: myListAccess((l.settings ?? {}) as Record<string, unknown>, who),
                 })),
                 fields: fieldRows.map((f) => ({
                     id: f.id,

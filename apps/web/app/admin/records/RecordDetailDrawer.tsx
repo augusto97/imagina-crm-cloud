@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { useNavigate } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
+import type { AutoLayoutFlavor } from '@imagina-base/shared';
 import {
     Activity,
+    Check,
     ChevronDown,
     ChevronRight,
     ChevronUp,
@@ -12,7 +14,10 @@ import {
     ChevronsRight,
     ExternalLink,
     FileText,
+    Loader2,
     MessageSquare,
+    MoreHorizontal,
+    Paintbrush,
     Save,
     Trash2,
 } from 'lucide-react';
@@ -42,7 +47,10 @@ import { __, sprintf } from '@/lib/i18n';
 import { CAP, useCanAny } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
-import { useList } from '@/hooks/useLists';
+import { useList, useUpdateList } from '@/hooks/useLists';
+import { useDismissLayoutHint, useLayoutHints } from '@/hooks/useLayoutHints';
+import { useSession } from '@/cloud/session';
+import type { ListSummary } from '@/types/list';
 import type { RecordEntity } from '@/types/record';
 
 import { PortalAccessButton } from './crm/PortalAccessButton';
@@ -85,6 +93,19 @@ import { useRecordDraft } from './recordDraft';
 import { formatLongDate } from '@/lib/tenantFormat';
 import { managedLockedReasons, useManagedFields } from '@/admin/records/managedFields';
 import { readonlyLockedReasons, useReadonlyFieldIds } from '@/admin/records/fieldAccess';
+import {
+    designRecordHref,
+    recordSidePanel,
+    shouldOfferDesignedLayout,
+    usesDesignedLayout,
+} from './layout/recordModalMode';
+
+// v0.1.470 — La ficha diseñada y la invitación a probarla van en sus propios
+// chunks: la tabla no paga el motor de la ficha hasta que se abre un registro
+// de una lista que la usa.
+const DrawerDesignedBody = lazy(() => import('./layout/DrawerDesignedBody'));
+const LayoutSuggestion = lazy(() => import('./layout/LayoutSuggestion'));
+
 interface RecordDetailDrawerProps {
     listId: number;
     /**
@@ -111,6 +132,11 @@ interface RecordDetailDrawerProps {
     canNext?: boolean;
     /** Abrir OTRO registro en este mismo modal (subtareas, su padre). */
     onOpenRecord?: (id: number) => void;
+    /**
+     * v0.1.470 — La lista (con sus ajustes): con `record_layout: 'crm'` la
+     * ventana muestra la ficha diseñada. Sin ella, se pide.
+     */
+    list?: ListSummary;
 }
 
 /** Clave de localStorage para recordar si el aside de Actividad está abierto. */
@@ -168,6 +194,7 @@ export function RecordDetailDrawer({
     canPrev = false,
     canNext = false,
     onOpenRecord,
+    list,
 }: RecordDetailDrawerProps): JSX.Element {
     const update = useUpdateRecord(listId);
     const canEditByCaps = useCanAny(CAP.EDIT_RECORDS, CAP.EDIT_OWN_RECORDS);
@@ -181,6 +208,7 @@ export function RecordDetailDrawer({
     const toast = useToast();
     const trashed = useTrashedToast();
     const navigate = useNavigate();
+    const location = useLocation();
     const qc = useQueryClient();
     // v0.1.213 — lista de una tienda: qué campos se editan en WooCommerce.
     const storeRules = useStoreRules();
@@ -245,7 +273,65 @@ export function RecordDetailDrawer({
 
     // ListSummary para PortalAccessButton (cacheado por TanStack; el
     // drawer solo recibe listId/slug/nombre).
-    const listData = useList(view.ready ? listId : undefined);
+    const listData = useList(view.ready && list === undefined ? listId : undefined);
+    const listInfo = list ?? listData.data;
+    const listSettings = listInfo?.settings as Record<string, unknown> | undefined;
+
+    // ——— v0.1.470: la ficha diseñada en la ventana ———
+    // «Probar»: la ficha diseñada con una plantilla integrada, SIN guardarla.
+    const [preview, setPreview] = useState<AutoLayoutFlavor | null>(null);
+    const designed = preview !== null || usesDesignedLayout(listSettings);
+    const designedRef = useRef(designed);
+    designedRef.current = designed;
+    // La ficha diseñada se guarda sola: la barra dice «Guardando…/Guardado».
+    const [designedSaving, setDesignedSaving] = useState(false);
+    const flushRef = useRef<(() => Promise<void>) | null>(null);
+    // ¿El diseño ya trae la conversación? (sin panel al costado). `null` = carga.
+    const [hasConversation, setHasConversation] = useState<boolean | null>(null);
+    const onConversationInLayout = useCallback((has: boolean) => setHasConversation(has), []);
+    const side = recordSidePanel({ designed, hasConversation, narrow });
+    // Con muchas acciones y poco ancho, van en un «…»: la ficha diseñada suma
+    // botones a la barra (guardado, diseñar, eliminar) y los agrupa antes; la
+    // simple, sólo en el teléfono (donde ya no entraban).
+    const compactBar = useMediaQuery('(max-width: 1279px)');
+    const phoneBar = useMediaQuery('(max-width: 639px)');
+    const canManageLists = useCanAny(CAP.MANAGE_LISTS);
+    const impersonating = useSession((s) => s.impersonating !== undefined && s.impersonating !== null);
+    const mayOffer = open && !designed && canManageLists && !isGuest && !impersonating && !storeRules;
+    const hints = useLayoutHints(mayOffer);
+    const dismissHint = useDismissLayoutHint();
+    const updateList = useUpdateList(listId);
+    const offerDesigned =
+        listInfo !== undefined &&
+        shouldOfferDesignedLayout({
+            listId,
+            settings: listSettings,
+            canManageLists,
+            isGuest,
+            impersonating,
+            mirror: !!storeRules,
+            dismissed: hints.data?.dismissed_lists ?? null,
+        });
+    // Al cerrar, la vista previa se descarta.
+    useEffect(() => {
+        if (!open) setPreview(null);
+    }, [open]);
+    // Otra plantilla en la vista previa: hasta saber si trae la conversación, sin panel.
+    useEffect(() => {
+        setHasConversation(null);
+    }, [preview]);
+    // Sin pestañas (la ficha ya trae la conversación), se vuelve a la ficha.
+    useEffect(() => {
+        if (side !== 'tabs' && mobileTab !== 'details') setMobileTab('details');
+    }, [side, mobileTab]);
+    // «Usar este diseño»: la vista previa se queda hasta que la lista ya lo dice.
+    const adoptingRef = useRef(false);
+    useEffect(() => {
+        if (adoptingRef.current && usesDesignedLayout(listSettings)) {
+            adoptingRef.current = false;
+            setPreview(null);
+        }
+    }, [listSettings]);
 
     /** ¿Se pueden perder cambios? Pregunta y descarta si la persona acepta. */
     const dirtyRef = useRef(dirty);
@@ -268,14 +354,29 @@ export function RecordDetailDrawer({
             });
         return ok;
     };
+    /**
+     * Antes de salir del registro: la ficha diseñada descarga lo pendiente de
+     * su autoguardado; la simple pregunta si hay cambios sin guardar.
+     */
+    const prepareLeave = async (): Promise<boolean> => {
+        if (designedRef.current) {
+            await flushRef.current?.();
+            return true;
+        }
+        return confirmDiscard();
+    };
     const requestClose = async (): Promise<void> => {
-        if (await confirmDiscard()) onOpenChange(false);
+        if (await prepareLeave()) onOpenChange(false);
     };
     const navRef = useRef<{ go: (dir: -1 | 1) => void }>({ go: () => undefined });
     navRef.current.go = (dir) => {
         if (!onNavigate || (dir === -1 ? !canPrev : !canNext)) return;
-        void confirmDiscard().then((ok) => ok && onNavigate(dir));
+        void prepareLeave().then((ok) => ok && onNavigate(dir));
     };
+    const [moreOpen, setMoreOpen] = useState(false);
+    useEffect(() => {
+        setMoreOpen(false);
+    }, [record?.id, open]);
 
     // J / K (y ↓ / ↑, v0.1.286): registro siguiente / anterior (como en Gmail
     // o Linear), sólo si el foco no está en un campo ni en un control que ya
@@ -391,16 +492,66 @@ export function RecordDetailDrawer({
 
     const openFullPage = async (): Promise<void> => {
         if (listSlug === undefined) return;
-        if (!(await confirmDiscard())) return;
+        if (!(await prepareLeave())) return;
         // Reemplaza la entrada del modal (`?record=`): atrás vuelve a la lista.
         navigate(`/lists/${listSlug}/records/${record.id}`, { replace: true });
     };
 
     const openOther = onOpenRecord
         ? (id: number): void => {
-              void confirmDiscard().then((ok) => ok && onOpenRecord(id));
+              void prepareLeave().then((ok) => ok && onOpenRecord(id));
           }
         : undefined;
+
+    // «Diseñar esta ficha»: el editor con ESTE registro de muestra; al salir vuelve aquí.
+    const canDesign = canManageLists && !isGuest && preview === null && listSlug !== undefined;
+    const openDesigner = async (): Promise<void> => {
+        if (listSlug === undefined) return;
+        if (!(await prepareLeave())) return;
+        navigate(designRecordHref(listSlug, record.id, `${location.pathname}${location.search}`));
+    };
+
+    // «Probar» / «Usar este diseño» / «Ahora no».
+    const tryDesigned = async (template: AutoLayoutFlavor): Promise<void> => {
+        if (!(await confirmDiscard())) return;
+        setPreview(template);
+    };
+    const adoptDesign = async (template: AutoLayoutFlavor): Promise<void> => {
+        try {
+            adoptingRef.current = true;
+            await updateList.mutateAsync({ settings: { record_layout: 'crm', crm_template_id: template } });
+            toast.success(__('Listo: la lista ya muestra sus registros como ficha'), __('Lo puedes cambiar cuando quieras en Configuración de la lista → Apariencia.'));
+        } catch (err) {
+            adoptingRef.current = false;
+            toast.error(__('No se pudo guardar el diseño'), err instanceof Error ? err.message : undefined);
+        }
+    };
+    const dismissSuggestion = (): void => {
+        setPreview(null);
+        dismissHint.mutate(listId);
+    };
+    const canDeleteHere = !((storeRules && !goneInSource) || isGuest);
+
+    // Las acciones del registro (seguir, PDF, QR, WhatsApp, compartir…).
+    const actionNodes = (
+        <>
+            {!isGuest && <RecordFollowControls listId={listId} recordId={record.id} compact />}
+            {/* v0.1.456 — pedirle a un agente de IA que trabaje en este registro. */}
+            {!isGuest && <RecordAskAgentButton listId={listId} recordId={record.id} compact />}
+            {!isGuest && <GeneratePdfButton listId={listId} listSlug={listSlug} recordId={record.id} fields={fields} compact />}
+            {!isGuest && (
+                <RecordQrButton listId={listId} recordId={record.id} fields={fields} listSettings={listSettings} compact />
+            )}
+            {!isGuest && <RecordEditLinkButton listId={listId} recordId={record.id} compact />}
+            {!isGuest && <SendWhatsappButton listId={listId} recordId={record.id} compact />}
+            {!isGuest && <SendSmsButton listId={listId} recordId={record.id} compact />}
+            {/* C6 — «Guardar como plantilla» (no en listas de una tienda ni para un invitado). */}
+            {!storeRules && !isGuest && (
+                <SaveRecordAsTemplateButton listId={listId} listSlug={listSlug} recordId={record.id} title={title} compact />
+            )}
+            <RecordShareButton listId={listId} recordId={record.id} compact />
+        </>
+    );
 
     const skeleton = (h: string): JSX.Element => (
         <div className={cn('imcrm-animate-pulse imcrm-rounded-md imcrm-bg-muted/60', h)} aria-hidden />
@@ -433,7 +584,8 @@ export function RecordDetailDrawer({
                             const active = document.activeElement;
                             const intent = escapeIntent(active, contentRef.current);
                             e.preventDefault();
-                            if (intent === 'field') leaveField(active);
+                            if (intent === 'menu' && moreOpen) setMoreOpen(false);
+                            else if (intent === 'field') leaveField(active);
                             else if (intent === 'close') void requestClose();
                         }}
                         // Un click en un menú flotante propio (barra del
@@ -498,26 +650,44 @@ export function RecordDetailDrawer({
                                     formatCreatedDate(record.created_at),
                                 )}
                             </span>
-                            {view.ready && (
+                            {designed && <AutosaveStatus saving={designedSaving} />}
+                            {view.ready && ((designed ? compactBar : phoneBar) ? (
+                                <ActionsOverflow open={moreOpen} onOpenChange={setMoreOpen} contentRef={contentRef}>
+                                    {actionNodes}
+                                </ActionsOverflow>
+                            ) : (
                                 <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-2" data-tour="record-toolbar">
-                                    {!isGuest && <RecordFollowControls listId={listId} recordId={record.id} compact />}
-                                    {/* v0.1.456 — pedirle a un agente de IA que trabaje en este registro. */}
-                                    {!isGuest && <RecordAskAgentButton listId={listId} recordId={record.id} compact />}
-                                    {!isGuest && (
-                                        <GeneratePdfButton listId={listId} listSlug={listSlug} recordId={record.id} fields={fields} compact />
-                                    )}
-                                    {!isGuest && (
-                                        <RecordQrButton listId={listId} recordId={record.id} fields={fields} listSettings={listData.data?.settings as Record<string, unknown> | undefined} compact />
-                                    )}
-                                    {!isGuest && <RecordEditLinkButton listId={listId} recordId={record.id} compact />}
-                                    {!isGuest && <SendWhatsappButton listId={listId} recordId={record.id} compact />}
-                                    {!isGuest && <SendSmsButton listId={listId} recordId={record.id} compact />}
-                                    {/* C6 — «Guardar como plantilla» (no en listas de una tienda ni para un invitado). */}
-                                    {!storeRules && !isGuest && (
-                                        <SaveRecordAsTemplateButton listId={listId} listSlug={listSlug} recordId={record.id} title={title} compact />
-                                    )}
-                                    <RecordShareButton listId={listId} recordId={record.id} compact />
+                                    {actionNodes}
                                 </div>
+                            ))}
+                            {designed && canDesign && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="imcrm-h-8 imcrm-shrink-0 imcrm-gap-1.5 imcrm-px-2"
+                                    onClick={() => void openDesigner()}
+                                    title={__('Diseñar esta ficha')}
+                                    aria-label={__('Diseñar esta ficha')}
+                                    data-tour="record-modal-design"
+                                    data-testid="imcrm-record-design"
+                                >
+                                    <Paintbrush className="imcrm-h-4 imcrm-w-4" />
+                                    <span className="imcrm-hidden xl:imcrm-inline">{__('Diseñar esta ficha')}</span>
+                                </Button>
+                            )}
+                            {designed && canDeleteHere && (
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="imcrm-h-8 imcrm-w-8 imcrm-shrink-0 imcrm-text-destructive hover:imcrm-text-destructive"
+                                    onClick={() => void handleDelete()}
+                                    disabled={remove.isPending}
+                                    aria-label={goneInSource ? __('Quitar de la app') : __('Eliminar')}
+                                    title={goneInSource ? __('Quitar de la app') : __('Eliminar')}
+                                    data-testid="imcrm-record-delete"
+                                >
+                                    <Trash2 className="imcrm-h-4 imcrm-w-4" />
+                                </Button>
                             )}
                             {listSlug !== undefined && (
                                 <Button
@@ -533,7 +703,7 @@ export function RecordDetailDrawer({
                             <SheetCloseButton />
                         </div>
 
-                        {narrow && (
+                        {side === 'tabs' && (
                             <div
                                 role="tablist"
                                 aria-label={__('Vista del registro')}
@@ -543,7 +713,7 @@ export function RecordDetailDrawer({
                             >
                                 <TabButton active={mobileTab === 'details'} onClick={() => setMobileTab('details')}>
                                     <FileText className="imcrm-h-3.5 imcrm-w-3.5" />
-                                    {__('Detalles')}
+                                    {designed ? __('Ficha') : __('Detalles')}
                                 </TabButton>
                                 <TabButton active={mobileTab === 'comments'} onClick={() => setMobileTab('comments')}>
                                     <MessageSquare className="imcrm-h-3.5 imcrm-w-3.5" />
@@ -562,10 +732,68 @@ export function RecordDetailDrawer({
                             <div
                                 className={cn(
                                     'imcrm-flex imcrm-min-h-0 imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col',
-                                    narrow && mobileTab !== 'details' && 'imcrm-hidden',
+                                    side === 'tabs' && mobileTab !== 'details' && 'imcrm-hidden',
                                 )}
                             >
+                                {designed ? (
+                                    <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-y-auto imcrm-px-4 imcrm-py-4 sm:imcrm-px-6 sm:imcrm-py-5" data-testid="imcrm-record-designed">
+                                        <SheetTitle className="imcrm-sr-only">{title}</SheetTitle>
+                                        {preview !== null && (
+                                            <Suspense fallback={null}>
+                                                <LayoutSuggestion
+                                                    mode="banner"
+                                                    list={listInfo ?? { name: listName ?? '' }}
+                                                    fields={fields}
+                                                    preview={preview}
+                                                    busy={updateList.isPending || adoptingRef.current}
+                                                    onTry={setPreview}
+                                                    onUse={(t) => void adoptDesign(t)}
+                                                    onChangeTemplate={setPreview}
+                                                    onDismiss={dismissSuggestion}
+                                                />
+                                            </Suspense>
+                                        )}
+                                        {view.ready && listInfo !== undefined ? (
+                                            <Suspense fallback={skeleton('imcrm-h-64')}>
+                                                <DrawerDesignedBody
+                                                    list={listInfo}
+                                                    record={record}
+                                                    fields={fields}
+                                                    previewTemplate={preview ?? undefined}
+                                                    onSavingChange={setDesignedSaving}
+                                                    flushRef={flushRef}
+                                                    onConversationInLayout={onConversationInLayout}
+                                                    onOpenRecord={openOther}
+                                                    onDelete={() => void handleDelete()}
+                                                    deleting={remove.isPending}
+                                                />
+                                            </Suspense>
+                                        ) : (
+                                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
+                                                {skeleton('imcrm-h-24')}
+                                                {skeleton('imcrm-h-40')}
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                <>
                                 <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-y-auto imcrm-px-4 imcrm-py-4 sm:imcrm-px-8 sm:imcrm-py-5">
+                                    {/* v0.1.470 — «Esta lista se puede ver como ficha · Probar». */}
+                                    {view.ready && offerDesigned && (
+                                        <Suspense fallback={null}>
+                                            <LayoutSuggestion
+                                                mode="card"
+                                                list={listInfo!}
+                                                fields={fields}
+                                                preview={null}
+                                                busy={false}
+                                                onTry={(t) => void tryDesigned(t)}
+                                                onUse={(t) => void adoptDesign(t)}
+                                                onChangeTemplate={setPreview}
+                                                onDismiss={dismissSuggestion}
+                                            />
+                                        </Suspense>
+                                    )}
                                     {/* Chip de tipo de entidad (como el chip "Tarea" de ClickUp). */}
                                     <span className="imcrm-inline-flex imcrm-w-fit imcrm-items-center imcrm-rounded-md imcrm-border imcrm-border-border imcrm-px-2 imcrm-py-0.5 imcrm-text-[11px] imcrm-font-medium imcrm-text-muted-foreground">
                                         {record.parent_id ? __('Subtarea') : __('Registro')}
@@ -804,9 +1032,11 @@ export function RecordDetailDrawer({
                                         )}
                                     </Button>
                                 </SheetFooter>
+                                </>
+                                )}
                             </div>
 
-                            {narrow && mobileTab !== 'details' && (
+                            {side === 'tabs' && mobileTab !== 'details' && (
                                 <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-px-4 imcrm-py-3">
                                     {!view.ready ? (
                                         skeleton('imcrm-h-24')
@@ -826,7 +1056,7 @@ export function RecordDetailDrawer({
                             )}
 
                             {/* Botón flotante para re-expandir el aside colapsado. */}
-                            {!narrow && !asideOpen && (
+                            {side === 'aside' && !asideOpen && (
                                 <button
                                     type="button"
                                     onClick={toggleAside}
@@ -841,7 +1071,7 @@ export function RecordDetailDrawer({
                             )}
 
                             {/* ——— Aside derecho colapsable: Comentarios / Actividad ——— */}
-                            {!narrow && (
+                            {side === 'aside' && (
                             <aside
                                 aria-hidden={!asideOpen}
                                 className={cn(
@@ -912,6 +1142,88 @@ export function RecordDetailDrawer({
                 </div>
             </DialogPrimitive.Portal>
         </Sheet>
+    );
+}
+
+/** v0.1.470 — la ficha diseñada se guarda sola: lo que dice la barra. */
+function AutosaveStatus({ saving }: { saving: boolean }): JSX.Element {
+    return (
+        <span
+            className="imcrm-inline-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1 imcrm-text-xs imcrm-text-muted-foreground"
+            data-testid="imcrm-record-autosave"
+            data-state={saving ? 'saving' : 'saved'}
+            aria-live="polite"
+            title={saving ? __('Guardando…') : __('Guardado: los cambios se guardan solos')}
+        >
+            {saving ? (
+                <Loader2 className="imcrm-h-3.5 imcrm-w-3.5 imcrm-animate-spin" aria-hidden />
+            ) : (
+                <Check className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+            )}
+            <span className="imcrm-hidden sm:imcrm-inline">{saving ? __('Guardando…') : __('Guardado')}</span>
+        </span>
+    );
+}
+
+/**
+ * v0.1.470 — Las acciones del registro en un «…» cuando no caben en la barra.
+ * El panel queda MONTADO aunque esté cerrado: un diálogo que se abre desde una
+ * de sus acciones (el QR, el WhatsApp) no se cierra al plegarlo. Un click en
+ * otra parte de la ficha lo pliega; uno en una capa flotante (un menú, un
+ * diálogo que abrió una acción) no.
+ */
+function ActionsOverflow({
+    open,
+    onOpenChange,
+    contentRef,
+    children,
+}: {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    contentRef: React.RefObject<HTMLDivElement>;
+    children: ReactNode;
+}): JSX.Element {
+    const wrapRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (!open) return;
+        const onDown = (e: PointerEvent): void => {
+            const t = e.target as Node | null;
+            if (!t || wrapRef.current?.contains(t)) return;
+            // Sólo un click dentro de la ficha (fuera del panel) lo pliega.
+            if (contentRef.current?.contains(t)) onOpenChange(false);
+        };
+        document.addEventListener('pointerdown', onDown, true);
+        return () => document.removeEventListener('pointerdown', onDown, true);
+    }, [open, onOpenChange, contentRef]);
+    return (
+        <div ref={wrapRef} className="imcrm-relative imcrm-shrink-0" data-tour="record-toolbar">
+            <Button
+                variant="ghost"
+                size="icon"
+                className="imcrm-h-8 imcrm-w-8"
+                aria-label={__('Más acciones')}
+                title={__('Más acciones')}
+                aria-expanded={open}
+                aria-haspopup="true"
+                onClick={() => onOpenChange(!open)}
+                data-testid="imcrm-record-more"
+            >
+                <MoreHorizontal className="imcrm-h-4 imcrm-w-4" />
+            </Button>
+            <div
+                className={cn(
+                    // En el teléfono, a lo ancho bajo la barra (anclado al «…»
+                    // se salía por la izquierda); desde sm, colgado del «…».
+                    'imcrm-fixed imcrm-inset-x-3 imcrm-top-12 imcrm-z-30 imcrm-mt-1 sm:imcrm-absolute sm:imcrm-inset-x-auto sm:imcrm-right-0 sm:imcrm-top-full sm:imcrm-w-max sm:imcrm-max-w-[300px]',
+                    'imcrm-flex-wrap imcrm-items-center imcrm-gap-1.5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-popover imcrm-p-2 imcrm-shadow-imcrm-lg',
+                    open ? 'imcrm-flex' : 'imcrm-hidden',
+                )}
+                data-imcrm-floating-menu={open ? '' : undefined}
+                data-testid="imcrm-record-more-panel"
+            >
+                {children}
+            </div>
+        </div>
     );
 }
 

@@ -20,7 +20,17 @@ export const listSchema = z.object({
      * nunca persistido: los campos que ve pero no puede cambiar (candado con
      * el motivo en la celda, la ficha y el alta). Sólo en las respuestas.
      */
-    my_access: z.object({ readonly_field_ids: z.array(idSchema) }).optional(),
+    my_access: z
+        .object({
+            readonly_field_ids: z.array(idSchema),
+            /**
+             * v0.1.470 — los campos que el rol de quien pregunta NO ve (por
+             * slug, como `fields_hidden`): la ficha no los cuenta en «Otros
+             * campos» (el registro ya llega sin sus valores).
+             */
+            hidden_field_slugs: z.array(z.string()).optional(),
+        })
+        .optional(),
 });
 export type List = z.infer<typeof listSchema>;
 

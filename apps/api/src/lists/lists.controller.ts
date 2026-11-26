@@ -34,7 +34,7 @@ import { TenantGuard } from '../tenancy/tenant.guard';
 import { aclOf } from '../tenancy/acl-of';
 import { AllowGuest } from '../tenancy/allow-guest.decorator';
 import { can } from '../authz/can';
-import { guestCanOpenList, guestSafeListSettings, memberListSettings, readonlyFieldIdsFor } from './list-acl';
+import { guestCanOpenList, guestSafeListSettings, memberListSettings, myListAccess, readonlyFieldIdsFor } from './list-acl';
 import { ListsService } from './lists.service';
 
 /**
@@ -189,5 +189,5 @@ function tenantId(req: FastifyRequest): number {
 
 /** C4 — los campos de ESTA lista que quien pide ve pero no puede cambiar (derivado, no se guarda). */
 function myAccess(list: List, who: Parameters<typeof readonlyFieldIdsFor>[1]): NonNullable<List['my_access']> {
-    return { readonly_field_ids: [...readonlyFieldIdsFor(list.settings as Record<string, unknown>, who)] };
+    return myListAccess(list.settings as Record<string, unknown>, who);
 }

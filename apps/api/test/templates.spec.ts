@@ -644,6 +644,44 @@ describe('Duplicar listas y plantillas (Postgres real, v0.1.166)', () => {
         expect(chd.title_field_id).toBe(cfields.get('asunto'));
     });
 
+    it('v0.1.470 — una plantilla del sistema nace con la ficha diseñada que le corresponde; en blanco, duplicada o de la empresa no cambian', async () => {
+        // Del sistema: cada lista con su plantilla integrada.
+        const fact = await templates.apply(tenantA, actor, 'sys:facturacion', { include_records: false });
+        const layoutOf = async (id: number) => {
+            const l = await listsService.get(tenantA, String(id));
+            return { layout: l.settings.record_layout, template: l.settings.crm_template_id, v3: l.settings.record_layout_v3 };
+        };
+        const byName = new Map(await Promise.all(fact.lists.map(async (l) => [l.name.replace(/ \d+$/, ''), await layoutOf(l.id)] as const)));
+        expect(byName.get('Clientes')).toEqual({ layout: 'crm', template: 'contact', v3: undefined });
+        expect(byName.get('Facturas')).toEqual({ layout: 'crm', template: 'auto', v3: undefined });
+        const soporte = await templates.apply(tenantA, actor, 'sys:soporte-tickets', { include_records: false, name: 'Tickets 470' });
+        expect((await layoutOf(soporte.lists[0]!.id)).template).toBe('support');
+
+        // En blanco: la ficha simple de siempre.
+        const blank = await listsService.create(tenantA, { name: 'Clientes en blanco' });
+        expect((await layoutOf(blank.id)).layout).toBeUndefined();
+
+        // Duplicar una lista simple: sigue simple (no se le impone la sugerencia).
+        await fieldsService.create(tenantA, String(blank.id), { label: 'Correo', type: 'email' });
+        const dup = await templates.duplicate(tenantA, actor, String(blank.id), { include: { views: true, automations: true, settings: true, records: false } });
+        expect((await layoutOf(dup.lists[0]!.id)).layout).toBeUndefined();
+        // Duplicar sin ajustes una lista diseñada: sin la ficha (los ajustes no viajan).
+        const dupNoSettings = await templates.duplicate(tenantA, actor, String(soporte.lists[0]!.id), {
+            include: { views: true, automations: false, settings: false, records: false },
+        });
+        expect((await layoutOf(dupNoSettings.lists[0]!.id)).layout).toBeUndefined();
+
+        // Una plantilla guardada por la empresa respeta lo que la lista tenía.
+        const tpl = await templates.create(tenantA, actor, {
+            list_id: blank.id,
+            name: 'Clientes simple 470',
+            include: { views: true, automations: true, settings: true, records: false },
+        });
+        const fromTpl = await templates.apply(tenantA, actor, tpl.id, { name: 'Clientes desde la empresa', include_records: false });
+        expect((await layoutOf(fromTpl.lists[0]!.id)).layout).toBeUndefined();
+        await templates.remove(tenantA, actor, tpl.id);
+    });
+
     it('guardar como plantilla → aparece en la galería junto a las del sistema → aplicar crea la lista → borrar', async () => {
         const src = await listsService.create(tenantA, { name: 'Leads', icon: 'target', color: 'violet' });
         await fieldsService.create(tenantA, String(src.id), { label: 'Nombre', type: 'text' });

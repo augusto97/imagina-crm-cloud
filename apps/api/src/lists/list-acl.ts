@@ -295,6 +295,20 @@ export function readonlyFieldIdsFor(
     return new Set(readonlyFieldIdsOf(perms));
 }
 
+/**
+ * `my_access` de una lista para quien pregunta: lo que ve pero no puede
+ * cambiar (C4) y, desde v0.1.470, lo que no ve (la ficha no lo cuenta en
+ * «Otros campos»). Sólo slugs e ids: nada de la configuración del ACL.
+ */
+export function myListAccess(
+    settings: Record<string, unknown>,
+    who: AclSubject | Role,
+    userId?: number,
+): { readonly_field_ids: number[]; hidden_field_slugs: string[] } {
+    const perms = effectivePermissions(settings, who, userId);
+    return { readonly_field_ids: [...new Set(readonlyFieldIdsOf(perms))], hidden_field_slugs: [...new Set(perms.fields_hidden)] };
+}
+
 /** Campos ocultos para el rol (Set de slugs). */
 export function hiddenFieldsFor(
     settings: Record<string, unknown>,

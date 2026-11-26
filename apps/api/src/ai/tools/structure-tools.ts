@@ -91,6 +91,10 @@ import {
     mirrorPlaceName,
     mirrorSourceName,
     readRecordLayoutV3,
+    readShowUnplacedFields,
+    readUnplacedFieldsOpen,
+    unplacedLayoutFields,
+    resolveTitleFieldId,
     type LayoutFieldLite,
     type RecordLayoutV3,
     recordLayoutSchema,
@@ -1069,6 +1073,14 @@ export class StructureTools implements AiProposalApplier {
                 template: crmTemplateIdSchema.optional().describe('Sólo con crm: auto (por tipo de campo) | contact | deal | task | support | custom'),
                 custom: crmLayoutSpec.optional().describe('Sólo con template custom: grupos de campos, cabecera y lateral (formato anterior; prefiere `design`)'),
                 design: recordDesignSpec.optional().describe('Diseño completo de la ficha (con layout crm; no combinar con template/custom). Los gráficos y vinculados usan `from` = slug de una lista vinculada (ver linkable_lists / relaciones del esquema)'),
+                show_unplaced_fields: z
+                    .boolean()
+                    .optional()
+                    .describe('Sólo con una ficha diseñada propia (design, custom o la que ya tiene la lista): true (lo de fábrica) muestra al final de la primera pestaña «Otros campos» con los campos que el diseño no ubica; false la quita. Mándalo solo, con layout crm, para cambiarlo sin tocar el diseño.'),
+                unplaced_fields_open: z
+                    .boolean()
+                    .optional()
+                    .describe('Cómo empieza «Otros campos»: false (lo de fábrica) plegada, true abierta. Mismas reglas que show_unplaced_fields.'),
             }),
             run: (ctx, input) => this.proposeConfigureRecordLayout(ctx, input as ConfigureLayoutSpec),
         });
@@ -1431,12 +1443,30 @@ export class StructureTools implements AiProposalApplier {
                 },
                 record_layout: (() => {
                     const v3 = layout.layout === 'crm' ? readRecordLayoutV3(settings) : null;
+                    // v0.1.470 — un diseño propio (guardado o del formato anterior)
+                    // muestra al final «Otros campos» con lo que no ubica.
+                    const own =
+                        v3 ??
+                        (layout.layout === 'crm' && layout.template === 'custom' && layout.custom
+                            ? migrateCrmV2ToV3(layout.custom as never, fields.map((f) => ({ id: f.id, slug: f.slug, label: f.label, type: f.type, config: f.config as Record<string, unknown>, is_primary: (f as { is_primary?: boolean }).is_primary })) as never)
+                            : null);
+                    const unplaced = own
+                        ? {
+                              show_unplaced_fields: readShowUnplacedFields(own),
+                              unplaced_fields_open: readUnplacedFieldsOpen(own),
+                              unplaced_fields: unplacedLayoutFields(own, fields, {
+                                  ignoreSetting: true,
+                                  titleFieldId: resolveTitleFieldId(fields as never, settings),
+                              }).map((f) => f.slug),
+                          }
+                        : {};
                     return v3
-                        ? { layout: layout.layout, template: 'design', design: describeRecordLayoutV3(v3, fields.map((f) => ({ id: f.id, slug: f.slug, label: f.label, type: f.type }))) }
+                        ? { layout: layout.layout, template: 'design', design: describeRecordLayoutV3(v3, fields.map((f) => ({ id: f.id, slug: f.slug, label: f.label, type: f.type }))), ...unplaced }
                         : {
                               layout: layout.layout,
                               template: layout.layout === 'crm' ? layout.template : null,
                               custom_blocks: layout.layout === 'crm' && layout.template === 'custom' ? describeCrmConfig(layout.custom) : [],
+                              ...unplaced,
                           };
                 })(),
                 public_sharing: pub.success ? { enabled: pub.data.enabled, expires_at: pub.data.expires_at ?? null, visible_fields: pub.data.visible_field_slugs } : { enabled: false, expires_at: null, visible_fields: [] },
@@ -2832,19 +2862,48 @@ export class StructureTools implements AiProposalApplier {
         let v3: RecordLayoutV3 | null = null;
         const lite = fields.map((f) => ({ id: f.id, slug: f.slug, label: f.label, type: f.type, config: f.config as Record<string, unknown>, is_primary: (f as { is_primary?: boolean }).is_primary }));
 
+        const flagsGiven = input.show_unplaced_fields !== undefined || input.unplaced_fields_open !== undefined;
+        const withFlags = (layout: RecordLayoutV3): RecordLayoutV3 => {
+            const next = { ...layout } as RecordLayoutV3 & { show_unplaced_fields?: boolean; unplaced_fields_open?: boolean };
+            if (input.show_unplaced_fields !== undefined) next.show_unplaced_fields = input.show_unplaced_fields;
+            if (input.unplaced_fields_open !== undefined) next.unplaced_fields_open = input.unplaced_fields_open;
+            return next;
+        };
+        const flagChanges = (before: RecordLayoutV3 | null): void => {
+            const yesNo = (v: boolean): string => (v ? 'Sí' : 'No');
+            if (input.show_unplaced_fields !== undefined && (before === null || readShowUnplacedFields(before) !== input.show_unplaced_fields)) {
+                changes.push({ label: 'Mostrar «Otros campos»', from: before ? yesNo(readShowUnplacedFields(before)) : null, to: yesNo(input.show_unplaced_fields) });
+            }
+            if (input.unplaced_fields_open !== undefined && (before === null || readUnplacedFieldsOpen(before) !== input.unplaced_fields_open)) {
+                changes.push({ label: '«Otros campos» empieza', from: before ? (readUnplacedFieldsOpen(before) ? 'Abierta' : 'Plegada') : null, to: input.unplaced_fields_open ? 'Abierta' : 'Plegada' });
+            }
+        };
+
         if (input.layout === 'classic') {
             if (input.design || input.custom) throw new AiToolError('`design` y `custom` sólo aplican con layout crm.');
+            if (flagsGiven) throw new AiToolError('`show_unplaced_fields` y `unplaced_fields_open` sólo aplican a una ficha diseñada propia.');
             if (current.layout === 'classic') throw new AiToolError('La ficha ya usa el formulario clásico.');
             changes.push({ label: 'Ficha', from: layoutLabel(current.layout), to: layoutLabel('classic') });
         } else if (input.design) {
             if (input.custom || (input.template && input.template !== 'custom')) throw new AiToolError('`design` no se combina con `template` ni `custom`: describe la ficha completa.');
             const built = buildRecordLayoutV3(input.design, await this.designContext(ctx, list.id, fields));
-            v3 = built.layout;
+            v3 = withFlags(built.layout);
             templateId = 'custom';
             blocks = built.preview;
             warnings.push(...built.warnings);
             if (current.layout !== 'crm') changes.push({ label: 'Ficha', from: layoutLabel(current.layout), to: layoutLabel('crm') });
             changes.push({ label: 'Diseño', from: hasDesign ? 'Diseño propio' : current.layout === 'crm' ? crmTemplateLabel(current.template) : null, to: `${v3.pages.length} pestaña(s): ${v3.pages.map((p) => p.name).join(', ')}` });
+            flagChanges(null);
+        } else if (flagsGiven && input.template === undefined && input.custom === undefined) {
+            // v0.1.470 — sólo «Otros campos», sin tocar el diseño.
+            const own = readRecordLayoutV3(settings) ?? (current.layout === 'crm' && current.template === 'custom' && current.custom ? migrateCrmV2ToV3(current.custom as never, lite as never) : null);
+            if (current.layout !== 'crm' || own === null) {
+                throw new AiToolError('«Otros campos» sólo aplica a una ficha diseñada propia: la lista usa una plantilla integrada (que ya muestra todos los campos) o el formulario clásico.');
+            }
+            v3 = withFlags(own);
+            templateId = 'custom';
+            flagChanges(own);
+            if (changes.length === 0) throw new AiToolError('La ficha ya está así.');
         } else {
             templateId = input.template ?? (current.layout === 'crm' && !hasDesign ? current.template : 'auto');
             if (templateId === 'custom') {
@@ -2859,6 +2918,11 @@ export class StructureTools implements AiProposalApplier {
             } else if (input.custom) {
                 throw new AiToolError('`custom` sólo aplica con template custom. Elige custom o quita los grupos.');
             }
+            if (flagsGiven) {
+                if (!v3) throw new AiToolError('«Otros campos» sólo aplica a una ficha diseñada propia: una plantilla integrada ya muestra todos los campos.');
+                v3 = withFlags(v3);
+                flagChanges(null);
+            }
             if (current.layout !== 'crm') changes.push({ label: 'Ficha', from: layoutLabel(current.layout), to: layoutLabel('crm') });
             if (current.layout !== 'crm' || hasDesign || current.template !== templateId || templateId === 'custom') {
                 changes.push({ label: 'Plantilla', from: hasDesign ? 'Diseño propio' : current.layout === 'crm' ? crmTemplateLabel(current.template) : null, to: crmTemplateLabel(templateId) });
@@ -2870,8 +2934,9 @@ export class StructureTools implements AiProposalApplier {
             kind: 'configure_record_layout',
             title: `Cambiar el diseño de la ficha de «${list.name}»`,
             summary: `${changes.map((c) => `${c.label.toLowerCase()}: ${c.to}`).join('; ')}.${warnings.length ? ` ${warnings.join(' ')}` : ''}`,
-            // Pisar un diseño hecho a mano en el editor es irreversible desde aquí.
-            destructive: hasDesign && input.layout === 'crm',
+            // Pisar un diseño hecho a mano en el editor es irreversible desde aquí
+            // (cambiar sólo «Otros campos» no lo pisa).
+            destructive: hasDesign && input.layout === 'crm' && !(flagsGiven && !input.design && input.template === undefined && input.custom === undefined),
             listSlug: list.slug,
             preview: { changes, blocks },
             payload: { kind: 'configure_record_layout', listId: list.id, listSlug: list.slug, layout: input.layout, templateId, custom, v3 },
@@ -3398,6 +3463,7 @@ export class StructureTools implements AiProposalApplier {
             case 'create_list': {
                 const res = await this.blueprint.materialize(ctx.tenantId, ctx.userId, payload.blueprint, {
                     includeRecords: payload.includeRecords,
+                    suggestRecordLayout: true,
                 });
                 return {
                     message: res.lists.length === 1 ? `Lista «${res.lists[0]!.name}» creada.` : `${res.lists.length} listas creadas.`,
@@ -5237,6 +5303,8 @@ interface ConfigurePortalSpec {
 
 interface ConfigureLayoutSpec {
     design?: RecordDesignSpec;
+    show_unplaced_fields?: boolean;
+    unplaced_fields_open?: boolean;
     list: string;
     layout: 'classic' | 'crm';
     template?: 'auto' | 'contact' | 'deal' | 'task' | 'support' | 'custom';

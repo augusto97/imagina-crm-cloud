@@ -18,6 +18,7 @@ import {
     formulaRefsToSlugs,
     resolveFieldRefs,
     resolveListRefs,
+    suggestRecordLayoutTemplate,
     tokenizeFieldRefs,
     tokenizeListRefs,
     widgetTypeSchema,
@@ -63,6 +64,14 @@ export interface MaterializeOptions {
     name?: string;
     groupId?: number | null;
     includeRecords: boolean;
+    /**
+     * v0.1.470 — Una lista que NACE (plantilla del sistema, IA, archivo,
+     * Airtable) arranca con la ficha diseñada que le encaja
+     * (`suggestRecordLayoutTemplate`) si el blueprint no dice otra cosa.
+     * Duplicar una lista o aplicar una plantilla GUARDADA por la empresa no
+     * lo piden: ahí la ficha es la que traen.
+     */
+    suggestRecordLayout?: boolean;
 }
 
 export interface MaterializeResult {
@@ -490,11 +499,19 @@ export class BlueprintService {
             const slugToId = slugMaps.get(bl.key)!;
             const resolve = (v: unknown): unknown => resolveLists(resolveFieldRefs(v, slugToId, slugMaps));
 
-            if (Object.keys(bl.settings).length > 0) {
+            const suggested =
+                opts.suggestRecordLayout === true && !('record_layout' in bl.settings) && !('record_layout_v3' in bl.settings)
+                    ? suggestRecordLayoutTemplate({ name: list.name, fields: bl.fields })
+                    : null;
+            if (Object.keys(bl.settings).length > 0 || suggested !== null) {
                 const settings = resolve(bl.settings) as Record<string, unknown>;
                 // Un título que no se pudo resolver queda en null: mejor el
                 // fallback al primer texto que un 400 por id inválido.
                 if (settings.title_field_id === null) delete settings.title_field_id;
+                if (suggested !== null) {
+                    settings.record_layout = 'crm';
+                    settings.crm_template_id = suggested;
+                }
                 try {
                     await this.lists.update(tenantId, String(list.id), { settings });
                 } catch (err) {

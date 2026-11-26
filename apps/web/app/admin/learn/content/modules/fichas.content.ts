@@ -64,10 +64,15 @@ export const articles: LearnArticle[] = [
                 t: 'p',
                 md: 'En el costado derecho del modal está el panel de **Comentarios** y **Actividad**. Con **Contraer** lo escondes para tener más espacio, y con **Ampliar** vuelve. Abajo a la izquierda está **Eliminar**: el registro (con sus subtareas) va a la papelera y se puede recuperar durante 30 días.',
             },
+            { t: 'h', text: 'Si la lista usa la ficha diseñada' },
+            {
+                t: 'p',
+                md: 'El modal muestra **la misma ficha diseñada** que la página completa: su portada, sus pestañas y sus gráficos. Cada cambio **se guarda solo** y la barra de arriba dice **Guardando…** y después **Guardado** (no hay **Guardar cambios**). Si cierras o pasas al registro siguiente mientras se guarda, primero termina de guardar.\n\nLas acciones del registro (seguir, PDF, QR, WhatsApp, compartir…) van en la barra de arriba; si no caben, en el botón **…**. **Eliminar** también está arriba. Si el diseño ya trae la conversación (un bloque de actividad o de comentarios), no hay panel al costado; si no, el panel de **Comentarios** y **Actividad** sigue ahí.\n\nQuien administra la lista ve además **Diseñar esta ficha**: abre el editor con ese registro de ejemplo y, al salir, vuelves a él.',
+            },
             { t: 'h', text: 'En el celular' },
             {
                 t: 'p',
-                md: 'En el teléfono la ficha ocupa toda la pantalla y tiene tres pestañas: **Detalles**, **Comentarios** y **Actividad**, una por vez. **Guardar** queda fijo abajo en **Detalles**, y en los campos la etiqueta va arriba del valor para que se lean enteros.',
+                md: 'En el teléfono la ficha ocupa toda la pantalla y tiene tres pestañas: **Detalles**, **Comentarios** y **Actividad**, una por vez. **Guardar** queda fijo abajo en **Detalles**, y en los campos la etiqueta va arriba del valor para que se lean enteros. Con la ficha diseñada las pestañas son **Ficha**, **Comentarios** y **Actividad** (o ninguna, si el diseño ya trae la conversación) y no hay botón de guardar: se guarda sola.',
             },
             {
                 t: 'example',
@@ -77,7 +82,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'faq',
                 items: [
-                    { q: '¿Por qué mi ficha se ve distinta a la de otra lista?', a: 'Cada lista elige su apariencia: la ficha simple (los campos uno debajo del otro) o una ficha diseñada con pestañas, portada y gráficos. Se cambia en **Configurar lista → Apariencia**.' },
+                    { q: '¿Por qué mi ficha se ve distinta a la de otra lista?', a: 'Cada lista elige su apariencia: la ficha simple (los campos uno debajo del otro) o una ficha diseñada con pestañas, portada y gráficos. Se cambia en **Configurar lista → Apariencia** y vale tanto en el modal como en la página completa.' },
                     { q: '¿Puedo abrir un registro desde la búsqueda?', a: 'Sí: el buscador de arriba (Ctrl + K) busca registros en todas las listas y los abre directo.' },
                     { q: 'No puedo editar nada en la ficha.', a: 'Tu rol puede ver la lista pero no editarla, o sólo editar lo tuyo. Pídele permiso a quien administra la lista.' },
                 ],
@@ -682,6 +687,25 @@ export const articles: LearnArticle[] = [
                 md: 'Arriba del editor: **Deshacer** (Ctrl + Z) y **Rehacer** (Ctrl + Mayús + Z), la **Vista previa** en **Escritorio** o **Celular**, el registro con el que se ve, **Plantillas** para arrancar de otra, **Automático** para volver al diseño que arma la app, y **Guardar** (Ctrl + S). Si sales sin guardar, la app te avisa.',
             },
             {
+                t: 'p',
+                md: 'También llegas al editor desde un registro abierto (en el modal o en la página): **Diseñar esta ficha** lo abre con ese registro de ejemplo, y la flecha de volver te deja otra vez en él.',
+            },
+            { t: 'h', text: 'Ningún campo queda escondido' },
+            {
+                t: 'p',
+                md: 'Si la lista tiene campos que tu diseño no muestra en ningún lado (un campo que creaste después de diseñarla, por ejemplo), la ficha los pone al final de la primera pestaña, en **Otros campos**, con su cantidad. Se editan igual que el resto y respetan los permisos: cada persona ve sólo los campos que su rol puede ver.\n\nEn el editor, la pestaña **Bloques** muestra arriba **Campos sin ubicar**: haz clic en uno para agregarlo debajo de lo elegido (o dentro de las **Propiedades** que elegiste) o arrástralo a la ficha. Con nada elegido, en el tema de la ficha está **Mostrar al final los campos que no están en el diseño** y **Cómo empieza**: **Plegada** o **Abierta**. Si alguien la abre o la pliega, su dispositivo lo recuerda.',
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                md: 'Las plantillas integradas ya muestran todos los campos: **Otros campos** sólo aparece en un diseño hecho en el editor. El portal del cliente nunca la muestra.',
+            },
+            { t: 'h', text: 'Las listas nuevas ya nacen con su ficha' },
+            {
+                t: 'p',
+                md: 'Una lista creada desde una **plantilla**, con la **IA**, desde un **archivo** (Excel o CSV) o desde **Airtable** ya usa la ficha diseñada con la plantilla que mejor le queda: **Contacto** para clientes y personas, **Venta / Oportunidad** para ventas, **Tarea** para tareas y proyectos, **Soporte** para tickets, y **Automática** para el resto. Una lista en blanco, una duplicada o una creada desde una plantilla de tu empresa no cambian.\n\nSi una lista todavía usa la ficha simple, al abrir un registro quien la administra ve una vez **Esta lista se puede ver como ficha**. **Probar** te la muestra con la plantilla sugerida sin guardar nada; ahí puedes **Elegir otra plantilla**, tocar **Usar este diseño** para dejarla o **Ahora no** para no volver a verla en esa lista.',
+            },
+            {
                 t: 'example',
                 title: 'Una empresa de software (clientes)',
                 md: 'La ficha de cada **Cliente** tiene una pestaña **Resumen** con una banda de indicadores (total facturado, saldo pendiente, días desde el último pago), una dona de sus facturas por estado y las últimas cinco facturas; otra pestaña **Soporte** con sus tickets como tablero por estado; y **Contrato** con los archivos y la fecha de renovación en cuenta regresiva.',
@@ -694,7 +718,8 @@ export const articles: LearnArticle[] = [
             {
                 t: 'faq',
                 items: [
-                    { q: '¿Quién puede diseñar la ficha?', a: 'Quien administra la lista. El diseño se ve igual para todo el equipo.' },
+                    { q: '¿Quién puede diseñar la ficha?', a: 'Quien administra la lista. El diseño se ve igual para todo el equipo, en el modal y en la página completa.' },
+                    { q: 'Agregué un campo y no lo veo en la ficha.', a: 'Si el diseño lo hiciste en el editor, el campo nuevo sale al final de la primera pestaña, en **Otros campos**. Para ubicarlo donde quieras, abre el editor y agrégalo desde **Campos sin ubicar**.' },
                     { q: '¿Si cambio de plantilla pierdo mi diseño?', a: 'Elegir otra plantilla reemplaza el diseño hecho en el editor; la app pide confirmación antes.' },
                     { q: '¿Puedo diseñar lo que ve el cliente en su portal?', a: 'Sí, con el mismo editor desde la configuración del portal de la lista.' },
                 ],

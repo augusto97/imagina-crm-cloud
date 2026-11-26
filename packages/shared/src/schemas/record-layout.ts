@@ -285,6 +285,14 @@ export const recordLayoutV3Schema = z
         theme: layoutThemeSchema.prefault({ preset: 'default' }),
         header: layoutHeaderSchema.prefault({}),
         pages: z.array(layoutPageSchema).min(1).max(12),
+        /**
+         * v0.1.470 — «Mostrar al final los campos que no están en el diseño»
+         * (sin el dato = sí) y cómo empieza esa sección (sin el dato =
+         * plegada). Un valor raro no tumba la ficha: se lee como si no
+         * estuviera (ver `record-layout-unplaced`). El portal lo ignora.
+         */
+        show_unplaced_fields: z.boolean().optional().catch(undefined),
+        unplaced_fields_open: z.boolean().optional().catch(undefined),
     })
     .passthrough();
 export type RecordLayoutV3 = z.infer<typeof recordLayoutV3Schema>;

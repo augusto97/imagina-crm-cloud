@@ -2,8 +2,8 @@ import { createContext, useCallback, useContext, useMemo, useRef, useState } fro
 import type { LayoutBlock, RecordLayoutV3 } from '@imagina-base/shared';
 
 import type { CatalogContext } from './blockCatalog';
-import { catalogEntry } from './blockCatalog';
-import { insertBlock, insertSection, moveBlock, type BlockPath } from './layoutOps';
+import { catalogEntry, fieldBlockFor } from './blockCatalog';
+import { findBlock, insertBlock, insertSection, moveBlock, updateBlock, type BlockPath } from './layoutOps';
 
 /** Lo que está elegido en el lienzo (manda qué muestra el inspector). */
 export type Selection =
@@ -67,13 +67,14 @@ export function useLayoutHistory(initial: RecordLayoutV3) {
 
 export const DRAG_MIME = 'application/x-imcrm-layout-block';
 
-export type DragPayload = { new: string } | { move: string };
+/** `field`: un campo de «Campos sin ubicar» (v0.1.470), que entra como bloque de campo. */
+export type DragPayload = { new: string } | { move: string } | { field: number };
 
 export function readDrag(e: React.DragEvent): DragPayload | null {
     try {
         const raw = e.dataTransfer.getData(DRAG_MIME);
         const parsed = raw ? (JSON.parse(raw) as DragPayload) : null;
-        return parsed && ('new' in parsed || 'move' in parsed) ? parsed : null;
+        return parsed && ('new' in parsed || 'move' in parsed || 'field' in parsed) ? parsed : null;
     } catch {
         return null;
     }
@@ -101,6 +102,11 @@ export interface EditorApi {
     drop: (payload: DragPayload, at: BlockPath) => void;
     /** Agrega un bloque del catálogo donde corresponda según la selección. */
     add: (catalogKey: string) => void;
+    /**
+     * v0.1.470 — Agrega un campo que el diseño no muestra: dentro de las
+     * «Propiedades» elegidas o, si no, como bloque de campo debajo de lo elegido.
+     */
+    addField: (fieldId: number) => void;
 }
 
 export const EditorContext = createContext<EditorApi | null>(null);
@@ -127,17 +133,25 @@ export function useEditorActions(
                 select({ kind: 'block', id: payload.move });
                 return;
             }
-            const entry = catalogEntry(payload.new);
-            if (!entry) return;
-            const b: LayoutBlock = entry.create(catalog);
+            let b: LayoutBlock;
+            if ('field' in payload) {
+                const f = catalog.fields.find((x) => x.id === payload.field);
+                if (!f) return;
+                b = fieldBlockFor(f);
+            } else {
+                const entry = catalogEntry(payload.new);
+                if (!entry) return;
+                b = entry.create(catalog);
+            }
             commit(insertBlock(layout, at, b));
             select({ kind: 'block', id: b.id });
         },
         [layout, commit, select, catalog],
     );
 
-    const add = useCallback(
-        (key: string) => {
+    /** Dónde agrega un clic: debajo de lo elegido, o al final de la página. */
+    const place = useCallback(
+        (payload: DragPayload, create: () => LayoutBlock | null) => {
             const page = layout.pages.find((p) => p.id === pageId) ?? layout.pages[0]!;
             // Debajo del bloque elegido; si no, al final de la sección elegida;
             // si no, al final de la primera columna de la última sección.
@@ -155,17 +169,45 @@ export function useEditorActions(
             }
             const last = page.sections[page.sections.length - 1];
             if (!at && last) at = { pageId: page.id, sectionId: last.id, col: 0, index: last.blocks[0]?.length ?? 0 };
-            if (at) return drop({ new: key }, at);
+            if (at) return drop(payload, at);
             // Página vacía: primero una sección de una columna.
-            const entry = catalogEntry(key);
-            if (!entry) return;
+            const b = create();
+            if (!b) return;
             const r = insertSection(layout, page.id, 0, [12]);
-            const b = entry.create(catalog);
             commit(insertBlock(r.layout, { pageId: page.id, sectionId: r.id, col: 0, index: 0 }, b));
             select({ kind: 'block', id: b.id });
         },
-        [layout, pageId, selection, drop, catalog, commit, select],
+        [layout, pageId, selection, drop, commit, select],
     );
 
-    return useMemo(() => ({ drop, add }), [drop, add]);
+    const add = useCallback(
+        (key: string) =>
+            place({ new: key }, () => {
+                const entry = catalogEntry(key);
+                return entry ? entry.create(catalog) : null;
+            }),
+        [place, catalog],
+    );
+
+    const addField = useCallback(
+        (fieldId: number) => {
+            // Con unas «Propiedades» elegidas, el campo entra en ellas.
+            if (selection?.kind === 'block') {
+                const at = findBlock(layout, selection.id);
+                if (at && at.block.type === 'fields') {
+                    const ids = Array.isArray(at.block.config.field_ids) ? (at.block.config.field_ids as number[]) : [];
+                    if (!ids.includes(fieldId)) {
+                        commit(updateBlock(layout, at.block.id, { config: { ...at.block.config, field_ids: [...ids, fieldId] } }));
+                    }
+                    return;
+                }
+            }
+            const f = catalog.fields.find((x) => x.id === fieldId);
+            if (!f) return;
+            place({ field: fieldId }, () => fieldBlockFor(f));
+        },
+        [selection, layout, commit, catalog, place],
+    );
+
+    return useMemo(() => ({ drop, add, addField }), [drop, add, addField]);
 }
