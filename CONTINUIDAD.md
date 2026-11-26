@@ -430,7 +430,16 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.469**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.470**
+(**la ventana del registro muestra la ficha diseñada** — al abrir un registro
+desde la tabla se ve la ficha diseñada de la lista (celular a pantalla
+completa, anterior/siguiente, autoguardado, comentarios al costado sólo si el
+diseño no los trae, «Diseñar esta ficha»); las listas que nacen de una
+plantilla, la IA, un archivo o Airtable arrancan con la ficha que les encaja;
+a las listas de antes se les sugiere una vez («Probar» / «Usar este diseño» /
+«Ahora no»); los campos que el diseño no ubica aparecen en «Otros campos (N)»
+al final, plegada o abierta según cada lista; sin migración; addendum ADR-S26).
+Antes **v0.1.469**
 (**lo pendiente de v0.1.466-468** — el SLA de la mesa de ayuda puede usar el
 horario laboral de la empresa (G15; cambiarlo recalcula los tickets abiertos),
 filtros de fecha con cualquier cantidad de días («próximos / últimos / hace
@@ -2416,6 +2425,33 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   fábrica; lista «Campos sin ubicar (N)» en el editor; nunca en el portal), y
   que **plegada o abierta sea un ajuste de cada lista** («Cómo empieza:
   Plegada / Abierta», plegada de fábrica). Va en v0.1.470.
+- **2026-11-26 · v0.1.470** — **La ficha diseñada en la ventana del
+  registro** (sin migración; addendum ADR-S26). Lo aprobado en la
+  conversación de este día: (1) la ventana flotante que abre la tabla muestra
+  la ficha diseñada cuando la lista la usa — a pantalla completa en el
+  celular, anterior/siguiente, página completa, acciones en la barra (o en un
+  «…»), «Guardado» con autoguardado que se descarga antes de cerrar, panel de
+  Comentarios/Actividad sólo si el diseño no los trae, y «Diseñar esta ficha»
+  que abre el editor con ese registro y vuelve a él; (2) las listas que nacen
+  de una plantilla del sistema, «Empezar fácil», el asistente/MCP, un archivo
+  o Airtable arrancan con la ficha que les encaja (ventas → Oportunidad,
+  soporte → Ticket, contactos → Perfil, tareas → Tarea, resto → Resumen; en
+  blanco sigue simple); (3) a las listas que siguen simples se les sugiere
+  UNA vez a cada administrador («Probar» sin guardar → «Usar este diseño» /
+  «Ahora no», recordado en `memberships.settings.layout_hints`); (4) «Otros
+  campos (N)» al final de la primera pestaña con lo que el diseño no ubica
+  (sin los campos ocultos para el rol; nunca en el portal), con los ajustes
+  «Mostrar al final los campos que no están en el diseño» (encendido) y «Cómo
+  empieza: Plegada / Abierta» (plegada) por lista, y la lista «Campos sin
+  ubicar (N)» en el editor. Para que la ficha entre en la carga inicial
+  (llegó a 830/830 KB gzip), los diálogos de WhatsApp y SMS de la ficha se
+  bajan al abrirlos (vuelve a 820). Verificado: shared 1224, front 1044,
+  specs relacionados de la API 252/252, E2E navegador 60/60 de la ventana y
+  18/18 de los diálogos de WhatsApp y SMS (escritorio claro y celular 390×844
+  oscuro). **Para el usuario**: en sus listas de antes nada cambia solo; si
+  administra una lista verá una vez la tarjeta «Esta lista se puede ver como
+  ficha». Queda: nada pendiente de esta tanda; #122 sigue abierto sólo por la
+  factura DIAN (pospuesta).
 - **2026-11-26 · v0.1.469** — **Lo pendiente de v0.1.466-468** (sin
   migración; addenda ADR-S70, S33, S23 y S38). (1) **SLA con el horario
   laboral de la empresa** (G15): Configuración de la lista → SLA → Horario
