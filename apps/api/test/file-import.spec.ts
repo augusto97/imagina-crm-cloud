@@ -257,6 +257,14 @@ describe('v0.1.339 — «Crear desde un archivo» (Postgres + Redis reales, mode
         const links = await withTenant(pg.db, tenantId, (tx) => tx.select().from(relations).where(and(eq(relations.fieldId, bySlug.get('cliente')!.id), eq(relations.targetRecordId, acme.id))));
         expect(links).toHaveLength(6);
 
+        // v0.1.470 — las listas de un archivo nacen con la ficha diseñada.
+        const made = await withTenant(pg.db, tenantId, (tx) =>
+            tx.select({ id: listsTable.id, settings: listsTable.settings }).from(listsTable).where(inArray(listsTable.id, [facturas.id, clientes.id])),
+        );
+        const settingsOf = (id: number) => made.find((l) => l.id === id)!.settings;
+        expect(settingsOf(facturas.id)).toMatchObject({ record_layout: 'crm', crm_template_id: 'auto' });
+        expect(settingsOf(clientes.id)).toMatchObject({ record_layout: 'crm', crm_template_id: 'contact' });
+
         const logs = await auditOf('file_import.apply');
         expect(logs[0]!.meta).toMatchObject({ records: 28, linked: 24, ai_used: false });
 

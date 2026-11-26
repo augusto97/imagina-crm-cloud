@@ -2221,6 +2221,32 @@ SLA, conversación protagonista, historial del cliente). Las secciones
 ganan `style.tone` (`accent` | `muted`): una banda que se mezcla con
 transparencia sobre la superficie del tema, en vez de un hex fijo.
 
+**La ficha diseñada se usa (v0.1.470).** Hasta acá la ficha diseñada sólo
+se veía en la página del registro; la ventana flotante que abre la tabla
+siempre mostraba la ficha simple. Ahora: (a) la ventana muestra la ficha
+diseñada cuando la lista la usa (`record_layout: 'crm'`), a pantalla
+completa en el celular, con anterior/siguiente, página completa, las
+acciones del registro en la barra (en un «…» si no caben), «Guardando… /
+Guardado» y el autoguardado que se descarga antes de cerrar o pasar a otro
+registro; el panel de Comentarios / Actividad aparece sólo si el diseño no
+los trae (`recordSidePanel`, puro), y «Diseñar esta ficha» (`manage_lists`)
+abre el editor con ESE registro de muestra. (b) Las listas que NACEN de una
+plantilla del sistema, «Empezar fácil», el asistente/MCP, un archivo o
+Airtable arrancan con la ficha que les encaja (`suggestRecordLayoutTemplate`
+en shared, por nombre y campos: ventas → Oportunidad, soporte → Ticket,
+contactos → Perfil, tareas → Tarea, resto → Resumen); una lista en blanco,
+duplicada o de una plantilla guardada no cambia. (c) A las listas que siguen
+con la ficha simple se les SUGIERE una vez por persona a quien las administra
+(«Probar» sin guardar → «Usar este diseño» / «Ahora no»,
+`memberships.settings.layout_hints`), nunca a invitados, impersonando ni en
+listas espejo. (d) Una ficha diseñada propia nunca esconde campos: los que
+el diseño no ubica van al final de la primera pestaña en «Otros campos (N)»
+(editables, sin los ocultos para el rol: `my_access.hidden_field_slugs`),
+con dos ajustes por lista en el diseño (`show_unplaced_fields`, encendido de
+fábrica; `unplaced_fields_open`, plegada de fábrica); nunca en el portal.
+Para que la ficha entre en la carga inicial, los diálogos de WhatsApp y SMS
+de la ficha se bajan al abrirlos.
+
 **Plantillas del portal del cliente (v0.1.237).** El portal tiene su propia
 galería (`portalTemplateLayout`, `packages/shared/src/templates/
 portal-templates.ts`): Mi cuenta, Estado de cuenta, Seguimiento de proyecto,

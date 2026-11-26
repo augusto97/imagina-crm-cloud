@@ -4039,4 +4039,38 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         ].join('\n'),
         audience: { roles: ['admin'] },
     },
+    {
+        key: 'v0.1.470-ficha-en-la-ventana',
+        version: '0.1.470',
+        date: '2026-11-26',
+        kind: 'improvement',
+        title: 'La ventana del registro ahora es la ficha',
+        summary:
+            'Si tu lista tiene una ficha diseñada, al abrir un registro desde la tabla se ve esa ficha en la ventana flotante, sin tener que ir a la página completa.',
+        media: {
+            slides: [
+                {
+                    title: 'La ficha, al abrir el registro',
+                    text: 'Pestañas, secciones, gráficos y cifras en la misma ventana. En el celular ocupa toda la pantalla. Los cambios se guardan solos.',
+                    illustration: 'ficha-abrir',
+                },
+                {
+                    title: 'Ningún campo queda escondido',
+                    text: 'Los campos que el diseño no ubica aparecen al final en «Otros campos». Puedes dejar esa sección plegada o abierta en cada lista.',
+                    illustration: 'ficha-disenar',
+                },
+                {
+                    title: 'Las listas nuevas ya vienen diseñadas',
+                    text: 'Una lista creada desde una plantilla, un archivo o la IA arranca con la ficha que le encaja. En tus listas de antes te lo sugerimos una vez.',
+                    illustration: 'ficha-plantilla',
+                },
+            ],
+        },
+        body: [
+            '- Si administras la lista, «Diseñar esta ficha» abre el editor con ese mismo registro de ejemplo.',
+            '- Si el diseño no trae la conversación, la ventana suma Comentarios y Actividad al costado.',
+            '- Las listas que siguen con la ficha simple se ven igual que antes.',
+        ].join('\n'),
+        action: { label: 'Ver cómo funciona', href: '/aprende/fichas/fichas-abrir' },
+    },
 ];

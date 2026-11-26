@@ -17714,6 +17714,74 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         211/211 — + E2E navegador 24/24 del SLA y 28/28 de los filtros en
         escritorio claro y celular 390×844 oscuro.
 
+  - [x] **La ventana del registro muestra la ficha diseñada, las listas
+        nacen diseñadas y «Otros campos» (v0.1.470, addendum ADR-S26, pedido
+        del usuario: "al abrir un registro de la lista abra esa vista
+        flotante pero con el diseño individual, porque hasta ahora ese diseño
+        casi no tiene uso"; aprobó las tres opciones recomendadas y después
+        «Otros campos» con plegada/abierta por lista)**. Sin migración.
+        (a) **La ventana flotante** (`RecordDetailDrawer` +
+        `DrawerDesignedBody`, en su propio chunk) muestra la ficha diseñada
+        cuando la lista la usa (`record_layout: 'crm'`): a pantalla completa
+        en el celular, anterior/siguiente, «Abrir página completa», las
+        acciones del registro en la barra (en un «…» si no caben —
+        `ActionsOverflow` queda MONTADO cerrado, así un diálogo que abrió una
+        acción no se cierra al plegarlo—), «Guardando… / Guardado», el
+        autoguardado que se descarga antes de cerrar o pasar a otro registro,
+        y el panel de Comentarios / Actividad sólo si el diseño no los trae
+        (`recordSidePanel` en `recordModalMode.ts`, puro; en el celular,
+        pestañas Ficha · Comentarios · Actividad); `?tab=` viaja junto a
+        `?record=`. **«Diseñar esta ficha»** (`manage_lists`,
+        `data-tour="record-modal-design"`) abre el editor con ESE registro de
+        muestra y vuelve a él al salir (`?record=` + `?back=` seguro).
+        (b) **Las listas nacen diseñadas**: plantillas del sistema, «Empezar
+        fácil», el asistente/MCP, «desde un archivo» y Airtable arrancan con
+        la ficha que les encaja (`suggestRecordLayoutTemplate` en
+        `packages/shared/src/templates/record-layout-suggest.ts`, puro: ventas
+        → Oportunidad, soporte → Ticket, contactos → Perfil, tareas → Tarea,
+        resto → Resumen). En blanco, duplicada o de una plantilla guardada,
+        no cambian.
+        (c) **Sugerencia a las listas existentes**: tarjeta «Esta lista se
+        puede ver como ficha · Probar» (`LayoutSuggestion`,
+        `data-tour="record-layout-suggestion"`) a quien administra la lista,
+        una vez por persona y lista (`shouldOfferDesignedLayout`): «Probar» =
+        vista previa sin guardar; «Usar este diseño» guarda `record_layout` +
+        plantilla (merge); «Ahora no» se guarda en
+        `memberships.settings.layout_hints` (`GET/POST /me/layout-hints`,
+        `layoutHintsSchema`). Nunca a invitados, impersonando ni en listas
+        espejo.
+        (d) **«Otros campos (N)»**: una ficha diseñada propia nunca esconde
+        campos — los que no ubica van al final de la primera pestaña
+        (`record-layout-unplaced.ts` en shared: qué campos quedan, sin los
+        ocultos para el rol, que viajan en `my_access.hidden_field_slugs`),
+        editables, `data-tour="record-unplaced-fields"`. El diseño suma
+        `show_unplaced_fields` (encendido de fábrica) y
+        `unplaced_fields_open` («Cómo empieza: Plegada / Abierta», plegada de
+        fábrica; la persona puede abrirla y el dispositivo lo recuerda); el
+        editor suma la lista **«Campos sin ubicar (N)»** (clic o arrastrar,
+        `data-tour="layout-editor-unplaced"`) y los dos ajustes
+        (`layout-editor-unplaced-settings`). Nunca en el portal. El
+        asistente/MCP los describe y los propone.
+        (e) **Carga inicial**: con la ficha en la ventana la app llegó a 830 de
+        830 KB gzip; los diálogos de **WhatsApp y SMS** de la ficha pasan a
+        bajarse al abrirlos (`SendWhatsappDialog.tsx`, `SendSmsDialog.tsx`
+        con `lazyDialog`) y la app vuelve a 820.
+        De paso: en el teléfono las acciones de la ficha simple también van
+        en un «…» (la barra se salía 6 px). Ayuda: guía de la ficha y
+        Aprende → La ficha del registro al día, y novedad con carrusel
+        (ilustraciones `ficha-abrir`, `ficha-disenar` y `ficha-plantilla`).
+        Tests: `record-layout-suggest.test` y `record-layout-unplaced.test`
+        en shared, `recordModalMode.test` en el front, `layout-hints.spec` y
+        casos en `templates`, `ai-list-config`, `file-import`,
+        `airtable-import`, `onboarding` y `record-view` — shared 1224, front
+        1044, specs relacionados de la API 252/252 — + E2E navegador 60/60
+        sobre la versión integrada (escritorio claro y celular 390×844
+        oscuro: ventana con la ficha, anterior/siguiente, autoguardado,
+        «Diseñar esta ficha» y vuelta, lista nacida diseñada, sugerencia
+        Probar/Usar/Ahora no, «Otros campos» plegada y abierta) y 18/18 de
+        los diálogos de WhatsApp y SMS (se bajan al tocar el botón, en la
+        ventana, la página y el «…» del celular).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

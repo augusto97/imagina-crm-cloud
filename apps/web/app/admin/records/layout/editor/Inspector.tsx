@@ -1,5 +1,12 @@
 import { Copy, MousePointerClick, Trash2 } from 'lucide-react';
-import { LAYOUT_THEME_PRESETS, type LayoutBlock, type LayoutHeader, type LayoutTheme } from '@imagina-base/shared';
+import {
+    LAYOUT_THEME_PRESETS,
+    readShowUnplacedFields,
+    readUnplacedFieldsOpen,
+    type LayoutBlock,
+    type LayoutHeader,
+    type LayoutTheme,
+} from '@imagina-base/shared';
 
 import { BlockStyleEditor } from '@/admin/template-editor-core/BlockStyleEditor';
 import { Select } from '@/components/ui/select';
@@ -449,6 +456,7 @@ function ThemeInspector(): JSX.Element {
                 </div>
             </Group>
             {ed.catalog.target === 'portal' && <PortalPageGroup />}
+            {ed.catalog.target !== 'portal' && <UnplacedFieldsGroup />}
             <Group title={__('Ajustes')}>
                 <Row label={__('Color de acento')}>
                     <ColorField value={theme.accent ?? null} noneLabel={__('El de la empresa')} onChange={(v) => set({ accent: v }, 'accent')} />
@@ -491,6 +499,48 @@ function ThemeInspector(): JSX.Element {
                 </Row>
             </Group>
         </>
+    );
+}
+
+/**
+ * v0.1.470 — «Otros campos»: los campos que el diseño no ubica salen al final
+ * de la primera pestaña (para que ninguno quede escondido). Se puede apagar y
+ * elegir si arranca abierta o plegada. El portal nunca la muestra.
+ */
+function UnplacedFieldsGroup(): JSX.Element {
+    const ed = useEditor();
+    const show = readShowUnplacedFields(ed.layout);
+    const open = readUnplacedFieldsOpen(ed.layout);
+    const set = (patch: { show_unplaced_fields?: boolean; unplaced_fields_open?: boolean }, key: string): void => {
+        const next = { ...ed.layout, ...patch } as Record<string, unknown>;
+        for (const k of ['show_unplaced_fields', 'unplaced_fields_open']) if (next[k] === undefined) delete next[k];
+        ed.commit(next as typeof ed.layout, `unplaced:${key}`);
+    };
+    return (
+        <Group title={__('Campos que no están en el diseño')}>
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-2.5" data-tour="layout-editor-unplaced-settings">
+                <Toggle
+                    label={__('Mostrar al final los campos que no están en el diseño')}
+                    hint={__('Salen al final de la primera pestaña, en «Otros campos». Así un campo nuevo nunca queda escondido.')}
+                    checked={show}
+                    onChange={(v) => set({ show_unplaced_fields: v ? undefined : false }, 'show')}
+                    testId="layout-show-unplaced"
+                />
+                <Row label={__('Cómo empieza')}>
+                    <Segmented
+                        value={open ? 'open' : 'closed'}
+                        disabled={!show}
+                        onChange={(v) => set({ unplaced_fields_open: v === 'open' ? true : undefined }, 'open')}
+                        options={[
+                            { value: 'closed', label: __('Plegada') },
+                            { value: 'open', label: __('Abierta') },
+                        ]}
+                        ariaLabel={__('Cómo empieza «Otros campos»')}
+                        testId="layout-unplaced-open"
+                    />
+                </Row>
+            </div>
+        </Group>
     );
 }
 

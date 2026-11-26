@@ -171,11 +171,11 @@ describe('Bundle de la ficha del registro (Postgres real)', () => {
         try {
             const cli = await recs.create(tenantId, admin, 'clientes', { data: { [nombreKey]: 'Ajustes' } });
             const asAdmin = await svc.bundle(tenantId, admin, 'clientes', cli.id);
-            expect(asAdmin.list.my_access).toEqual({ readonly_field_ids: [] });
+            expect(asAdmin.list.my_access).toEqual({ readonly_field_ids: [], hidden_field_slugs: [] });
             expect((asAdmin.list.settings as Record<string, unknown>).permissions).toBeDefined();
             const mine = await recs.create(tenantId, agent, 'clientes', { data: {} });
             const asAgent = await svc.bundle(tenantId, agent, 'clientes', mine.id);
-            expect(asAgent.list.my_access).toEqual({ readonly_field_ids: [nombreId] });
+            expect(asAgent.list.my_access).toMatchObject({ readonly_field_ids: [nombreId] });
             // Los permisos de la lista no le llegan a quien no la administra.
             expect((asAgent.list.settings as Record<string, unknown>).permissions).toBeUndefined();
         } finally {

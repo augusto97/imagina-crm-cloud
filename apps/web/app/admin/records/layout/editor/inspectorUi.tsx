@@ -70,20 +70,31 @@ export function Segmented<T extends string>({
     options,
     onChange,
     ariaLabel,
+    disabled = false,
+    testId,
 }: {
     value: T;
     options: Array<{ value: T; label: string; icon?: ReactNode }>;
     onChange: (v: T) => void;
     ariaLabel: string;
+    disabled?: boolean;
+    testId?: string;
 }): JSX.Element {
     return (
-        <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-1 imcrm-rounded-lg imcrm-bg-muted/60 imcrm-p-0.5" role="radiogroup" aria-label={ariaLabel}>
+        <div
+            className={cn('imcrm-flex imcrm-flex-wrap imcrm-gap-1 imcrm-rounded-lg imcrm-bg-muted/60 imcrm-p-0.5', disabled && 'imcrm-opacity-50')}
+            role="radiogroup"
+            aria-label={ariaLabel}
+            aria-disabled={disabled || undefined}
+            data-testid={testId}
+        >
             {options.map((o) => (
                 <button
                     key={o.value}
                     type="button"
                     role="radio"
                     aria-checked={value === o.value}
+                    disabled={disabled}
                     onClick={() => onChange(o.value)}
                     className={cn(
                         'imcrm-flex imcrm-flex-1 imcrm-items-center imcrm-justify-center imcrm-gap-1 imcrm-whitespace-nowrap imcrm-rounded-md imcrm-px-2 imcrm-py-1 imcrm-text-[11px] [&>svg]:imcrm-h-3.5 [&>svg]:imcrm-w-3.5',

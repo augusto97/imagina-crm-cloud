@@ -41,7 +41,7 @@ import {
     type LucideIcon,
     ListTodo,
 } from 'lucide-react';
-import type { LayoutBlock, LayoutBlockType, LayoutDataSource } from '@imagina-base/shared';
+import { defaultDisplayFor, type FieldType, type LayoutBlock, type LayoutBlockType, type LayoutDataSource } from '@imagina-base/shared';
 
 import type { RelationPath } from '@/hooks/useRelationPaths';
 import { __ } from '@/lib/i18n';
@@ -103,6 +103,11 @@ const block = (type: LayoutBlockType, config: Record<string, unknown> = {}, titl
     config,
     ...(title !== undefined ? { title } : {}),
 });
+
+/** v0.1.470 — Un campo suelto («Campos sin ubicar») como bloque «Un campo destacado». */
+export function fieldBlockFor(field: FieldEntity): LayoutBlock {
+    return block('field', { field_id: field.id, display: defaultDisplayFor(field.type as FieldType), card: true });
+}
 
 const chart = (key: string, kind: string, label: string, description: string, icon: LucideIcon, extra: Record<string, unknown> = {}): CatalogEntry => ({
     key,

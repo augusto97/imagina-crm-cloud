@@ -413,6 +413,46 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
         expect(s2.record_layout_v3).toBeUndefined();
     });
 
+    it('v0.1.470 — «Otros campos»: get_list_schema dice qué no ubica el diseño y las dos opciones se proponen solas', async () => {
+        const design = { pages: [{ name: 'Resumen', sections: [{ columns: [{ blocks: [{ type: 'fields', title: 'Contacto', fields: ['email'] }] }] }] }] };
+        await apply(json(await call('propose_configure_record_layout', { list: 'clientes', layout: 'crm', design })).proposal_id);
+        const schema = json(await call('get_list_schema', { list: 'clientes' }));
+        const rl = schema.record_layout as Record<string, unknown>;
+        expect(rl.show_unplaced_fields).toBe(true);
+        expect(rl.unplaced_fields_open).toBe(false);
+        expect(rl.unplaced_fields).toEqual(expect.arrayContaining(['telefono', 'estado', 'contrato']));
+        expect(rl.unplaced_fields).not.toContain('email');
+        // El título no cuenta: ya está arriba.
+        expect(rl.unplaced_fields).not.toContain('nombre');
+
+        // Sólo la opción, sin tocar el diseño (no es destructivo).
+        const openIt = json(await call('propose_configure_record_layout', { list: 'clientes', layout: 'crm', unplaced_fields_open: true }));
+        expect((openIt.proposal as { destructive: boolean }).destructive).toBe(false);
+        await apply(openIt.proposal_id);
+        let v3 = (await lists.get(tenantId, 'clientes')).settings.record_layout_v3 as Record<string, unknown> & { pages: Array<{ name: string }> };
+        expect(v3.unplaced_fields_open).toBe(true);
+        expect(v3.pages.map((p) => p.name)).toEqual(['Resumen']);
+
+        await apply(json(await call('propose_configure_record_layout', { list: 'clientes', layout: 'crm', show_unplaced_fields: false })).proposal_id);
+        v3 = (await lists.get(tenantId, 'clientes')).settings.record_layout_v3 as typeof v3;
+        expect(v3.show_unplaced_fields).toBe(false);
+        expect(v3.unplaced_fields_open).toBe(true);
+        expect(((json(await call('get_list_schema', { list: 'clientes' })).record_layout) as Record<string, unknown>).show_unplaced_fields).toBe(false);
+
+        // Lo que no aplica, con su motivo.
+        const same = await call('propose_configure_record_layout', { list: 'clientes', layout: 'crm', show_unplaced_fields: false });
+        expect(json(same).error).toContain('ya está así');
+        const withTemplate = await call('propose_configure_record_layout', { list: 'clientes', layout: 'crm', template: 'contact', show_unplaced_fields: true });
+        expect(isError(withTemplate)).toBe(true);
+        const classic = await call('propose_configure_record_layout', { list: 'clientes', layout: 'classic', unplaced_fields_open: true });
+        expect(isError(classic)).toBe(true);
+
+        // Vuelve a la integrada (como dejó la prueba anterior).
+        await apply(json(await call('propose_configure_record_layout', { list: 'clientes', layout: 'crm', template: 'contact' })).proposal_id);
+        const onTemplate = await call('propose_configure_record_layout', { list: 'clientes', layout: 'crm', show_unplaced_fields: true });
+        expect(json(onTemplate).error).toContain('plantilla integrada');
+    });
+
     it('automatizaciones: pausar por nombre, reemplazar acciones con validación de slugs, borrar; y leer ejecuciones', async () => {
         const created = json(await call('propose_create_automation', {
             list: 'clientes',

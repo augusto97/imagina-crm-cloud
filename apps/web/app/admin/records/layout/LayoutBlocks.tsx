@@ -136,7 +136,18 @@ const GUEST_HIDDEN_BLOCKS = new Set<string>([
  * v0.1.230 — Un bloque de la ficha dentro de su marco (tarjeta del tema,
  * título, capa de estilo compartida con los tableros).
  */
-export function LayoutBlockView({ block }: { block: LayoutBlock }): JSX.Element | null {
+export function LayoutBlockView({
+    block,
+    open: openProp,
+    onOpenChange,
+    testId,
+}: {
+    block: LayoutBlock;
+    /** v0.1.470 — plegado controlado desde afuera (lo recuerda «Otros campos»). */
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
+    testId?: string;
+}): JSX.Element | null {
     const ctx = useLayoutCtx();
     const dark = useTheme().resolved === 'dark';
     const isGuest = useIsGuest();
@@ -150,7 +161,13 @@ export function LayoutBlockView({ block }: { block: LayoutBlock }): JSX.Element 
               (!BARE.has(block.type) && !(ctx.mode === 'portal' && BARE_IN_PORTAL.has(block.type)));
     const title = blockTitle(block, ctx.fieldsById);
     const collapsible = block.type === 'fields' && block.config.collapsible !== false && title !== null;
-    const [open, setOpen] = useState(block.config.collapsed !== true);
+    const [openState, setOpenState] = useState(block.config.collapsed !== true);
+    const open = openProp ?? openState;
+    const setOpen = (fn: (o: boolean) => boolean): void => {
+        const next = fn(open);
+        if (onOpenChange) onOpenChange(next);
+        else setOpenState(next);
+    };
     const Icon = blockIcon(block);
     // Un botón que el portal no deja usar no se le muestra al cliente (ni su hueco).
     const buttonField = block.type === 'field' ? ctx.fieldsById.get(Number(block.config.field_id)) : undefined;
@@ -174,6 +191,7 @@ export function LayoutBlockView({ block }: { block: LayoutBlock }): JSX.Element 
     return (
         <section
             data-block={block.type}
+            data-testid={testId}
             className={cn(
                 'imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-overflow-hidden',
                 !styled && surfaceClass(ctx.theme.surface),

@@ -1,6 +1,9 @@
 import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import {
     applyMostUsedVisits,
+    LAYOUT_HINTS_MAX,
+    readLayoutHints,
+    type LayoutHints,
     favoritesSchema,
     mergeGuideProgress,
     mostUsedState,
@@ -230,6 +233,49 @@ export class MeService {
                 .update(memberships)
                 .set({
                     settings: sql`coalesce(${memberships.settings}, '{}'::jsonb) || jsonb_build_object('guides', ${JSON.stringify(merged)}::jsonb)`,
+                    updatedAt: new Date(),
+                })
+                .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)));
+            return merged;
+        });
+    }
+
+    /**
+     * v0.1.470 — Las listas en las que la persona ya cerró la tarjeta «Esta
+     * lista se puede ver como ficha» (`memberships.settings.layout_hints`).
+     */
+    async getLayoutHints(tenantId: number, userId: number): Promise<LayoutHints> {
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ settings: memberships.settings })
+                .from(memberships)
+                .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)))
+                .limit(1),
+        );
+        return readLayoutHints((row?.settings as Record<string, unknown> | undefined)?.layout_hints);
+    }
+
+    /**
+     * Suma una lista a las descartadas. Escribe SÓLO `layout_hints` con la
+     * fila bloqueada (otra preferencia que se guarda a la vez no se pisa);
+     * quedan las más recientes si se llega al tope.
+     */
+    async dismissLayoutHint(tenantId: number, userId: number, listId: number): Promise<LayoutHints> {
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [row] = await tx
+                .select({ settings: memberships.settings })
+                .from(memberships)
+                .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)))
+                .limit(1)
+                .for('update');
+            if (!row) throw new NotFoundException({ code: 'not_found', message: 'No eres miembro de esta empresa', data: { status: 404 } });
+            const current = readLayoutHints((row.settings as Record<string, unknown> | null)?.layout_hints);
+            if (current.dismissed_lists.includes(listId)) return current;
+            const merged: LayoutHints = { dismissed_lists: [...current.dismissed_lists, listId].slice(-LAYOUT_HINTS_MAX) };
+            await tx
+                .update(memberships)
+                .set({
+                    settings: sql`coalesce(${memberships.settings}, '{}'::jsonb) || jsonb_build_object('layout_hints', ${JSON.stringify(merged)}::jsonb)`,
                     updatedAt: new Date(),
                 })
                 .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)));

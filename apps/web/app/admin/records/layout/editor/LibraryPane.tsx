@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, FileStack, Plus, Search, Trash2 } from 'lucide-react';
-import { PORTAL_LAYOUT_BLOCK_TYPES } from '@imagina-base/shared';
+import { ArrowDown, ArrowUp, FileStack, GripVertical, Plus, Search, Trash2 } from 'lucide-react';
+import { PORTAL_LAYOUT_BLOCK_TYPES, unplacedLayoutFields } from '@imagina-base/shared';
+
+import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
 
 import { Input } from '@/components/ui/input';
 import { __, sprintf } from '@/lib/i18n';
@@ -73,6 +75,7 @@ function BlockLibrary(): JSX.Element {
                     ? __('Arrastra un bloque al portal o haz clic para agregarlo debajo de lo elegido.')
                     : __('Arrastra un bloque a la ficha o haz clic para agregarlo debajo de lo elegido.')}
             </p>
+            {ed.catalog.target !== 'portal' && <UnplacedFields query={q} />}
             {categories.map((cat) => {
                 const entries = matches.filter((e) => e.category === cat);
                 if (entries.length === 0) return null;
@@ -100,6 +103,59 @@ function BlockLibrary(): JSX.Element {
                 );
             })}
             {matches.length === 0 && <p className="imcrm-py-6 imcrm-text-center imcrm-text-xs imcrm-text-muted-foreground">{__('Ningún bloque coincide.')}</p>}
+        </div>
+    );
+}
+
+/**
+ * v0.1.470 — Los campos de la lista que el diseño todavía no muestra (un
+ * campo creado después de diseñar la ficha, por ejemplo). En la ficha salen
+ * solos en «Otros campos»; desde aquí se ubican donde corresponden: un clic
+ * los suma a las «Propiedades» elegidas (o los agrega como bloque de campo
+ * debajo de lo elegido) y también se arrastran.
+ */
+function UnplacedFields({ query }: { query: string }): JSX.Element | null {
+    const ed = useEditor();
+    const all = useMemo(() => unplacedLayoutFields(ed.layout, ed.catalog.fields, { ignoreSetting: true }), [ed.layout, ed.catalog.fields]);
+    const n = normalize(query.trim());
+    const shown = n === '' ? all : all.filter((f) => normalize(f.label).includes(n));
+    if (all.length === 0 || shown.length === 0) return null;
+    const into = ed.selection?.kind === 'block' && ed.layout.pages.some((p) => p.sections.some((s) => s.blocks.some((c) => c.some((b) => b.id === (ed.selection as { id: string }).id && b.type === 'fields'))));
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1" data-tour="layout-editor-unplaced" data-testid="library-unplaced">
+            <p className="imcrm-px-0.5 imcrm-text-[10px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
+                {sprintf(
+                    /* translators: %d: cantidad de campos */
+                    __('Campos sin ubicar (%d)'),
+                    all.length,
+                )}
+            </p>
+            <p className="imcrm-px-0.5 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                {into
+                    ? __('Haz clic para sumarlo a las propiedades elegidas, o arrástralo a la ficha.')
+                    : __('El diseño todavía no los muestra (en la ficha salen al final, en «Otros campos»). Haz clic para agregarlo debajo de lo elegido, o arrástralo.')}
+            </p>
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                {shown.map((f) => {
+                    const Icon = fieldTypeIcon(f.type);
+                    return (
+                        <button
+                            key={f.id}
+                            type="button"
+                            draggable
+                            onDragStart={(ev) => writeDrag(ev, { field: f.id })}
+                            onClick={() => ed.addField(f.id)}
+                            title={__('Agregar este campo a la ficha')}
+                            data-testid={`library-unplaced-${f.slug}`}
+                            className="imcrm-flex imcrm-cursor-grab imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-background imcrm-px-2 imcrm-py-1.5 imcrm-text-left imcrm-text-xs imcrm-transition-colors hover:imcrm-border-primary/50 hover:imcrm-bg-accent active:imcrm-cursor-grabbing"
+                        >
+                            <Icon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-primary" />
+                            <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate imcrm-font-medium">{f.label}</span>
+                            <GripVertical className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground/60" aria-hidden />
+                        </button>
+                    );
+                })}
+            </div>
         </div>
     );
 }

@@ -35,10 +35,13 @@ const FLAVORS: ReadonlySet<string> = new Set(['contact', 'deal', 'task', 'suppor
 export function useRecordLayout(
     list: ListSummary,
     fields: FieldEntity[],
+    /** v0.1.470 — «Probar»: una plantilla integrada, sin mirar lo guardado. */
+    previewTemplate?: AutoLayoutFlavor,
 ): { layout: RecordLayoutV3 | null; origin: LayoutOrigin } {
     const settings = useMemo(() => (list.settings ?? {}) as Record<string, unknown>, [list.settings]);
-    const saved = useMemo(() => readRecordLayoutV3(settings), [settings]);
-    const templateId = typeof settings.crm_template_id === 'string' ? settings.crm_template_id : 'auto';
+    const savedLayout = useMemo(() => readRecordLayoutV3(settings), [settings]);
+    const saved = previewTemplate !== undefined ? null : savedLayout;
+    const templateId = previewTemplate ?? (typeof settings.crm_template_id === 'string' ? settings.crm_template_id : 'auto');
     const needsAuto = saved === null && templateId !== 'custom';
     const flavor = (FLAVORS.has(templateId) ? templateId : 'auto') as AutoLayoutFlavor;
 

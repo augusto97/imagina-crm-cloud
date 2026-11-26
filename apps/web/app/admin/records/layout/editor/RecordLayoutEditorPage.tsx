@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router';
+import { useParams, useSearchParams } from 'react-router';
 import { Loader2 } from 'lucide-react';
 
 import { useFields } from '@/hooks/useFields';
 import { useList } from '@/hooks/useLists';
-import { useRecords } from '@/hooks/useRecords';
+import { useRecord, useRecords } from '@/hooks/useRecords';
 import { __ } from '@/lib/i18n';
 import type { RecordEntity } from '@/types/record';
 
+import { safeDesignBack } from '../recordModalMode';
 import { useRecordLayout } from '../useRecordLayout';
 import { LayoutEditor } from './LayoutEditor';
 
@@ -20,18 +21,38 @@ import { LayoutEditor } from './LayoutEditor';
  */
 export function RecordLayoutEditorPage(): JSX.Element {
     const { listSlug } = useParams<{ listSlug: string }>();
+    // v0.1.470 — «Diseñar esta ficha» desde un registro: ese registro de
+    // muestra (`?record=`) y, al salir, la vuelta a donde se estaba (`?back=`).
+    const [params] = useSearchParams();
+    const wantedId = Number(params.get('record'));
+    const recordId = Number.isInteger(wantedId) && wantedId > 0 ? wantedId : undefined;
+    const backHref = safeDesignBack(params.get('back')) ?? undefined;
     const list = useList(listSlug);
     const fields = useFields(list.data?.id);
-    const sample = useRecords(list.data?.id, { page: 1, per_page: 1 });
+    const wanted = useRecord(list.data?.id, recordId);
+    const sample = useRecords(recordId === undefined || wanted.isError ? list.data?.id : undefined, { page: 1, per_page: 1 });
 
     if (list.isError) {
         return <p className="imcrm-p-6 imcrm-text-sm imcrm-text-destructive">{__('No se pudo cargar la lista.')}</p>;
     }
-    if (!list.data || !fields.data || sample.isLoading) return <Loading />;
-    return <Loaded key={list.data.id} list={list.data} fields={fields.data} sample={sample.data?.data[0] ?? null} />;
+    if (!list.data || !fields.data || sample.isLoading || (recordId !== undefined && wanted.isLoading)) return <Loading />;
+    return (
+        <Loaded
+            key={list.data.id}
+            list={list.data}
+            fields={fields.data}
+            sample={wanted.data ?? sample.data?.data[0] ?? null}
+            backHref={backHref}
+        />
+    );
 }
 
-function Loaded({ list, fields, sample }: Pick<Parameters<typeof LayoutEditor>[0], 'list' | 'fields'> & { sample: RecordEntity | null }): JSX.Element {
+function Loaded({
+    list,
+    fields,
+    sample,
+    backHref,
+}: Pick<Parameters<typeof LayoutEditor>[0], 'list' | 'fields'> & { sample: RecordEntity | null; backHref?: string }): JSX.Element {
     const { layout, origin } = useRecordLayout(list, fields);
     // La foto de arranque se toma una sola vez.
     const [initial, setInitial] = useState(layout);
@@ -53,7 +74,7 @@ function Loaded({ list, fields, sample }: Pick<Parameters<typeof LayoutEditor>[0
         [],
     );
     if (initial === null) return <Loading />;
-    return <LayoutEditor list={list} fields={fields} initial={initial} origin={origin} initialRecord={sample ?? placeholder} />;
+    return <LayoutEditor list={list} fields={fields} initial={initial} origin={origin} initialRecord={sample ?? placeholder} backHref={backHref} />;
 }
 
 function Loading(): JSX.Element {

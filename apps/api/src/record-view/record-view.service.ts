@@ -34,7 +34,7 @@ import {
     guestExtraHidden,
     guestSafeListSettings,
     memberListSettings,
-    readonlyFieldIdsFor,
+    myListAccess,
     withDependentComputed,
 } from '../lists/list-acl';
 import { can } from '../authz/can';
@@ -250,7 +250,7 @@ export class RecordViewService {
             list: {
                 ...list,
                 settings: memberListSettings(listSettings, who, can(who, 'manage_lists')),
-                my_access: { readonly_field_ids: [...readonlyFieldIdsFor(listSettings, who)] },
+                my_access: myListAccess(listSettings, who),
             },
             fields,
             record,
@@ -324,7 +324,7 @@ export class RecordViewService {
                       ),
                   );
         return {
-            list: { ...list, group_id: null, settings: guestSafeListSettings(settings), my_access: { readonly_field_ids: [...readonlyFieldIdsFor(settings, who)] } },
+            list: { ...list, group_id: null, settings: guestSafeListSettings(settings), my_access: myListAccess(settings, who) },
             fields,
             record,
             description: description ?? null,

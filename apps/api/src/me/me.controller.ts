@@ -17,6 +17,7 @@ import {
 } from '@nestjs/common';
 import {
     deleteAccountSchema,
+    dismissLayoutHintSchema,
     mobileNavConfigSchema,
     recordMostUsedVisitsSchema,
     updateEmailSignatureSchema,
@@ -24,6 +25,8 @@ import {
     updateGuideProgressSchema,
     updateMostUsedSchema,
     type DeleteAccountInput,
+    type DismissLayoutHintInput,
+    type LayoutHints,
     type Capability,
     type FavoriteView,
     type Favorites,
@@ -157,6 +160,31 @@ export class MeController {
     ): Promise<GuideProgress> {
         if (req.impersonatedBy !== undefined) return this.me.getGuideProgress(tenantId(req), req.authUserId!);
         return this.me.updateGuideProgress(tenantId(req), req.authUserId!, patch);
+    }
+
+    // ── v0.1.470 — «Esta lista se puede ver como ficha» ─────────────────
+
+    @Get('layout-hints')
+    @UseGuards(SessionGuard, TenantGuard)
+    getLayoutHints(@Req() req: FastifyRequest): Promise<LayoutHints> {
+        return this.me.getLayoutHints(tenantId(req), req.authUserId!);
+    }
+
+    /**
+     * «Ahora no» / cerrar la tarjeta: no vuelve a aparecer para esta persona
+     * en esa lista, en ningún dispositivo. Es una preferencia: vale en
+     * solo-lectura. Impersonando no se escribe nada.
+     */
+    @Post('layout-hints/dismiss')
+    @HttpCode(200)
+    @AllowReadOnly()
+    @UseGuards(SessionGuard, TenantGuard)
+    dismissLayoutHint(
+        @Req() req: FastifyRequest,
+        @Body(new ZodValidationPipe(dismissLayoutHintSchema)) body: DismissLayoutHintInput,
+    ): Promise<LayoutHints> {
+        if (req.impersonatedBy !== undefined) return this.me.getLayoutHints(tenantId(req), req.authUserId!);
+        return this.me.dismissLayoutHint(tenantId(req), req.authUserId!, body.list_id);
     }
 
     // ── v0.1.347 — la barra de abajo del celular ─────────────────────────

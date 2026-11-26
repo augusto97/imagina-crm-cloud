@@ -47,6 +47,8 @@ interface Props {
     target?: 'record' | 'portal';
     /** Portal: listas vinculadas al cliente por un campo persona. */
     portalLists?: Array<{ list_id: number; name: string }>;
+    /** v0.1.470 — a dónde vuelve la flecha (el registro desde el que se abrió). */
+    backHref?: string;
 }
 
 /**
@@ -56,7 +58,7 @@ interface Props {
  * vista de celular y guardado explícito (diseñar no es editar datos: se
  * guarda cuando el diseño está listo, no a cada clic).
  */
-export function LayoutEditor({ list, fields, initial, origin, initialRecord, target = 'record', portalLists }: Props): JSX.Element {
+export function LayoutEditor({ list, fields, initial, origin, initialRecord, target = 'record', portalLists, backHref: backTo }: Props): JSX.Element {
     const portal = target === 'portal';
     const history = useLayoutHistory(initial);
     const { layout, commit, undo, redo } = history;
@@ -206,7 +208,7 @@ export function LayoutEditor({ list, fields, initial, origin, initialRecord, tar
     // volver (un enlace) y Atrás del navegador piden confirmación (antes sólo
     // `beforeunload`: Atrás descartaba el diseño sin preguntar).
     useUnsavedChangesGuard(dirty, __('Si sales ahora se pierde lo que diseñaste desde la última vez que guardaste.'));
-    const backHref = portal ? `/lists/${list.slug}/edit?s=compartir` : `/lists/${list.slug}/records${record.id > 0 ? `/${record.id}` : ''}`;
+    const backHref = backTo ?? (portal ? `/lists/${list.slug}/edit?s=compartir` : `/lists/${list.slug}/records${record.id > 0 ? `/${record.id}` : ''}`);
     // Ajustes de página del portal (fondo, ancho, tipografía) en la vista previa.
     const page = portal ? readPageSettings((layout as { page?: unknown }).page) : {};
 

@@ -381,7 +381,11 @@ export class FileImportService {
                 : null;
         let materialized: Awaited<ReturnType<BlueprintService['materialize']>>;
         try {
-            materialized = await this.blueprints.materialize(ctx.tenantId, ctx.userId, blueprint, { groupId: target ?? folder?.id ?? null, includeRecords: false });
+            materialized = await this.blueprints.materialize(ctx.tenantId, ctx.userId, blueprint, {
+                groupId: target ?? folder?.id ?? null,
+                includeRecords: false,
+                suggestRecordLayout: true,
+            });
         } catch (err) {
             if (folder) await this.groups.remove(ctx.tenantId, folder.id).catch(() => undefined);
             throw err;

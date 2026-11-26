@@ -179,6 +179,9 @@ export class TemplatesService {
             name: input.name,
             groupId: input.group_id ?? null,
             includeRecords: input.include_records,
+            // v0.1.470 — las del sistema nacen con la ficha diseñada que les
+            // encaja; una plantilla GUARDADA por la empresa trae la suya.
+            suggestRecordLayout: id.startsWith(SYSTEM_PREFIX),
         });
         void this.audit.log({
             tenantId,

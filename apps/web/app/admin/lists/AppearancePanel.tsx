@@ -98,6 +98,9 @@ export function AppearancePanel({ list }: AppearancePanelProps): JSX.Element {
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-5">
+                <p className="imcrm-text-xs imcrm-text-muted-foreground" data-testid="imcrm-appearance-scope">
+                    {__('Lo que elijas vale en los dos lugares donde se abre un registro: la ventana que aparece al tocarlo en la tabla o el tablero, y su página completa.')}
+                </p>
                 <div className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-3 sm:imcrm-grid-cols-2">
                     <LayoutOption
                         active={currentLayout === 'classic'}

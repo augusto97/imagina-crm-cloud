@@ -547,6 +547,8 @@ export function RecordsPage(): JSX.Element {
             }
             const next = new URLSearchParams(searchParams);
             next.delete('record');
+            // v0.1.470 — la pestaña de la ficha diseñada vive junto al registro.
+            next.delete('tab');
             setSearchParams(next, { replace: true });
             return;
         }
@@ -555,6 +557,9 @@ export function RecordsPage(): JSX.Element {
         const next = new URLSearchParams(searchParams);
         next.set('record', String(id));
         if (drawerRecordId === null) {
+            // Un registro recién abierto empieza en la primera pestaña; al pasar
+            // a otro (anterior/siguiente) se conserva la que se estaba mirando.
+            next.delete('tab');
             openedByUsRef.current = true;
             setSearchParams(next, { state: { imcrmRecordModal: true } });
         } else {
@@ -2056,6 +2061,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                         listId={list.data.id}
                         listSlug={list.data.slug}
                         listName={list.data.name}
+                        list={list.data}
                         fields={fields.data}
                         record={drawerRecord}
                         open={drawerRecordId !== null}
