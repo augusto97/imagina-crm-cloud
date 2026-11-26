@@ -430,7 +430,13 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.471**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.472**
+(**la ficha diseñada vuelve a abrir rápido** — el bundle de la ficha trae los
+datos de los gráficos de una plantilla integrada (antes una segunda vuelta al
+servidor), el código de la ficha se baja antes de abrirla y el menú «Acciones»
+deja de preguntar al servidor al abrir la ficha; plantilla integrada 0,92 →
+0,50 s la primera ficha y 0,53 → 0,31 s las siguientes; sin migración; addendum
+ADR-S26). Antes **v0.1.471**
 (**la barra de la ficha dice qué hace cada botón** — tooltips de la app que
 salen enseguida con el nombre, para qué sirve y el atajo (con el teclado sólo
 al llegar con Tab; en táctil no); sólo Seguir y Recordarme quedan como íconos
@@ -2406,6 +2412,24 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-26 · v0.1.472** — **La ficha diseñada vuelve a abrir rápido**
+  (sin migración; addendum ADR-S26). Pregunta del usuario: «siento que ahora
+  el abrir la ficha de registro está un poco más lenta, revisa si al aplicarle
+  un diseño de ficha personalizada la volvió más lenta o si solo es impresión
+  mía». Se midió antes de tocar nada (navegador real, abrir un registro desde la
+  tabla hasta que la ficha queda lista, red local y red lenta simulada): era
+  cierto, ~50 % más lenta con una plantilla integrada. Causas: los gráficos de
+  una plantilla integrada se pedían en una segunda vuelta al servidor, el
+  código de la ficha diseñada se bajaba recién al llegar los datos, y el menú
+  «Acciones» hacía 5 pedidos al abrir la ficha. Arreglado: el servidor arma la
+  misma ficha con la misma función que el navegador y manda sus datos en el
+  bundle; el código se baja antes; las acciones del menú se arman cuando la
+  pestaña queda libre o al acercar el mouse. Números (primera / siguientes, en
+  segundos): integrada 0,92/0,53 → 0,50/0,31 (red lenta 1,68/1,02 →
+  1,04/0,58), diseño guardado 0,75/0,38 → 0,41/0,34, simple 0,43/0,34 →
+  0,37/0,28. Queda: algunos pedidos de la ficha diseñada (resumen con IA,
+  agentes, duplicados, cobros, firmas) siguen saliendo al abrirla, pero ya no
+  frenan que se vea.
 - **2026-11-26 · v0.1.471** — **La barra de la ficha dice qué hace cada
   botón** (sin servidor ni migración; addendum ADR-S26). Reporte del usuario
   con captura de la barra de la ventana del registro: no entendía para qué

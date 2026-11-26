@@ -6,6 +6,7 @@ import { Tip } from '@/components/ui/tooltip';
 import { FLOATING_MENU_ATTR, isInsideFloatingUi } from '@/lib/escapeGuard';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { whenIdle } from '@/lib/whenIdle';
 
 /**
  * v0.1.471 — Las acciones de un registro (seguir, PDF, WhatsApp, QR…) se
@@ -164,6 +165,7 @@ export function RecordActionsMenu({
     onOpenChange,
     scopeRef,
     showLabel = true,
+    deferKey,
     children,
 }: {
     open: boolean;
@@ -172,8 +174,25 @@ export function RecordActionsMenu({
     scopeRef?: React.RefObject<HTMLElement>;
     /** «Acciones» escrito junto al ícono (en el teléfono, sólo el ícono). */
     showLabel?: boolean;
+    /**
+     * v0.1.472 — Con esto (el id del registro), las acciones se arman recién
+     * cuando la ficha ya cargó (o al acercarse al botón): cada una pregunta si
+     * aplica (WhatsApp, SMS, agentes…) y esos pedidos competían con los de la
+     * ficha al abrirla. Sólo cuando el menú seguro tiene algo (sin esto, el
+     * botón se esconde si no queda ninguna acción).
+     */
+    deferKey?: string | number;
     children: ReactNode;
 }): JSX.Element {
+    const [readyKey, setReadyKey] = useState<string | number | null>(null);
+    const ready = deferKey === undefined || open || readyKey === deferKey;
+    const arm = useCallback(() => {
+        if (deferKey !== undefined) setReadyKey(deferKey);
+    }, [deferKey]);
+    useEffect(() => {
+        if (deferKey === undefined || readyKey === deferKey) return;
+        return whenIdle(() => setReadyKey(deferKey), { delay: 1200, timeout: 2500 });
+    }, [deferKey, readyKey]);
     const wrapRef = useRef<HTMLDivElement>(null);
     const triggerRef = useRef<HTMLButtonElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
@@ -218,7 +237,13 @@ export function RecordActionsMenu({
 
     const label = __('Acciones');
     return (
-        <div ref={wrapRef} className="imcrm-relative imcrm-shrink-0 [&:not(:has(.imcrm-ra-row))]:imcrm-hidden" data-testid="imcrm-record-actions">
+        <div
+            ref={wrapRef}
+            className={cn('imcrm-relative imcrm-shrink-0', ready && '[&:not(:has(.imcrm-ra-row))]:imcrm-hidden')}
+            data-testid="imcrm-record-actions"
+            onPointerEnter={arm}
+            onFocusCapture={arm}
+        >
             <Tip label={label} hint={__('Enviar, compartir, PDF, código QR y más')} disabled={showLabel}>
                 <Button
                     ref={triggerRef}
@@ -269,7 +294,7 @@ export function RecordActionsMenu({
                 aria-label={label}
                 data-testid="imcrm-record-more-panel"
             >
-                <Ctx.Provider value={ctx}>{children}</Ctx.Provider>
+                <Ctx.Provider value={ctx}>{ready ? children : null}</Ctx.Provider>
             </div>
         </div>
     );

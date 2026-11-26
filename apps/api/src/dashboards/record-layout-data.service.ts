@@ -123,13 +123,28 @@ export class RecordLayoutDataService {
         listIdOrSlug: string,
         recordId: number,
         req: LayoutDataRequest,
+        /**
+         * v0.1.472 — Lo que el bundle de la ficha ya leyó (el registro ya pasó
+         * el ACL, la lista y sus campos, los de las listas del otro lado): no
+         * se vuelve a pedir. Sólo para llamadas internas.
+         */
+        preloaded?: { listId: number; fields: Field[]; others: ReadonlyMap<number, Field[]> },
     ): Promise<Record<string, unknown>> {
-        const actor = { ...aclExtras(viewer), userId: viewer.userId, role: viewer.role as Role };
-        // El registro base tiene que ser visible (404 si no — no filtramos info).
-        await this.records.get(tenantId, actor, listIdOrSlug, recordId);
-        const list = await this.lists.get(tenantId, listIdOrSlug);
-        const baseFields = await this.fields.list(tenantId, String(list.id));
         const fieldsCache = new Map<number, Promise<Field[]>>();
+        for (const [id, fs] of preloaded?.others ?? []) fieldsCache.set(id, Promise.resolve(fs));
+        let listId: number;
+        let baseFields: Field[];
+        if (preloaded) {
+            listId = preloaded.listId;
+            baseFields = preloaded.fields;
+        } else {
+            const actor = { ...aclExtras(viewer), userId: viewer.userId, role: viewer.role as Role };
+            // El registro base tiene que ser visible (404 si no — no filtramos info).
+            await this.records.get(tenantId, actor, listIdOrSlug, recordId);
+            const list = await this.lists.get(tenantId, listIdOrSlug);
+            listId = list.id;
+            baseFields = await this.fields.list(tenantId, String(list.id));
+        }
         const fieldsOf = (listId: number): Promise<Field[]> => {
             let hit = fieldsCache.get(listId);
             if (!hit) {
@@ -139,7 +154,7 @@ export class RecordLayoutDataService {
             return hit;
         };
 
-        return this.computeBlocks(tenantId, viewer, list.id, baseFields, recordId, req.blocks, fieldsOf, null);
+        return this.computeBlocks(tenantId, viewer, listId, baseFields, recordId, req.blocks, fieldsOf, null);
     }
 
     /**

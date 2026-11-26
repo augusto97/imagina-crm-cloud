@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { DATA_BLOCK_TYPES, layoutBlocks, type RecordLayoutV3 } from '@imagina-base/shared';
+import { layoutDataBlocks, layoutDataSig, type RecordLayoutV3 } from '@imagina-base/shared';
 
 import type { WidgetDataOverride } from '@/hooks/useDashboards';
 import { widgetErrorOf } from '@/hooks/useDashboards';
@@ -44,16 +44,9 @@ export function useLayoutData(
     /** v0.1.233 — 'portal': el editor del portal calcula con el alcance del cliente. */
     scope: 'record' | 'portal' = 'record',
 ) {
-    const blocks = useMemo(
-        () =>
-            layout
-                ? layoutBlocks(layout)
-                      .filter((b) => DATA_BLOCK_TYPES.includes(b.type))
-                      .map((b) => ({ id: b.id, type: b.type as 'chart' | 'related', title: b.title, config: b.config }))
-                : [],
-        [layout],
-    );
-    const sig = useMemo(() => JSON.stringify(blocks), [blocks]);
+    // v0.1.472 — los mismos bloques y la misma firma que arma el servidor.
+    const blocks = useMemo(() => (layout ? layoutDataBlocks(layout) : []), [layout]);
+    const sig = useMemo(() => layoutDataSig(blocks), [blocks]);
     // C3 — un invitado no recibe gráficos ni tablas de otras listas.
     const isGuest = useIsGuest();
     const query = useQuery({

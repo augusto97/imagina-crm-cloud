@@ -143,6 +143,8 @@ export * from './templates/automation-recipes';
 export * from './schemas/record-layout';
 export * from './templates/record-layout-builders';
 export * from './templates/record-layout-suggest';
+export * from './templates/record-layout-integrated';
+export * from './templates/record-layout-data-blocks';
 export * from './schemas/record-layout-unplaced';
 export * from './schemas/layout-hints';
 export * from './templates/portal-layout';

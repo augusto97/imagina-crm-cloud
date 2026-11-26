@@ -272,7 +272,7 @@ export function RecordPage(): JSX.Element {
                         // v0.1.471 — «Seguir» y «Recordarme» a la vista; el resto, en «Acciones» con su nombre.
                         <div className="imcrm-flex imcrm-items-center imcrm-gap-0.5" data-tour="record-toolbar">
                             {!isGuest && <RecordFollowControls listId={list.data.id} recordId={record.data.id} compact />}
-                            <RecordActionsMenu open={actionsOpen} onOpenChange={setActionsOpen}>
+                            <RecordActionsMenu open={actionsOpen} onOpenChange={setActionsOpen} deferKey={isGuest ? undefined : record.data.id}>
                                 <RecordActionItems
                                     listId={list.data.id}
                                     listSlug={list.data.slug}
@@ -358,7 +358,7 @@ export function RecordPage(): JSX.Element {
                         <div className="imcrm-flex imcrm-items-center imcrm-gap-0.5" data-tour="record-toolbar">
                             {!isGuest && <RecordFollowControls listId={listInfo.id} recordId={rec.id} compact />}
                             {/* v0.1.471 — el resto de las acciones, en «Acciones» con su nombre. */}
-                            <RecordActionsMenu open={actionsOpen} onOpenChange={setActionsOpen}>
+                            <RecordActionsMenu open={actionsOpen} onOpenChange={setActionsOpen} deferKey={isGuest ? undefined : rec.id}>
                                 <RecordActionItems
                                     listId={listInfo.id}
                                     listSlug={listInfo.slug}

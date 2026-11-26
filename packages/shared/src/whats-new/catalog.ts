@@ -4101,4 +4101,18 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         ].join('\n'),
         action: { label: 'Ver cómo funciona', href: '/aprende/fichas/fichas-acciones' },
     },
+    {
+        key: 'v0.1.472-ficha-mas-rapida',
+        version: '0.1.472',
+        date: '2026-11-26',
+        kind: 'improvement',
+        title: 'La ficha abre más rápido',
+        summary:
+            'Abrir un registro con una ficha diseñada ahora es casi el doble de rápido: los gráficos y lo vinculado llegan junto con el registro, sin esperar una segunda carga.',
+        media: { illustration: 'ficha-abrir' },
+        body: [
+            '- Se nota más en las listas que usan una plantilla de ficha (Resumen, Perfil, Oportunidad, Tarea o Ticket).',
+            '- El menú «Acciones» se prepara mientras miras la ficha, así no la demora.',
+        ].join('\n'),
+    },
 ];
