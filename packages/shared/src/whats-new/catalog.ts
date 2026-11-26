@@ -4051,17 +4051,17 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
             slides: [
                 {
                     title: 'La ficha, al abrir el registro',
-                    body: 'Pestañas, secciones, gráficos y cifras en la misma ventana. En el celular ocupa toda la pantalla. Los cambios se guardan solos.',
+                    text: 'Pestañas, secciones, gráficos y cifras en la misma ventana. En el celular ocupa toda la pantalla. Los cambios se guardan solos.',
                     illustration: 'ficha-abrir',
                 },
                 {
                     title: 'Ningún campo queda escondido',
-                    body: 'Los campos que el diseño no ubica aparecen al final en «Otros campos». Puedes dejar esa sección plegada o abierta en cada lista.',
+                    text: 'Los campos que el diseño no ubica aparecen al final en «Otros campos». Puedes dejar esa sección plegada o abierta en cada lista.',
                     illustration: 'ficha-disenar',
                 },
                 {
                     title: 'Las listas nuevas ya vienen diseñadas',
-                    body: 'Una lista creada desde una plantilla, un archivo o la IA arranca con la ficha que le encaja. En tus listas de antes te lo sugerimos una vez.',
+                    text: 'Una lista creada desde una plantilla, un archivo o la IA arranca con la ficha que le encaja. En tus listas de antes te lo sugerimos una vez.',
                     illustration: 'ficha-plantilla',
                 },
             ],
