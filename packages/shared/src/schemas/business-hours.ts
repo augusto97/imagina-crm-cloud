@@ -1,5 +1,6 @@
 import { colombianHolidays } from '../formula/dates';
-import type { SlaStatusValue, SlaTargetKind } from './helpdesk';
+import { companySegmentsOf, type CompanyCalendar } from './company-hours';
+import type { BusinessCalendarConfig, SlaStatusValue, SlaTargetKind } from './helpdesk';
 import { addDaysYmd, resolveTimeZone, zonedDayAndMinute, zonedInstant } from './timezone';
 
 /**
@@ -12,6 +13,12 @@ import { addDaysYmd, resolveTimeZone, zonedDayAndMinute, zonedInstant } from './
  * (calculados, los mismos de las fórmulas). Las PAUSAS son intervalos en que
  * el reloj no corre («Esperando al cliente»); una pausa abierta (`to: null`)
  * detiene el reloj hasta que se cierre.
+ *
+ * v0.1.469 (G15) — el reloj también corre sobre el HORARIO LABORAL de la
+ * empresa (`CompanyCalendar`: varios tramos por día —el almuerzo—, días
+ * distintos y los festivos del país elegido ya resueltos). Es una sola
+ * aritmética: lo único que cambia es cómo se arman los tramos de cada día
+ * (`businessWindowsOfDay`); el calendario propio es el caso de un tramo por día.
  */
 
 export interface BusinessCalendar {
@@ -30,6 +37,21 @@ export interface PauseInterval {
     from: string;
     /** Instante ISO; null = la pausa sigue abierta. */
     to: string | null;
+}
+
+/**
+ * El calendario sobre el que corre el reloj del SLA: el propio de la política
+ * (un tramo por día, festivos de Colombia) o el horario laboral de la empresa.
+ */
+export type SlaCalendar = BusinessCalendar | CompanyCalendar;
+
+function isCompanyCalendar(cal: SlaCalendar): cal is CompanyCalendar {
+    return Array.isArray((cal as CompanyCalendar).week);
+}
+
+/** ¿El calendario tiene algún día laborable? (sin ninguno, el reloj nunca avanza). */
+function hasWorkdays(cal: SlaCalendar): boolean {
+    return isCompanyCalendar(cal) ? cal.week.some((d) => d.length > 0) : cal.days.length > 0;
 }
 
 /** Tope de días de calendario que se recorren (un objetivo de horas no debería ir más lejos). */
@@ -56,6 +78,32 @@ export function businessWindowOfDay(ymd: string, cal: BusinessCalendar): [number
     const from = zonedInstant(ymd, tz, { h: Math.floor(s / 60), m: s % 60 }).getTime();
     const to = zonedInstant(ymd, tz, { h: Math.floor(e / 60), m: e % 60 }).getTime();
     return to > from ? [from, to] : null;
+}
+
+/** El instante de un minuto del día en la zona (`24:00` = la medianoche del día siguiente). */
+function minuteInstant(ymd: string, tz: string, minute: number): number {
+    if (minute >= 24 * 60) return zonedInstant(addDaysYmd(ymd, 1), tz).getTime();
+    return zonedInstant(ymd, tz, { h: Math.floor(minute / 60), m: minute % 60 }).getTime();
+}
+
+/**
+ * Los tramos hábiles (ms, en orden) de un día del calendario: vacío si ese día
+ * no se trabaja (fin de semana, festivo). Con el calendario propio, a lo sumo
+ * uno; con el horario de la empresa, uno por tramo (8–12 y 13–17 son dos).
+ */
+export function businessWindowsOfDay(ymd: string, cal: SlaCalendar): Array<[number, number]> {
+    if (!isCompanyCalendar(cal)) {
+        const w = businessWindowOfDay(ymd, cal);
+        return w ? [w] : [];
+    }
+    const tz = resolveTimeZone(cal.timeZone);
+    const out: Array<[number, number]> = [];
+    for (const [a, b] of companySegmentsOf(cal, ymd)) {
+        const from = minuteInstant(ymd, tz, a);
+        const to = minuteInstant(ymd, tz, b);
+        if (to > from) out.push([from, to]);
+    }
+    return out;
 }
 
 /** Pausas ordenadas y unidas, en ms; una abierta llega hasta el infinito. */
@@ -96,16 +144,15 @@ function minusPauses(seg: [number, number], pauses: Array<[number, number]>): Ar
  * Minutos HÁBILES (con decimales) entre dos instantes, sin contar las pausas.
  * `from > to` da 0.
  */
-export function businessMinutesBetween(fromMs: number, toMs: number, cal: BusinessCalendar, pauses?: readonly PauseInterval[]): number {
-    if (!(toMs > fromMs) || cal.days.length === 0) return 0;
+export function businessMinutesBetween(fromMs: number, toMs: number, cal: SlaCalendar, pauses?: readonly PauseInterval[]): number {
+    if (!(toMs > fromMs) || !hasWorkdays(cal)) return 0;
     const tz = resolveTimeZone(cal.timeZone);
     const ps = normalizePauses(pauses);
     let ymd = zonedDayAndMinute(new Date(fromMs), tz).ymd;
     const lastYmd = zonedDayAndMinute(new Date(toMs), tz).ymd;
     let total = 0;
     for (let i = 0; i <= MAX_DAYS * 4; i++) {
-        const w = businessWindowOfDay(ymd, cal);
-        if (w) {
+        for (const w of businessWindowsOfDay(ymd, cal)) {
             const a = Math.max(w[0], fromMs);
             const b = Math.min(w[1], toMs);
             if (b > a) for (const [x, y] of minusPauses([a, b], ps)) total += y - x;
@@ -121,8 +168,8 @@ export function businessMinutesBetween(fromMs: number, toMs: number, cal: Busine
  * `startMs`, salteando las pausas. null si no se llega nunca (una pausa
  * abierta detiene el reloj, o el calendario no tiene días laborables).
  */
-export function addBusinessMinutes(startMs: number, minutes: number, cal: BusinessCalendar, pauses?: readonly PauseInterval[]): number | null {
-    if (cal.days.length === 0 || !Number.isFinite(startMs)) return null;
+export function addBusinessMinutes(startMs: number, minutes: number, cal: SlaCalendar, pauses?: readonly PauseInterval[]): number | null {
+    if (!hasWorkdays(cal) || !Number.isFinite(startMs)) return null;
     const ps = normalizePauses(pauses);
     const open = ps.find(([, b]) => b === Number.POSITIVE_INFINITY);
     // Un objetivo de 0 minutos vence apenas empieza el primer tramo hábil.
@@ -130,15 +177,17 @@ export function addBusinessMinutes(startMs: number, minutes: number, cal: Busine
     const tz = resolveTimeZone(cal.timeZone);
     let ymd = zonedDayAndMinute(new Date(startMs), tz).ymd;
     for (let i = 0; i < MAX_DAYS; i++) {
-        const w = businessWindowOfDay(ymd, cal);
-        if (w && w[1] > startMs) {
-            const seg: [number, number] = [Math.max(w[0], startMs), w[1]];
-            for (const [a, b] of minusPauses(seg, ps)) {
-                if (left <= b - a) return a + left;
-                left -= b - a;
+        for (const w of businessWindowsOfDay(ymd, cal)) {
+            if (w[1] > startMs) {
+                const seg: [number, number] = [Math.max(w[0], startMs), w[1]];
+                for (const [a, b] of minusPauses(seg, ps)) {
+                    if (left <= b - a) return a + left;
+                    left -= b - a;
+                }
             }
+            // Una pausa abierta antes de este tramo: el reloj ya no vuelve a correr.
+            if (open && w[0] >= open[0]) return null;
         }
-        if (open && w && w[0] >= open[0]) return null;
         ymd = addDaysYmd(ymd, 1);
     }
     return null;
@@ -154,7 +203,7 @@ export interface SlaClockInput {
     first_response_at: string | null;
     resolved_at: string | null;
     pauses: readonly PauseInterval[];
-    calendar: BusinessCalendar;
+    calendar: SlaCalendar;
     at_risk_percent: number;
 }
 
@@ -254,7 +303,18 @@ export function computeSlaClock(input: SlaClockInput, now: Date = new Date()): S
     return { first_response: first, resolution, status, paused, next_check_at: iso(next) };
 }
 
-/** El calendario de una política con la zona de la empresa. */
+/** El calendario PROPIO de una política con la zona de la empresa. */
 export function businessCalendarOf(cfg: { days: readonly number[]; start: string; end: string; holidays: 'co' | 'none' }, timeZone: string): BusinessCalendar {
     return { timeZone, days: cfg.days, start: cfg.start, end: cfg.end, holidays: cfg.holidays };
+}
+
+/**
+ * v0.1.469 (G15) — El calendario con el que corre el reloj de una política:
+ * con `source: 'company'`, el horario laboral de la empresa (ya armado, con
+ * sus festivos); con `own` —o si el de la empresa no está a mano—, el horario
+ * propio de la política en la zona de la empresa.
+ */
+export function slaCalendarFor(cfg: Pick<BusinessCalendarConfig, 'source' | 'days' | 'start' | 'end' | 'holidays'>, timeZone: string, company: CompanyCalendar | null | undefined): SlaCalendar {
+    if (cfg.source === 'company' && company) return company;
+    return businessCalendarOf(cfg, timeZone);
 }

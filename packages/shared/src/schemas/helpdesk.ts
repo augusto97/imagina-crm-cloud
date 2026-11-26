@@ -218,15 +218,48 @@ export type ReplyTemplate = z.infer<typeof replyTemplateSchema>;
 /** Hora del día `HH:MM` (24 h). `24:00` vale como fin del día. */
 const hhmmSchema = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/, 'Hora inválida (HH:MM)');
 
+/**
+ * v0.1.469 (G15) — De dónde sale el horario del SLA: `company` = el horario
+ * laboral de la empresa (Ajustes → Horario laboral: varios tramos por día,
+ * festivos de su país); `own` = el horario propio de la política (los días,
+ * `start`/`end` y los festivos de Colombia de abajo).
+ */
+export const SLA_CALENDAR_SOURCES = ['company', 'own'] as const;
+export type SlaCalendarSource = (typeof SLA_CALENDAR_SOURCES)[number];
+
+const slaWeekdaysSchema = z.array(z.number().int().min(0).max(6)).max(7);
+const slaHolidaysSchema = z.enum(['co', 'none']);
+
 export const businessCalendarSchema = z.object({
+    /**
+     * Lo guardado ANTES de v0.1.469 no trae este dato: sigue con su horario
+     * propio (`own`), igual que hasta ahora. Las políticas NUEVAS nacen con el
+     * de la empresa: lo pone el `prefault` de `slaPolicySchema.calendar` (una
+     * política sin calendario es una política que todavía no se guardó).
+     */
+    source: z.enum(SLA_CALENDAR_SOURCES).default('own'),
     /** Días laborables (0 = domingo … 6 = sábado). */
-    days: z.array(z.number().int().min(0).max(6)).max(7).prefault([1, 2, 3, 4, 5]),
+    days: slaWeekdaysSchema.prefault([1, 2, 3, 4, 5]),
     start: hhmmSchema.prefault('08:00'),
     end: hhmmSchema.prefault('18:00'),
     /** Festivos que no cuentan: los de Colombia (calculados) o ninguno. */
-    holidays: z.enum(['co', 'none']).default('co'),
+    holidays: slaHolidaysSchema.default('co'),
 });
 export type BusinessCalendarConfig = z.infer<typeof businessCalendarSchema>;
+
+/**
+ * El calendario en un PATCH: sólo lo que llega se cambia (sin valores por
+ * defecto: un PATCH que no dice `source` no le cambia el origen a la política).
+ */
+export const businessCalendarPatchSchema = z
+    .object({
+        source: z.enum(SLA_CALENDAR_SOURCES),
+        days: slaWeekdaysSchema,
+        start: hhmmSchema,
+        end: hhmmSchema,
+        holidays: slaHolidaysSchema,
+    })
+    .partial();
 
 export const slaTargetSchema = z.object({
     /** Valor de la opción de prioridad; null = la de todos (o la que aplica si no hay otra). */
@@ -246,7 +279,8 @@ export const slaPolicySchema = z.object({
     /** Campo de prioridad (selección); null = una sola política para todos. */
     priority_field_id: idSchema.nullable().default(null),
     targets: z.array(slaTargetSchema).max(30).default([]),
-    calendar: businessCalendarSchema.prefault({}),
+    /** v0.1.469 — sin calendario guardado (política nueva): el horario laboral de la empresa. */
+    calendar: businessCalendarSchema.prefault({ source: 'company' }),
     /** Al cuánto por ciento del tiempo se avisa «en riesgo». */
     at_risk_percent: z.number().int().min(10).max(99).default(75),
     // A quién se avisa (en riesgo y vencido).
@@ -351,7 +385,7 @@ export const HELPDESK_MANAGED_REASON = 'Lo calcula el SLA de la mesa de ayuda: n
 export const updateHelpdeskSettingsSchema = helpdeskSettingsSchema
     .omit({ sla: true })
     .partial()
-    .extend({ sla: slaPolicySchema.partial().optional() });
+    .extend({ sla: slaPolicySchema.partial().extend({ calendar: businessCalendarPatchSchema.optional() }).optional() });
 export type UpdateHelpdeskSettingsInput = z.infer<typeof updateHelpdeskSettingsSchema>;
 
 // ─────────────────────────── SLA: estados ───────────────────────────

@@ -155,10 +155,12 @@ import {
     type RolePermissions,
     type UpdateListPermissionsInput,
     type UpdatePublicListInput,
+    readHelpdeskSettings,
 } from '@imagina-base/shared';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
+import { CompanyHoursService } from '../../company-hours/company-hours.service';
 import { DocumentsService } from '../../documents/documents.service';
 import { ConnectorsService } from '../../connectors/connectors.service';
 import { assertWhatsappTemplateAction, whatsActionOutputsForAi, whatsappSchema } from './whatsapp-ai';
@@ -882,6 +884,8 @@ export class StructureTools implements AiProposalApplier {
         @Optional() private readonly subscriptionsSvc?: SubscriptionsService,
         // v0.1.448 — conexiones que mandan el código de una firma (SMS o WhatsApp).
         @Optional() private readonly signaturesSvc?: SignaturesService,
+        // v0.1.469 — el resumen del horario laboral (el SLA de la mesa de ayuda puede usarlo).
+        @Optional() private readonly companyHours?: CompanyHoursService,
     ) {}
 
     /** E6 — para sumarle a `get_list_schema` lo de otros módulos (agentes de IA). */
@@ -1678,7 +1682,11 @@ export class StructureTools implements AiProposalApplier {
                       }))
                     : [],
                 // D2/E5 — mesa de ayuda: buzón de soporte (sin secretos) y política de SLA.
-                helpdesk: describeHelpdeskForModel(settings, fieldById),
+                helpdesk: describeHelpdeskForModel(
+                    settings,
+                    fieldById,
+                    this.companyHours && readHelpdeskSettings(settings).sla.calendar.source === 'company' ? await this.companyHours.summaryLine(ctx.tenantId) : null,
+                ),
                 connectors: connections
                     .filter((c) => c.actions.length > 0)
                     .map((c) => ({

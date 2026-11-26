@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Clock, Columns3, Loader2, Save, ShieldAlert, X } from 'lucide-react';
-import { APPROVER_ROLE_LABELS, APPROVER_ROLES, type SlaPolicy, type SlaTarget } from '@imagina-base/shared';
+import { APPROVER_ROLE_LABELS, APPROVER_ROLES, describeCompanyHours, type SlaCalendarSource, type SlaPolicy, type SlaTarget } from '@imagina-base/shared';
 
 import { extractFieldOptions } from '@/admin/records/fieldOptions';
 import { Button } from '@/components/ui/button';
@@ -10,12 +10,14 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
 import { UserPicker } from '@/components/ui/user-picker';
+import { useCompanyHours } from '@/hooks/useCompanyHours';
 import { useFields } from '@/hooks/useFields';
 import { useCreateSlaColumns, useHelpdeskSettings, useUpdateHelpdeskSettings } from '@/hooks/useHelpdesk';
 import { useTeams } from '@/hooks/useTeams';
 import { useMemberNames } from '@/hooks/useWpUsers';
 import { ApiError } from '@/lib/api';
 import { __, sprintf } from '@/lib/i18n';
+import { getTenantFormat } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 
 import { ChipGroup } from './HelpdeskSettingsPanel';
@@ -24,8 +26,10 @@ import { hoursLabel, parseHours, WEEKDAYS } from './helpdeskUi';
 /**
  * E5 — Ajustes de la lista → «SLA»: cuánto tiempo hay para la PRIMERA
  * RESPUESTA y para RESOLVER cada ticket (por prioridad, o uno para todos),
- * contado en HORAS HÁBILES de la empresa (días, horario y festivos de
- * Colombia, en su zona horaria). A quién se avisa cuando un ticket entra en
+ * contado en HORAS HÁBILES de la empresa, en su zona horaria: el HORARIO
+ * LABORAL de la empresa (Ajustes → Horario laboral, v0.1.469: varios tramos por
+ * día y los festivos de su país) o un horario propio de la lista (días, horario
+ * y festivos de Colombia). A quién se avisa cuando un ticket entra en
  * riesgo, a quién se escala al vencer y las columnas que el SLA mantiene al
  * día (vencimientos y estado), que se filtran, ordenan y agrupan como
  * cualquier otra.
@@ -36,6 +40,7 @@ export function SlaPolicyPanel({ listId, onGoToMail }: { listId: number; onGoToM
     const update = useUpdateHelpdeskSettings(listId);
     const columns = useCreateSlaColumns(listId);
     const teamsQ = useTeams();
+    const companyHoursQ = useCompanyHours();
     const toast = useToast();
     const [draft, setDraft] = useState<SlaPolicy | null>(null);
     const [hoursText, setHoursText] = useState<Record<string, string>>({});
@@ -196,43 +201,102 @@ export function SlaPolicyPanel({ listId, onGoToMail }: { listId: number; onGoToM
                     <CardDescription>{__('En la zona horaria de la empresa (Ajustes → Formato regional). Fuera de este horario el reloj no corre.')}</CardDescription>
                 </CardHeader>
                 <CardContent className="imcrm-flex imcrm-flex-col imcrm-gap-3">
-                    <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-1.5" role="group" aria-label={__('Días hábiles')}>
-                        {WEEKDAYS.map((d) => {
-                            const on = draft.calendar.days.includes(d.value);
+                    <div className="imcrm-grid imcrm-gap-2 sm:imcrm-grid-cols-2" role="radiogroup" aria-label={__('De dónde sale el horario del SLA')} data-tour="sla-calendar-source">
+                        {(
+                            [
+                                {
+                                    value: 'company',
+                                    title: __('Usar el horario laboral de la empresa'),
+                                    help: __('El mismo de Ajustes → Horario laboral: varios tramos por día (el almuerzo), el sábado distinto y los festivos de tu país. Si lo cambias ahí, los tickets abiertos se recalculan solos.'),
+                                },
+                                {
+                                    value: 'own',
+                                    title: __('Un horario propio para el SLA'),
+                                    help: __('Unos días y un horario sólo para esta lista, con los festivos de Colombia o ninguno.'),
+                                },
+                            ] as Array<{ value: SlaCalendarSource; title: string; help: string }>
+                        ).map((o) => {
+                            const on = draft.calendar.source === o.value;
                             return (
-                                <button
-                                    key={d.value}
-                                    type="button"
-                                    title={d.long}
-                                    aria-pressed={on}
-                                    onClick={() => toggleDay(d.value)}
+                                <label
+                                    key={o.value}
                                     className={cn(
-                                        'imcrm-h-8 imcrm-w-10 imcrm-rounded-md imcrm-border imcrm-text-xs imcrm-font-medium',
-                                        on ? 'imcrm-border-primary imcrm-bg-primary/10 imcrm-text-foreground' : 'imcrm-border-border imcrm-text-muted-foreground',
+                                        'imcrm-flex imcrm-cursor-pointer imcrm-items-start imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-p-3 imcrm-text-sm',
+                                        on ? 'imcrm-border-primary imcrm-bg-primary/5' : 'imcrm-border-border hover:imcrm-bg-muted/40',
                                     )}
                                 >
-                                    {d.short}
-                                </button>
+                                    <input
+                                        type="radio"
+                                        name="sla-calendar-source"
+                                        className="imcrm-mt-0.5"
+                                        checked={on}
+                                        onChange={() => set('calendar', { ...draft.calendar, source: o.value })}
+                                        data-testid={`imcrm-sla-source-${o.value}`}
+                                    />
+                                    <span className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
+                                        <span className="imcrm-font-medium">{o.title}</span>
+                                        <span className="imcrm-text-xs imcrm-text-muted-foreground">{o.help}</span>
+                                    </span>
+                                </label>
                             );
                         })}
                     </div>
-                    <div className="imcrm-grid imcrm-max-w-md imcrm-grid-cols-2 imcrm-gap-3 sm:imcrm-grid-cols-3">
-                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
-                            <Label htmlFor="sla-start">{__('Desde')}</Label>
-                            <Input id="sla-start" type="time" value={draft.calendar.start} onChange={(e) => set('calendar', { ...draft.calendar, start: e.target.value || '08:00' })} />
+                    {draft.calendar.source === 'company' ? (
+                        <p className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-x-2 imcrm-gap-y-0.5 imcrm-text-xs" data-testid="imcrm-sla-company-hours">
+                            <span className="imcrm-text-muted-foreground">{__('Horario de la empresa:')}</span>
+                            <span className="imcrm-font-medium" data-testid="imcrm-sla-company-hours-summary">
+                                {companyHoursQ.data
+                                    ? describeCompanyHours(companyHoursQ.data.hours, getTenantFormat().time_format)
+                                    : companyHoursQ.isLoading
+                                      ? __('cargando…')
+                                      : __('el de fábrica (lun a vie 8:00–17:00)')}
+                            </span>
+                            {/* En otra pestaña: aquí puede haber cambios sin guardar. */}
+                            <a href="/settings?s=horario" target="_blank" rel="noreferrer" className="imcrm-text-primary hover:imcrm-underline" data-testid="imcrm-sla-company-hours-link">
+                                {__('Cambiarlo en Ajustes → Horario laboral')}
+                            </a>
+                        </p>
+                    ) : (
+                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="imcrm-sla-own-hours">
+                            <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-1.5" role="group" aria-label={__('Días hábiles')}>
+                                {WEEKDAYS.map((d) => {
+                                    const on = draft.calendar.days.includes(d.value);
+                                    return (
+                                        <button
+                                            key={d.value}
+                                            type="button"
+                                            title={d.long}
+                                            aria-pressed={on}
+                                            onClick={() => toggleDay(d.value)}
+                                            className={cn(
+                                                'imcrm-h-8 imcrm-w-10 imcrm-rounded-md imcrm-border imcrm-text-xs imcrm-font-medium',
+                                                on ? 'imcrm-border-primary imcrm-bg-primary/10 imcrm-text-foreground' : 'imcrm-border-border imcrm-text-muted-foreground',
+                                            )}
+                                        >
+                                            {d.short}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            <div className="imcrm-grid imcrm-max-w-md imcrm-grid-cols-2 imcrm-gap-3 sm:imcrm-grid-cols-3">
+                                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                                    <Label htmlFor="sla-start">{__('Desde')}</Label>
+                                    <Input id="sla-start" type="time" value={draft.calendar.start} onChange={(e) => set('calendar', { ...draft.calendar, start: e.target.value || '08:00' })} />
+                                </div>
+                                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                                    <Label htmlFor="sla-end">{__('Hasta')}</Label>
+                                    <Input id="sla-end" type="time" value={draft.calendar.end === '24:00' ? '23:59' : draft.calendar.end} onChange={(e) => set('calendar', { ...draft.calendar, end: e.target.value || '18:00' })} />
+                                </div>
+                                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                                    <Label htmlFor="sla-holidays">{__('Festivos')}</Label>
+                                    <Select id="sla-holidays" value={draft.calendar.holidays} onChange={(e) => set('calendar', { ...draft.calendar, holidays: e.target.value as 'co' | 'none' })}>
+                                        <option value="co">{__('De Colombia (no cuentan)')}</option>
+                                        <option value="none">{__('Ninguno')}</option>
+                                    </Select>
+                                </div>
+                            </div>
                         </div>
-                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
-                            <Label htmlFor="sla-end">{__('Hasta')}</Label>
-                            <Input id="sla-end" type="time" value={draft.calendar.end === '24:00' ? '23:59' : draft.calendar.end} onChange={(e) => set('calendar', { ...draft.calendar, end: e.target.value || '18:00' })} />
-                        </div>
-                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
-                            <Label htmlFor="sla-holidays">{__('Festivos')}</Label>
-                            <Select id="sla-holidays" value={draft.calendar.holidays} onChange={(e) => set('calendar', { ...draft.calendar, holidays: e.target.value as 'co' | 'none' })}>
-                                <option value="co">{__('De Colombia (no cuentan)')}</option>
-                                <option value="none">{__('Ninguno')}</option>
-                            </Select>
-                        </div>
-                    </div>
+                    )}
                 </CardContent>
             </Card>
 

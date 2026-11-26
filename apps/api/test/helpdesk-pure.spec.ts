@@ -151,6 +151,14 @@ describe('Mesa de ayuda — piezas puras', () => {
         expect(describeHelpdeskForModel({}, fields)).toBeNull();
     });
 
+    it('v0.1.469 — el modelo sabe de dónde sale el horario del SLA: el de la empresa (con su resumen) o el propio', () => {
+        const fields = new Map<number, Field>();
+        const company = describeHelpdeskForModel({ helpdesk: { sla: { enabled: true } } }, fields, 'Lunes a viernes de 8:00 a 17:00');
+        expect((company?.sla as { business_hours: unknown }).business_hours).toMatchObject({ source: 'company', summary: 'Lunes a viernes de 8:00 a 17:00' });
+        const own = describeHelpdeskForModel({ helpdesk: { sla: { enabled: true, calendar: { days: [1, 2, 3], start: '07:00', end: '15:00', holidays: 'none' } } } }, fields, 'no se usa');
+        expect((own?.sla as { business_hours: unknown }).business_hours).toEqual({ source: 'own', days: [1, 2, 3], start: '07:00', end: '15:00', holidays: 'ninguno' });
+    });
+
     it('la conversión del HTML de un correo tiene tiempo acotado con entradas grandes', () => {
         const N = 400_000;
         const fill = (piece: string, size = N): string => piece.repeat(Math.ceil(size / piece.length)).slice(0, size);

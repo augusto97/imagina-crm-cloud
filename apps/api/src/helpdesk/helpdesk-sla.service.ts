@@ -1,12 +1,14 @@
 import { Inject, Injectable, Logger, Optional, type OnModuleInit } from '@nestjs/common';
 import {
-    businessCalendarOf,
+    companyCalendar,
     computeSlaClock,
     formatEmailFieldValue,
     jsonbKeyForField,
+    readCompanyHours,
     readHelpdeskSettings,
     resolveTitleFieldId,
     sameBulkValue,
+    slaCalendarFor,
     SLA_ALERT_LABELS,
     SLA_STATUS_LABELS,
     SLA_TARGET_LABELS,
@@ -17,7 +19,10 @@ import {
     type HelpdeskSlaDto,
     type List,
     type SlaAlertKind,
+    type SlaCalendar,
+    type SlaCalendarSource,
     type SlaEventInfo,
+    type SlaPolicy,
     type SlaStatusValue,
     type SlaTargetKind,
     type TenantFormat,
@@ -25,8 +30,9 @@ import {
 import { and, asc, eq, inArray, isNotNull, lte, sql } from 'drizzle-orm';
 import { ActivityService, computeDiff } from '../activity/activity.service';
 import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
+import { CompanyHoursService } from '../company-hours/company-hours.service';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
-import { helpdeskTickets, memberships, records, tenants, type HelpdeskTicketRow, type StoredPause } from '../db/schema';
+import { helpdeskTickets, lists as listsTable, memberships, records, tenants, type HelpdeskTicketRow, type StoredPause } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -39,12 +45,15 @@ import { TeamsService } from '../teams/teams.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { staffRoleInSql, staffRoleSql } from './staff-roles';
 import { planIncludesSql } from '../billing/plan-module-gate';
+import { HelpdeskQueue } from './helpdesk.queue';
 
 const SYSTEM_ACTOR: Actor = { userId: 0, role: 'admin' };
 /** Tickets por vuelta del planificador. */
 const TICK_BATCH = 500;
 /** Tope de tickets que se crean/recalculan al activar o cambiar la política. */
 const RECONCILE_MAX = 5000;
+/** Tickets por tanda al recalcular una lista (el contexto se relee en cada tanda). */
+const RECONCILE_BATCH = 200;
 
 interface ListCtx {
     list: List;
@@ -53,6 +62,8 @@ interface ListCtx {
     timeZone: string;
     /** Formato regional de la empresa (las fechas de los avisos). */
     format: TenantFormat;
+    /** v0.1.469 (G15) — el horario sobre el que corre el reloj: el de la empresa o el propio. */
+    calendar: SlaCalendar;
 }
 
 interface PendingAlert {
@@ -84,6 +95,11 @@ function isoNoMs(v: string | null): string | null {
  * «vencido» se registran en `alerts` con un UPDATE condicional dentro de la
  * transacción que bloquea el ticket: uno por ticket y por umbral, aunque
  * corran dos nodos.
+ *
+ * v0.1.469 (G15) — el horario puede ser el PROPIO de la política o el
+ * HORARIO LABORAL de la empresa (`calendar.source`). Si la empresa cambia su
+ * horario (o su zona), se recalculan los tickets ABIERTOS de las listas que lo
+ * usan (`onCalendarChanged`); los cerrados conservan lo que se midió.
  */
 @Injectable()
 export class HelpdeskSlaService implements OnModuleInit {
@@ -104,11 +120,23 @@ export class HelpdeskSlaService implements OnModuleInit {
         @Optional() private readonly timeZones?: TenantTimeZones,
         // C1 — avisar / escalar a un equipo (sus personas en el momento del aviso).
         @Optional() private readonly teams?: TeamsService,
+        // v0.1.469 (G15) — el horario laboral de la empresa (y sus cambios).
+        @Optional() private readonly companyHours?: CompanyHoursService,
+        // Recalcular una lista en segundo plano (sin Redis, en el acto).
+        @Optional() private readonly queue?: HelpdeskQueue,
     ) {}
 
     onModuleInit(): void {
         this.changes?.subscribe((c) => this.onRecordChange(c));
         this.notify?.subscribe((e) => this.onNotify(e));
+        // v0.1.469 (G15) — el horario laboral cambió (también lo avisa al cambiar la zona).
+        this.companyHours?.onChange(async (tenantId) => {
+            await this.onCalendarChanged(tenantId, ['company']);
+        });
+        // La zona también mueve el horario PROPIO de una política (sin el servicio del horario, las dos).
+        this.timeZones?.onChange(async (tenantId) => {
+            await this.onCalendarChanged(tenantId, this.companyHours ? ['own'] : ['own', 'company']);
+        });
     }
 
     // ── Eventos ──────────────────────────────────────────────────────────
@@ -242,18 +270,47 @@ export class HelpdeskSlaService implements OnModuleInit {
 
     // ── Recalcular ───────────────────────────────────────────────────────
 
-    private async listCtx(tenantId: number, listId: number): Promise<ListCtx | null> {
+    /**
+     * Lo que hace falta para recalcular los tickets de una lista. `fresh` lee
+     * el horario y la zona de la empresa sin caché: tras un cambio hecho en
+     * otro proceso (con dos procesos, el de los trabajos no se entera al
+     * instante).
+     */
+    private async listCtx(tenantId: number, listId: number, opts: { fresh?: boolean } = {}): Promise<ListCtx | null> {
         const list = await this.lists.get(tenantId, String(listId)).catch(() => null);
         if (!list) return null;
         const [tenant] = await this.tenantDb.withTenant(tenantId, (tx) => tx.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId)).limit(1));
-        const fmt = tenantFormatSchema.safeParse(((tenant?.settings ?? {}) as Record<string, unknown>).format ?? {});
+        const tenantSettings = (tenant?.settings ?? {}) as Record<string, unknown>;
+        const fmt = tenantFormatSchema.safeParse(tenantSettings.format ?? {});
+        if (opts.fresh) this.timeZones?.invalidate(tenantId);
+        const settings = readHelpdeskSettings(list.settings);
+        const timeZone = this.timeZones ? await this.timeZones.orUtc(tenantId) : 'UTC';
         return {
             list,
-            settings: readHelpdeskSettings(list.settings),
+            settings,
             fields: await this.fields.listByListId(tenantId, list.id),
-            timeZone: this.timeZones ? await this.timeZones.orUtc(tenantId) : 'UTC',
+            timeZone,
             format: fmt.success ? fmt.data : tenantFormatSchema.parse({}),
+            calendar: await this.slaCalendar(tenantId, settings.sla, timeZone, tenantSettings, opts.fresh === true),
         };
+    }
+
+    /**
+     * v0.1.469 (G15) — El horario de la política: el propio, o el laboral de la
+     * empresa con los festivos de su país (si no se pueden saber, el servicio
+     * calcula sin ellos: nunca traba el reloj). Sin el servicio, el horario
+     * guardado de la empresa sin festivos.
+     */
+    private async slaCalendar(tenantId: number, policy: SlaPolicy, timeZone: string, tenantSettings: Record<string, unknown>, fresh: boolean): Promise<SlaCalendar> {
+        if (policy.calendar.source !== 'company') return slaCalendarFor(policy.calendar, timeZone, null);
+        if (this.companyHours) {
+            try {
+                return slaCalendarFor(policy.calendar, timeZone, (await this.companyHours.calendar(tenantId, undefined, { fresh })).calendar);
+            } catch (err) {
+                this.logger.warn(`Horario laboral de la empresa ${tenantId} para el SLA: ${err instanceof Error ? err.message : String(err)}`);
+            }
+        }
+        return companyCalendar(readCompanyHours(tenantSettings.business_hours, timeZone).hours, timeZone);
     }
 
     /**
@@ -261,13 +318,14 @@ export class HelpdeskSlaService implements OnModuleInit {
      * la fila del ticket y en las columnas de la lista, y dispara los avisos
      * que correspondan (una sola vez por umbral).
      */
-    async recompute(tenantId: number, recordId: number, opts: { now?: Date } = {}): Promise<HelpdeskSlaDto | null> {
+    async recompute(tenantId: number, recordId: number, opts: { now?: Date; ctx?: ListCtx } = {}): Promise<HelpdeskSlaDto | null> {
         const now = opts.now ?? new Date();
         const [head] = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx.select({ listId: helpdeskTickets.listId }).from(helpdeskTickets).where(and(eq(helpdeskTickets.tenantId, tenantId), eq(helpdeskTickets.recordId, recordId))).limit(1),
         );
         if (!head) return null;
-        const ctx = await this.listCtx(tenantId, head.listId);
+        // Al recalcular una lista entera, el contexto viene armado (una vez por tanda).
+        const ctx = opts.ctx && opts.ctx.list.id === head.listId ? opts.ctx : await this.listCtx(tenantId, head.listId);
         if (!ctx) return null;
         const policy = ctx.settings.sla;
 
@@ -301,7 +359,7 @@ export class HelpdeskSlaService implements OnModuleInit {
                     first_response_at: t.firstResponseAt?.toISOString() ?? null,
                     resolved_at: t.resolvedAt?.toISOString() ?? null,
                     pauses: Array.isArray(t.pauses) ? t.pauses : [],
-                    calendar: businessCalendarOf(policy.calendar, ctx.timeZone),
+                    calendar: ctx.calendar,
                     at_risk_percent: policy.at_risk_percent,
                 },
                 now,
@@ -540,10 +598,45 @@ export class HelpdeskSlaService implements OnModuleInit {
     /**
      * La política se activó o cambió: los registros vivos sin ticket lo reciben
      * (desde que se crearon) y se recalculan todos los de la lista.
+     *
+     * v0.1.469 — `openOnly`: sólo los tickets ABIERTOS (cambió el horario de
+     * la empresa o su zona: lo que ya se cerró conserva lo que se midió) y sin
+     * tope, por tandas. El contexto (ajustes, campos, horario) se lee una vez
+     * por tanda; `freshHours` lo lee sin caché.
      */
-    async reconcileList(tenantId: number, listId: number): Promise<number> {
-        const ctx = await this.listCtx(tenantId, listId);
+    async reconcileList(tenantId: number, listId: number, opts: { openOnly?: boolean; freshHours?: boolean } = {}): Promise<number> {
+        let ctx = await this.listCtx(tenantId, listId, { fresh: opts.freshHours });
         if (!ctx) return 0;
+        if (opts.openOnly) {
+            if (!ctx.settings.sla.enabled) return 0;
+            let after = 0;
+            let total = 0;
+            for (;;) {
+                const batch = await this.tenantDb.withTenant(tenantId, (tx) =>
+                    tx
+                        .select({ id: helpdeskTickets.id, recordId: helpdeskTickets.recordId })
+                        .from(helpdeskTickets)
+                        .where(
+                            and(
+                                eq(helpdeskTickets.tenantId, tenantId),
+                                eq(helpdeskTickets.listId, listId),
+                                sql`${helpdeskTickets.resolvedAt} IS NULL`,
+                                sql`${helpdeskTickets.id} > ${after}`,
+                                sql`NOT EXISTS (SELECT 1 FROM records r WHERE r.id = ${helpdeskTickets.recordId} AND r.deleted_at IS NOT NULL)`,
+                            ),
+                        )
+                        .orderBy(asc(helpdeskTickets.id))
+                        .limit(RECONCILE_BATCH),
+                );
+                if (batch.length === 0) break;
+                for (const t of batch) await this.recompute(tenantId, t.recordId, { ctx }).catch(() => undefined);
+                total += batch.length;
+                after = batch[batch.length - 1]!.id;
+                if (batch.length < RECONCILE_BATCH) break;
+                ctx = (await this.listCtx(tenantId, listId)) ?? ctx;
+            }
+            return total;
+        }
         if (ctx.settings.sla.enabled) {
             const missing = await this.tenantDb.withTenant(tenantId, (tx: Tx) =>
                 tx
@@ -572,8 +665,39 @@ export class HelpdeskSlaService implements OnModuleInit {
                 .orderBy(asc(helpdeskTickets.id))
                 .limit(RECONCILE_MAX),
         );
-        for (const t of all) await this.recompute(tenantId, t.recordId).catch(() => undefined);
+        for (const [i, t] of all.entries()) {
+            if (i > 0 && i % RECONCILE_BATCH === 0) ctx = (await this.listCtx(tenantId, listId)) ?? ctx;
+            await this.recompute(tenantId, t.recordId, { ctx }).catch(() => undefined);
+        }
         return all.length;
+    }
+
+    /**
+     * v0.1.469 (G15) — Cambió el horario laboral de la empresa (o su zona): las
+     * listas con el SLA activo cuyo horario sale de `sources` recalculan sus
+     * tickets ABIERTOS — en segundo plano, una lista por trabajo; sin Redis,
+     * en el acto. Lo escrito son las mismas columnas de siempre (sin disparar
+     * automatizaciones) y los avisos siguen la regla de una vez por objetivo.
+     */
+    async onCalendarChanged(tenantId: number, sources: readonly SlaCalendarSource[]): Promise<number> {
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ id: listsTable.id, settings: listsTable.settings })
+                .from(listsTable)
+                .where(
+                    and(
+                        eq(listsTable.tenantId, tenantId),
+                        sql`${listsTable.deletedAt} IS NULL`,
+                        sql`(${listsTable.settings} -> 'helpdesk' -> 'sla' ->> 'enabled') = 'true'`,
+                    ),
+                ),
+        );
+        const ids = rows.filter((r) => sources.includes(readHelpdeskSettings(r.settings).sla.calendar.source)).map((r) => r.id);
+        for (const listId of ids) {
+            if (this.queue?.available) this.queue.enqueueSlaList(tenantId, listId, { openOnly: true });
+            else await this.reconcileList(tenantId, listId, { openOnly: true, freshHours: true }).catch((err: unknown) => this.logger.warn(`SLA de la lista ${listId}: ${err instanceof Error ? err.message : String(err)}`));
+        }
+        return ids.length;
     }
 
     /** El SLA de un ticket para la ficha (null si no hay ticket). */
