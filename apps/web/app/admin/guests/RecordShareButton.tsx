@@ -12,6 +12,7 @@ import { CAP, useCanAny } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 
 import { GuestInviteForm, GuestLevelSelect, guestInvitedNotice } from './GuestAccess';
+import { RecordAction } from '@/admin/records/actions/RecordAction';
 
 /**
  * C3 — «Compartir este registro» con una persona de afuera (email + nivel).
@@ -35,17 +36,20 @@ export function RecordShareButton({
     if (!canEdit || isGuest) return null;
     return (
         <>
-            <Button
-                variant="ghost"
-                size={compact ? 'icon' : 'sm'}
-                aria-label={__('Compartir este registro')}
-                title={__('Compartir este registro con alguien de afuera')}
-                onClick={() => setOpen(true)}
-                data-testid="record-share-button"
-            >
-                <UserRoundPlus className="imcrm-h-4 imcrm-w-4" />
-                {!compact && __('Compartir')}
-            </Button>
+            {compact ? (
+                <RecordAction
+                    icon={<UserRoundPlus className="imcrm-h-4 imcrm-w-4" />}
+                    label={__('Compartir con alguien de afuera')}
+                    hint={__('Le das acceso sólo a este registro, sin ver el resto de la lista')}
+                    onClick={() => setOpen(true)}
+                    data-testid="record-share-button"
+                />
+            ) : (
+                <Button variant="ghost" size="sm" aria-label={__('Compartir este registro')} onClick={() => setOpen(true)} data-testid="record-share-button">
+                    <UserRoundPlus className="imcrm-h-4 imcrm-w-4" />
+                    {__('Compartir')}
+                </Button>
+            )}
             {open && <RecordShareDialog listId={listId} recordId={recordId} title={title} onClose={() => setOpen(false)} />}
         </>
     );

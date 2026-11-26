@@ -430,7 +430,14 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.470**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.471**
+(**la barra de la ficha dice qué hace cada botón** — tooltips de la app que
+salen enseguida con el nombre, para qué sirve y el atajo (con el teclado sólo
+al llegar con Tab; en táctil no); sólo Seguir y Recordarme quedan como íconos
+y todo lo demás va al menú «Acciones» por grupos, cada acción con su nombre y
+una línea de ayuda, igual en la ventana y la página, simple y diseñada; en el
+celular el menú también tiene Seguir, Recordarme, Diseñar y Eliminar; sin
+servidor ni migración; addendum ADR-S26). Antes **v0.1.470**
 (**la ventana del registro muestra la ficha diseñada** — al abrir un registro
 desde la tabla se ve la ficha diseñada de la lista (celular a pantalla
 completa, anterior/siguiente, autoguardado, comentarios al costado sólo si el
@@ -2399,6 +2406,21 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-26 · v0.1.471** — **La barra de la ficha dice qué hace cada
+  botón** (sin servidor ni migración; addendum ADR-S26). Reporte del usuario
+  con captura de la barra de la ventana del registro: no entendía para qué
+  servía cada ícono, no salía nada al pasar el mouse y donde salía algo tardaba
+  mucho (era el `title` nativo del navegador). «Tú dirás cómo» → se decidió:
+  (1) tooltip propio de la app en todos los íconos de la barra, rápido (250 ms,
+  al instante al pasar al de al lado) con nombre, para qué sirve y atajo; (2)
+  sólo Seguir y Recordarme quedan como íconos y lo demás va a un menú
+  «Acciones» con nombre y una línea de ayuda por acción, en grupos; (3) en el
+  celular todo va en ese menú. Se aplicó a la ventana y la página, simple y
+  diseñada. El E2E atrapó que el tooltip de «Diseñar esta ficha» quedaba
+  abierto al abrir la ficha por enlace (el foco que pone la app contaba como
+  «visible»): ahora con el teclado sólo sale al llegar con Tab. Ayuda
+  (Aprende, guías, recorrido) y dos capturas (PDF, compartir con alguien de
+  afuera) al día; novedad con carrusel. Queda: nada pendiente de este pedido.
 - **2026-11-26 · conversación** — El usuario pidió «haz lo que falta» de
   v0.1.466-468 y planteó que al abrir un registro desde la lista se viera la
   ficha DISEÑADA en la ventana flotante («hasta ahora ese diseño casi no tiene

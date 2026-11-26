@@ -12,6 +12,7 @@ import { formatLongDate } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 
 import { createEditLink, useEditLinkForms, type EditLinkForm } from './useForms';
+import { RecordAction } from '@/admin/records/actions/RecordAction';
 
 /**
  * v0.1.360 — «Enlace para actualizar» (modal, página y ficha del registro): un
@@ -28,9 +29,14 @@ export function RecordEditLinkButton({ listId, recordId, compact = false }: { li
     return (
         <>
             {compact ? (
-                <Button variant="ghost" size="icon" aria-label={label} title={label} onClick={() => setOpen(true)} data-testid="record-edit-link" data-tour="record-edit-link">
-                    <FilePen className="imcrm-h-4 imcrm-w-4" />
-                </Button>
+                <RecordAction
+                    icon={<FilePen className="imcrm-h-4 imcrm-w-4" />}
+                    label={label}
+                    hint={__('Un formulario para que la persona corrija sus propios datos')}
+                    onClick={() => setOpen(true)}
+                    data-testid="record-edit-link"
+                    data-tour="record-edit-link"
+                />
             ) : (
                 <Button variant="outline" className="imcrm-gap-2" onClick={() => setOpen(true)} data-testid="record-edit-link" data-tour="record-edit-link">
                     <FilePen className="imcrm-h-4 imcrm-w-4" />

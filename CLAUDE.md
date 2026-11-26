@@ -17782,6 +17782,53 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         los diálogos de WhatsApp y SMS (se bajan al tocar el botón, en la
         ventana, la página y el «…» del celular).
 
+  - [x] **La barra de la ficha dice qué hace cada botón (v0.1.471, addendum
+        ADR-S26, reporte del usuario con captura: "salen estos iconos pero no
+        entiendo para qué sirven… uno mostraba algo pero se demoraba mucho")**.
+        Sin servidor ni migración. (a) **Tooltip de la app**
+        (`apps/web/app/components/ui/tooltip.tsx`: `Tip` + `TooltipProvider`
+        sobre Radix, 250 ms y al instante al pasar al de al lado; nombre, una
+        línea de para qué sirve y el atajo en un `<kbd>`): con el teclado sale
+        SÓLO si se llegó con Tab (un listener de `keydown` Tab y `pointerdown`
+        en captura; `:focus-visible` no alcanzaba: el foco que pone la app al
+        abrir la ficha o al cerrar algo con Esc también cuenta como visible y
+        el E2E lo atrapó dejando el tooltip de «Diseñar esta ficha» pegado);
+        en táctil no sale. En la barra: Seguir, Recordarme, anterior/siguiente
+        (con «K o ↑» / «J o ↓»), Diseñar, Eliminar (dice que va a la papelera
+        30 días), página completa, Cerrar (Esc) y mostrar/ocultar comentarios.
+        (b) **Menú «Acciones»** (`apps/web/app/admin/records/actions/`:
+        `RecordAction` —botón ícono con tooltip o fila con ícono, nombre,
+        línea de ayuda, insignia y check, según el contexto
+        `RecordActionMode`—, `RecordActionGroup` y `RecordActionsMenu`; y
+        `RecordActionItems` con los grupos «Enviar y compartir» (WhatsApp, SMS,
+        compartir con alguien de afuera, enlace para actualizar, código QR),
+        «Documentos» (Generar PDF, Guardar como plantilla) e «Inteligencia
+        artificial» (Pedir al agente)). Cada acción conserva su componente y
+        su `compact`; las que no aplican no se dibujan y un grupo sin filas se
+        esconde con `:has(.imcrm-ra-row)`. El panel queda montado cerrado; las
+        filas que abren una ventana cierran el menú, las que anclan un menú o
+        ventanita (PDF, Recordarme, Seguir) lo cierran al cerrarse ésa; Esc y
+        clic afuera cierran sólo el menú (los portales y lo flotante no
+        cuentan como afuera; el panel lleva `data-imcrm-floating-menu` para
+        que el Esc de la ficha lo cierre primero); Enter abre con el foco en
+        la primera acción y ↑/↓ se mueven. Mismo menú en la ventana (simple y
+        diseñada), la página simple y la página diseñada. En el celular el
+        menú ocupa el ancho bajo la barra y suma «Seguimiento» (Seguir,
+        Recordarme) y «Esta ficha» (Diseñar, Eliminar). Ayuda: Aprende (fichas,
+        mi día, documentos, compartir, formularios, WhatsApp, IA, SMS), guías y
+        el paso del recorrido de la ficha al día, y dos capturas (generar PDF,
+        compartir con alguien de afuera) ahora abren «Acciones» primero;
+        novedad con carrusel (ilustraciones `ficha-acciones` y `ficha-abrir`).
+        Tests: shared 1224, front 1044, bundle app 824/830 KB gz — + E2E
+        navegador 83/83 en escritorio claro y oscuro y celular 390×844 oscuro
+        (tooltips con nombre, ayuda y atajo en menos de 900 ms y al instante
+        al pasar al de al lado, ninguno al abrir la ficha ni al cerrar una
+        ventanita, Tab los muestra, menú con grupos y sin el de IA si no hay
+        agentes, QR/PDF/compartir/Seguir/Recordarme desde la barra y el menú,
+        Esc y clic afuera, teclado, ficha simple y diseñada en ventana y
+        página, celular con todo adentro y sin scroll lateral, sin errores de
+        JS).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

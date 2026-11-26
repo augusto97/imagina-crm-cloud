@@ -4073,4 +4073,32 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         ].join('\n'),
         action: { label: 'Ver cómo funciona', href: '/aprende/fichas/fichas-abrir' },
     },
+    {
+        key: 'v0.1.471-barra-de-la-ficha',
+        version: '0.1.471',
+        date: '2026-11-26',
+        kind: 'improvement',
+        title: 'La barra de la ficha dice qué hace cada botón',
+        summary:
+            'Al pasar el mouse por un ícono de la ficha aparece enseguida su nombre y para qué sirve. Y lo que antes eran íconos sueltos ahora está en el menú «Acciones», cada cosa con su nombre.',
+        media: {
+            slides: [
+                {
+                    title: 'Cada ícono se explica',
+                    text: 'Pasa el mouse por el ojo, el reloj, las flechas o la X: al instante ves qué es, para qué sirve y su atajo de teclado.',
+                    illustration: 'ficha-acciones',
+                },
+                {
+                    title: 'Todo lo demás, en «Acciones»',
+                    text: 'Enviar un WhatsApp o un SMS, compartir, el código QR, generar un PDF, guardar como plantilla o pedirle algo al agente: con su nombre y una línea que dice para qué sirve.',
+                    illustration: 'ficha-abrir',
+                },
+            ],
+        },
+        body: [
+            '- «Seguir» y «Recordarme» siguen a la vista en la barra.',
+            '- En el celular, todo está dentro de «Acciones».',
+        ].join('\n'),
+        action: { label: 'Ver cómo funciona', href: '/aprende/fichas/fichas-acciones' },
+    },
 ];

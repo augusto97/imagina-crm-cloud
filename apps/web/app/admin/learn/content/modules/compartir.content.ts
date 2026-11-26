@@ -255,7 +255,7 @@ export const articles: LearnArticle[] = [
                     'En **Compartir → Personas**, escribe el correo completo en el buscador (por ejemplo `contador@deafuera.com`).',
                     'Toca **Invitar a contador@deafuera.com**. Entra con **Puede ver** (o **Puede editar** si a la derecha del buscador elegiste **Colaborar** o **Control total**).',
                     'Si no tenía cuenta, le llega una invitación para crear su contraseña; queda como **Invitación pendiente** hasta que entra. En su fila cambias el nivel: **Puede ver**, **Puede comentar** o **Puede editar** (crea y edita, pero no borra).',
-                    'Para compartir **un solo registro**, abre su ficha y toca **Compartir**: en **Compartir este registro** invitas igual, y la persona ve SÓLO ese registro.',
+                    'Para compartir **un solo registro**, abre su ficha, toca **Acciones** → **Compartir con alguien de afuera**: en **Compartir este registro** invitas igual, y la persona ve SÓLO ese registro.',
                     'Para quitarle el acceso, toca la **×** de su fila.',
                 ],
             },

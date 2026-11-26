@@ -183,13 +183,19 @@ export default [
             },
             {
                 click: '[data-tour="records-row"] >> nth=0',
-                then: '[data-testid="record-share-button"]',
+                then: '[data-testid="imcrm-record-more"]',
                 caption: 'Abre el registro que quieres compartir.',
+            },
+            {
+                // v0.1.471 — compartir vive en el menú «Acciones» de la barra.
+                click: '[data-testid="imcrm-record-more"] >> nth=0',
+                then: '[data-testid="record-share-button"]',
+                caption: 'En la barra del registro, abre «Acciones».',
             },
             {
                 click: '[data-testid="record-share-button"]',
                 then: '[data-testid="record-share-dialog"]',
-                caption: 'Toca el botón de compartir de la barra del registro.',
+                caption: 'Toca «Compartir con alguien de afuera».',
             },
             {
                 fill: '[data-testid="record-share-dialog"] input[type=email]',

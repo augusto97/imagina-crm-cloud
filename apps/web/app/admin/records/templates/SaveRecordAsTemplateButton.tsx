@@ -11,7 +11,7 @@ import { useTemplateFromRecord } from '@/hooks/useRecordTemplates';
 import { ApiError } from '@/lib/api';
 import { __, sprintf } from '@/lib/i18n';
 import { CAP, useCanAny } from '@/lib/permissions';
-import { cn } from '@/lib/utils';
+import { RecordAction } from '@/admin/records/actions/RecordAction';
 
 interface SaveRecordAsTemplateButtonProps {
     listId: number;
@@ -79,18 +79,20 @@ export function SaveRecordAsTemplateButton({ listId, listSlug, recordId, title, 
 
     return (
         <>
-            <Button
-                variant="ghost"
-                size={compact ? 'icon' : 'sm'}
-                onClick={openDialog}
-                aria-label={__('Guardar como plantilla')}
-                title={__('Guardar como plantilla')}
-                className={cn(!compact && 'imcrm-gap-1.5')}
-                data-testid="imcrm-save-record-template"
-            >
-                <BookmarkPlus className="imcrm-h-4 imcrm-w-4" />
-                {!compact && __('Guardar como plantilla')}
-            </Button>
+            {compact ? (
+                <RecordAction
+                    icon={<BookmarkPlus className="imcrm-h-4 imcrm-w-4" />}
+                    label={__('Guardar como plantilla')}
+                    hint={__('Para crear registros parecidos a éste más rápido')}
+                    onClick={openDialog}
+                    data-testid="imcrm-save-record-template"
+                />
+            ) : (
+                <Button variant="ghost" size="sm" onClick={openDialog} className="imcrm-gap-1.5" data-testid="imcrm-save-record-template">
+                    <BookmarkPlus className="imcrm-h-4 imcrm-w-4" />
+                    {__('Guardar como plantilla')}
+                </Button>
+            )}
             <Dialog.Root open={open} onOpenChange={setOpen}>
                 <Dialog.Portal>
                     <Dialog.Overlay className="imcrm-fixed imcrm-inset-0 imcrm-z-50 imcrm-bg-black/40 imcrm-backdrop-blur-sm" />

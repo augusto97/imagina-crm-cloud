@@ -162,7 +162,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Seguir un registro' },
             {
                 t: 'p',
-                md: 'Sigues **automáticamente** lo que creas, lo que comentas y lo que te asignan. Para seguir cualquier otro registro, ábrelo y toca **Seguir** (el ícono del ojo en la barra de la ficha). El botón pasa a **Siguiendo** y al pasar el mouse dice cuántas personas lo siguen. Tócalo de nuevo para dejar de seguirlo.',
+                md: 'Sigues **automáticamente** lo que creas, lo que comentas y lo que te asignan. Para seguir cualquier otro registro, ábrelo y toca **Seguir** (el ícono del ojo en la barra de la ficha; en el celular está dentro de **Acciones**). El botón pasa a **Siguiendo** y al pasar el mouse dice cuántas personas lo siguen. Tócalo de nuevo para dejar de seguirlo.',
             },
             {
                 t: 'settings',
@@ -177,7 +177,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'steps',
                 items: [
-                    'Abre el registro y toca **Recordarme** (el ícono del despertador en la barra de la ficha).',
+                    'Abre el registro y toca **Recordarme** (el ícono del despertador en la barra de la ficha; en el celular, dentro de **Acciones**).',
                     'Elige cuándo: **En 1 hora**, **Hoy a las 17:00**, **Mañana a las 9:00**, **En 3 días**, **El lunes a las 9:00** u **Otra fecha…** (con fecha y hora exactas).',
                     'Opcional: escribe una nota con lo que tienes que hacer.',
                     'Toca **Recordarme**. Verás «Recordatorio creado» con la fecha.',
@@ -479,7 +479,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'steps',
                 items: [
-                    'Abre el registro y toca el ícono **Código QR** de su barra (o haz clic derecho sobre la fila → **Código QR**).',
+                    'Abre el registro, toca **Acciones** → **Código QR** (o haz clic derecho sobre la fila → **Código QR**).',
                     'Elige qué guarda: **Enlace a la ficha** (funciona en cualquier lista) o, si la lista tiene un campo «Código», **su código** (SKU, serial…).',
                     'Descárgalo como **imagen**, imprime **su etiqueta** o **copia** el enlace o el código.',
                 ],

@@ -8,6 +8,7 @@ import { useIsGuest } from '@/lib/guest';
 import { __ } from '@/lib/i18n';
 import { lazyDialog } from '@/lib/lazyDialog';
 import { usePlanModuleOff } from '@/components/PlanModuleNotice';
+import { RecordAction } from '@/admin/records/actions/RecordAction';
 
 /**
  * D3 — «Enviar WhatsApp» desde un registro (modal, página y ficha diseñada).
@@ -38,20 +39,14 @@ function SendWhatsappButtonInner({ listId, recordId, compact = false }: { listId
     return (
         <>
             {compact ? (
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={label}
-                    title={status ? `${label} · ${__('último envío:')} ${status}` : label}
+                <RecordAction
+                    icon={<MessageCircle className="imcrm-h-4 imcrm-w-4" />}
+                    label={label}
+                    hint={status ? `${__('Un mensaje al teléfono de este registro. Último envío:')} ${status}` : __('Un mensaje al teléfono de este registro')}
+                    dot={first.provider === 'whatsapp_cloud' && first.window_open}
                     onClick={() => setOpen(true)}
-                    className="imcrm-relative"
                     data-testid="record-whatsapp"
-                >
-                    <MessageCircle className="imcrm-h-4 imcrm-w-4" />
-                    {first.provider === 'whatsapp_cloud' && first.window_open && (
-                        <span className="imcrm-absolute imcrm-right-1.5 imcrm-top-1.5 imcrm-h-2 imcrm-w-2 imcrm-rounded-full imcrm-bg-emerald-500 imcrm-ring-2 imcrm-ring-card" aria-hidden />
-                    )}
-                </Button>
+                />
             ) : (
                 <Button variant="outline" className="imcrm-gap-2" onClick={() => setOpen(true)} data-testid="record-whatsapp">
                     <MessageCircle className="imcrm-h-4 imcrm-w-4" />

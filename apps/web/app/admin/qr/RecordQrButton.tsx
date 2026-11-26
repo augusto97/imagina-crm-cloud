@@ -12,6 +12,7 @@ import { __, sprintf } from '@/lib/i18n';
 import { lazyWithReload } from '@/lib/lazyWithReload';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
+import { RecordAction } from '@/admin/records/actions/RecordAction';
 
 const RecordLabelsDialog = lazyWithReload(() => import('./RecordLabelsDialog'));
 
@@ -51,9 +52,14 @@ export function RecordQrButton({
     return (
         <>
             {compact ? (
-                <Button variant="ghost" size="icon" aria-label={label} title={label} onClick={() => setOpen(true)} data-testid="record-qr" data-tour="record-qr">
-                    <QrCode className="imcrm-h-4 imcrm-w-4" />
-                </Button>
+                <RecordAction
+                    icon={<QrCode className="imcrm-h-4 imcrm-w-4" />}
+                    label={label}
+                    hint={__('Para imprimir una etiqueta o abrir esta ficha desde el celular')}
+                    onClick={() => setOpen(true)}
+                    data-testid="record-qr"
+                    data-tour="record-qr"
+                />
             ) : (
                 <Button variant="outline" className="imcrm-gap-2" onClick={() => setOpen(true)} data-testid="record-qr" data-tour="record-qr">
                     <QrCode className="imcrm-h-4 imcrm-w-4" />

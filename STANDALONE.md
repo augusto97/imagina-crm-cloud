@@ -2247,6 +2247,29 @@ fábrica; `unplaced_fields_open`, plegada de fábrica); nunca en el portal.
 Para que la ficha entre en la carga inicial, los diálogos de WhatsApp y SMS
 de la ficha se bajan al abrirlos.
 
+**La barra de la ficha se explica sola (v0.1.471).** La barra de arriba de la
+ficha era una fila de íconos sin nombre (ojo, reloj, PDF, QR, WhatsApp,
+marcador, persona con +…) con el `title` nativo del navegador, que tarda
+~1,5 s y en varios botones ni aparecía. Ahora: (a) **tooltip de la app**
+(`components/ui/tooltip.tsx`, `Tip` sobre Radix Tooltip): sale a los 250 ms
+—al pasar al ícono de al lado, al instante—, con el nombre, una línea de para
+qué sirve y el atajo si tiene («Registro siguiente · J o ↓», «Cerrar · Esc»);
+con el teclado sale sólo al llegar con **Tab** (nunca cuando la app pone el
+foco sola: al abrir la ficha o al cerrar un menú o una ventana con Esc) y en
+táctil no sale. (b) Sólo **Seguir** y **Recordarme** quedan como íconos; todo
+lo demás va al menú **«Acciones»** (`records/actions/RecordAction.tsx` +
+`RecordActionItems.tsx`) por grupos —«Enviar y compartir», «Documentos»,
+«Inteligencia artificial»—, cada acción con su ícono, nombre y una línea de
+para qué sirve; una acción que no aplica no se dibuja y un grupo vacío se
+esconde (`:has()`). Cada componente de acción conserva su API (`compact`) y se
+dibuja como ícono o como fila según un contexto (`RecordActionMode`), así la
+ventana, la página simple y la ficha diseñada usan el mismo menú y los mismos
+testids. El panel queda MONTADO cerrado (los diálogos que abre una acción no
+se desmontan); las acciones con menú o ventanita propia (PDF, Recordarme,
+Seguir) lo cierran cuando ésta se cierra; Esc y un clic afuera lo cierran sin
+cerrar la ficha; flechas para moverse. En el celular el menú ocupa el ancho y
+suma Seguir, Recordarme, «Diseñar esta ficha» y Eliminar.
+
 **Plantillas del portal del cliente (v0.1.237).** El portal tiene su propia
 galería (`portalTemplateLayout`, `packages/shared/src/templates/
 portal-templates.ts`): Mi cuenta, Estado de cuenta, Seguimiento de proyecto,

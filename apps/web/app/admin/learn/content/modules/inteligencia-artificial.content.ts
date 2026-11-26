@@ -257,7 +257,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'steps',
                 items: [
-                    'En la barra de arriba de la ficha, toca el botón del robot (**Pedir al agente**). Aparece si hay agentes activos que trabajan en esa lista y puedes editar el registro.',
+                    'En la barra de arriba de la ficha, abre **Acciones** y toca **Pedir al agente**. Aparece si hay agentes activos que trabajan en esa lista y puedes editar el registro.',
                     'Elige el agente y, si quieres, escribe una **indicación para esta vez**.',
                     'Toca **Pedírselo**. En la ficha ves si está en cola, trabajando, si terminó (con los cambios que hizo o la propuesta que dejó) o por qué falló, sin recargar.',
                 ],
