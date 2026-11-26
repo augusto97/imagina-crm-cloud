@@ -1,6 +1,7 @@
 import { type ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { and, eq } from 'drizzle-orm';
+import { updateTenantSchema } from '@imagina-base/shared';
 import Redis from 'ioredis';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyRequest } from 'fastify';
@@ -221,8 +222,15 @@ describe('Modo agencia (Postgres real)', () => {
         const agency = await makeTenant({ name: 'Agencia Sur' });
         const admin = await makeUser('sur');
         await addMember(agency, admin, 'admin');
-        const t = await platform.updateTenant(agency, { is_agency: true, agency_settings: { client_plan: null, max_clients: 5, client_plans: [] } });
-        expect(t).toMatchObject({ is_agency: true, agency_settings: { max_clients: 5 } });
+        const t = await platform.updateTenant(agency, { is_agency: true, agency_settings: { client_plan: 'pro', max_clients: 5, client_plans: [] } });
+        expect(t).toMatchObject({ is_agency: true, agency_settings: { client_plan: 'pro', max_clients: 5 } });
+        // Cambiar sólo el tope (por el esquema, como el controlador) no devuelve el
+        // plan de los clientes a su valor de fábrica (Zod 4, v0.1.469).
+        const body = updateTenantSchema.parse({ agency_settings: { max_clients: 6 } });
+        expect(body).toEqual({ agency_settings: { max_clients: 6 } });
+        const t2 = await platform.updateTenant(agency, body);
+        expect(t2).toMatchObject({ agency_settings: { client_plan: 'pro', max_clients: 6 } });
+        await platform.updateTenant(agency, { agency_settings: { client_plan: null, max_clients: 5 } });
 
         const client = await makeTenant({ name: 'Floristería' });
         const linked = await platform.updateTenant(client, { agency_id: agency });

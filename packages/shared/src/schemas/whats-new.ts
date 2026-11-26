@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { planSchema } from './billing';
-import { idSchema } from './common';
+import { idSchema, partialPatch } from './common';
 import { resolveEmbed, type ResolvedEmbed } from './embeds';
 
 /**
@@ -412,10 +412,10 @@ export const whatsNewCatalogEntrySchema = z.object({
     image_url: imageUrlSchema.optional(),
     video_url: videoUrlSchema.optional(),
     /** Ilustración animada, captura real y/o carrusel (v0.1.325). */
-    media: whatsNewMediaSchema.partial().optional(),
+    media: partialPatch(whatsNewMediaSchema.partial()).optional(),
     action: whatsNewActionSchema.optional(),
     featured: z.boolean().optional(),
-    audience: whatsNewAudienceSchema.partial().optional(),
+    audience: partialPatch(whatsNewAudienceSchema.partial()).optional(),
     expires_at: isoDateTime.optional(),
 });
 export type WhatsNewCatalogEntry = z.input<typeof whatsNewCatalogEntrySchema>;

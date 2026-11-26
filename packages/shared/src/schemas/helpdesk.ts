@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { idSchema, isoDateTimeSchema } from './common';
+import { idSchema, isoDateTimeSchema, partialPatch } from './common';
 import { roleSchema } from './membership';
 
 /**
@@ -382,10 +382,11 @@ export function helpdeskManagedFieldIds(listSettings: unknown): number[] {
 export const HELPDESK_MANAGED_REASON = 'Lo calcula el SLA de la mesa de ayuda: no se edita a mano.';
 
 /** PATCH de los ajustes (todas las claves opcionales; las ausentes no se tocan). */
-export const updateHelpdeskSettingsSchema = helpdeskSettingsSchema
-    .omit({ sla: true })
-    .partial()
-    .extend({ sla: slaPolicySchema.partial().extend({ calendar: businessCalendarPatchSchema.optional() }).optional() });
+export const updateHelpdeskSettingsSchema = partialPatch(helpdeskSettingsSchema.omit({ sla: true }).partial()).extend({
+    sla: partialPatch(slaPolicySchema.partial())
+        .extend({ calendar: businessCalendarPatchSchema.optional() })
+        .optional(),
+});
 export type UpdateHelpdeskSettingsInput = z.infer<typeof updateHelpdeskSettingsSchema>;
 
 // ─────────────────────────── SLA: estados ───────────────────────────

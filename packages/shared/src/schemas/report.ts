@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { idSchema, isoDateTimeSchema } from './common';
+import { idSchema, isoDateTimeSchema, partialPatch } from './common';
 import { dashboardVisibilitySchema, type WidgetSpec, type WidgetType } from './dashboard';
 import { formatYmdRange, periodPresetName } from '../dashboard-report/compare';
 
@@ -213,13 +213,13 @@ export const createReportSchema = z.object({
     name: z.string().trim().min(1, 'Ponle un nombre al informe.').max(190),
     description: z.string().max(2000).nullable().optional(),
     blocks: reportBlocksSchema.prefault([]),
-    settings: reportSettingsSchema.partial().optional(),
+    settings: partialPatch(reportSettingsSchema.partial()).optional(),
     visibility: dashboardVisibilitySchema.optional(),
     allowed_roles: z.array(z.string().max(40)).max(10).optional(),
 });
 export type CreateReportInput = z.infer<typeof createReportSchema>;
 
-export const updateReportSchema = createReportSchema.partial();
+export const updateReportSchema = partialPatch(createReportSchema.partial());
 export type UpdateReportInput = z.infer<typeof updateReportSchema>;
 
 /**

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { partialPatch } from './common';
 
 /**
  * v0.1.179 — Copias de seguridad completas (ADR-S20). Un snapshot es UN
@@ -108,7 +109,7 @@ export const backupsSettingsSchema = z.object({
 });
 export type BackupsSettings = z.infer<typeof backupsSettingsSchema>;
 
-export const updateBackupsSettingsSchema = backupsSettingsSchema.partial();
+export const updateBackupsSettingsSchema = partialPatch(backupsSettingsSchema.partial());
 export type UpdateBackupsSettingsInput = z.infer<typeof updateBackupsSettingsSchema>;
 
 export const backupsStatusSchema = z.object({

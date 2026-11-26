@@ -356,6 +356,18 @@ describe('Listas públicas embebibles', () => {
         expect(stored.default_sort).toBeUndefined();
     });
 
+    it('un PATCH con un solo ajuste (por el esquema, como el controlador) no devuelve el resto a su valor de fábrica', async () => {
+        await publish({ per_page: 25, search_enabled: false, default_sort: 'monto:desc' });
+        // Zod 4 rellenaba con su valor de fábrica lo que no llegaba (v0.1.469).
+        const body = updatePublicListSchema.parse({ per_page: 10 });
+        expect(Object.keys(body)).toEqual(['per_page']);
+        await pub.updateAdmin(tenantId, 'directorio', body);
+        const cfg = await pub.getAdmin(tenantId, 'directorio');
+        expect(cfg).toMatchObject({ enabled: true, per_page: 10, search_enabled: false, default_sort_dir: 'desc' });
+        expect(cfg.visible_field_ids).toEqual([f.nombre!.id, f.email!.id, f.monto!.id]);
+        expect(cfg.default_sort_field_id).toBe(f.monto!.id);
+    });
+
     it('orden NUMÉRICO (no como texto: 9 < 10 < 100)', async () => {
         for (const n of [100, 9, 10]) {
             await recs.create(tenantId, admin, 'directorio', { data: { [key('nombre')]: `N${n}`, [key('monto')]: n } });

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { partialPatch } from './common';
 
 /**
  * Páginas públicas de la plataforma (v0.1.247): inicio, política de
@@ -39,17 +40,19 @@ export const platformLegalSchema = z.object({
 });
 export type PlatformLegal = z.infer<typeof platformLegalSchema>;
 
-export const updatePlatformLegalSchema = z
-    .object({
-        app_name: z.string().trim().min(1).max(80),
-        company_name: z.string().trim().max(160),
-        contact_email: platformLegalSchema.shape.contact_email,
-        website_url: httpsUrl,
-        description: z.string().trim().max(3000),
-        privacy_md: z.string().max(60000).nullable(),
-        terms_md: z.string().max(60000).nullable(),
-    })
-    .partial();
+export const updatePlatformLegalSchema = partialPatch(
+    z
+        .object({
+            app_name: z.string().trim().min(1).max(80),
+            company_name: z.string().trim().max(160),
+            contact_email: platformLegalSchema.shape.contact_email,
+            website_url: httpsUrl,
+            description: z.string().trim().max(3000),
+            privacy_md: z.string().max(60000).nullable(),
+            terms_md: z.string().max(60000).nullable(),
+        })
+        .partial(),
+);
 export type UpdatePlatformLegalInput = z.infer<typeof updatePlatformLegalSchema>;
 
 export const platformLegalViewSchema = z.object({

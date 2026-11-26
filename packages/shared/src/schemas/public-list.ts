@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { idSchema } from './common';
+import { idSchema, partialPatch } from './common';
 import { embedDomainSchema } from './dashboard-sharing';
 import { tenantFormatSchema } from './tenant';
 
@@ -67,9 +67,7 @@ export const PUBLIC_LIST_DEFAULTS: PublicListSettings = {
  * id (lo nuevo) o por slug (clientes viejos y el asistente): el servidor los
  * resuelve a ids antes de guardar.
  */
-export const updatePublicListSchema = publicListSettingsSchema
-    .omit({ token: true })
-    .partial()
+export const updatePublicListSchema = partialPatch(publicListSettingsSchema.omit({ token: true }).partial())
     // Al GUARDAR, cada dominio tiene que ser un dominio u origen bien formado:
     // el valor termina en la cabecera CSP (`frame-ancestors`) de la página, y
     // un texto libre podía agregarle directivas o dejarla inválida. (Al leer

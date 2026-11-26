@@ -1,4 +1,4 @@
-import type { HelpdeskSettings, HolidayItem, UpdateCompanyHoursInput } from '@imagina-base/shared';
+import { updateHelpdeskSettingsSchema, type HelpdeskSettings, type HolidayItem, type UpdateCompanyHoursInput } from '@imagina-base/shared';
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ActivityRepository } from '../src/activity/activity.repository';
@@ -205,6 +205,19 @@ describe('SLA de la mesa de ayuda con el horario laboral de la empresa (Postgres
         // Con el horario de la empresa, el propio no se exige (aunque quede a medias).
         await expect(config.updateSettings(tenantId, ana.userId, 'soporte', { sla: { calendar: { days: [] } } })).resolves.toBeTruthy();
         await expect(config.updateSettings(tenantId, ana.userId, 'viejo', { sla: { calendar: { days: [] } } })).rejects.toMatchObject({ response: { code: 'invalid_helpdesk_settings' } });
+    });
+
+    it('un PATCH con un solo ajuste (por el esquema, como el controlador) no borra los objetivos, los avisos ni el resto', async () => {
+        // Zod 4 rellenaba con su valor de fábrica lo que no llegaba (v0.1.469):
+        // guardar el % «en riesgo» dejaba el SLA sin objetivos ni avisos.
+        const body = updateHelpdeskSettingsSchema.parse({ sla: { at_risk_percent: 70 } });
+        expect(body).toEqual({ sla: { at_risk_percent: 70 } });
+        const next = await config.updateSettings(tenantId, ana.userId, 'soporte', body);
+        expect(next.sla).toMatchObject({ enabled: true, at_risk_percent: 70, notify_user_ids: [ana.userId] });
+        expect(next.sla.targets).toEqual([{ priority: null, first_response_hours: 2, resolution_hours: 4 }]);
+        expect(next).toMatchObject({ initial_status: 'nuevo', closed_statuses: ['resuelto'] });
+        const other = await config.updateSettings(tenantId, ana.userId, 'soporte', updateHelpdeskSettingsSchema.parse({ max_size_mb: 5 }));
+        expect(other).toMatchObject({ max_size_mb: 5, initial_status: 'nuevo', sla: { at_risk_percent: 70, enabled: true } });
     });
 
     let openCompany: number;
