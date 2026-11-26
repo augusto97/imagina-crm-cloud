@@ -2383,6 +2383,26 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-26 · conversación** — El usuario pidió «haz lo que falta» de
+  v0.1.466-468 y planteó que al abrir un registro desde la lista se viera la
+  ficha DISEÑADA en la ventana flotante («hasta ahora ese diseño casi no tiene
+  uso»). Verificado: la ficha diseñada es opcional por lista
+  (`record_layout: 'crm'`, ninguna plantilla la activa) y sólo se ve en la
+  página del registro; la ventana flotante (`RecordDetailDrawer`) siempre
+  muestra la ficha simple. **Aprobado** (las tres opciones recomendadas): (1)
+  la ventana flotante muestra la ficha diseñada cuando la lista la usa (celular
+  a pantalla completa; anterior/siguiente, página completa y cerrar; botones
+  del registro en la barra; «Guardado»; aside de comentarios/actividad sólo si
+  el diseño no los trae) con «Diseñar esta ficha» para administradores; (2) las
+  listas NUEVAS desde una plantilla, la IA, un archivo o Airtable nacen con la
+  ficha diseñada que encaja (ventas → Oportunidad, soporte → Ticket, contactos
+  → Perfil, tareas → Tarea, resto → Resumen; en blanco sigue simple); (3) a
+  las listas existentes se les SUGIERE una vez a cada administrador («Probar»
+  sin guardar → «Usar este diseño» / «Ahora no»), sin cambiar nada para el
+  resto. Plan: **v0.1.469** = los tres pendientes (SLA con el horario laboral
+  de la empresa, filtros «próximos/últimos/hace más de N días», re-apuntar
+  personas y equipos de los filtros al migrar una empresa); **v0.1.470** = la
+  ficha diseñada en la ventana flotante.
 - **2026-11-25 · v0.1.468** — **Estado de cuenta del cliente + tabla de
   ítems con filtro** (idea J4, vista por el usuario en otra app; addendum
   ADR-S35; sin migración). (1) La tabla de ítems de un documento gana
