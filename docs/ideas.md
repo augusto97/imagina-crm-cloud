@@ -154,7 +154,7 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 | G12 · Avisos a Google Chat y Discord | bajo-medio · S c/u | Slack y Microsoft Teams ya existen (Teams desde v0.1.348). |
 | G13 · OneDrive / SharePoint y Dropbox como almacenamiento | medio · M | S3 y Google Drive ya existen. |
 | G14 · Enriquecimiento y validación (datos por dominio, email que existe) | bajo-medio · M | |
-| G15 · Días hábiles y festivos por país en todo | medio · S | **En parte hecho en v0.1.349 y v0.1.467**: la agenda de citas y el horario laboral de la empresa (Ajustes → Horario laboral, que usan las esperas de las automatizaciones) usan los festivos de 33 países. El SLA de la mesa de ayuda sigue con su propio horario y los festivos de Colombia (falta la opción «Usar el horario laboral de la empresa»), igual que las fórmulas de días hábiles y las plantillas. |
+| G15 · Días hábiles y festivos por país en todo | medio · S | **En parte hecho en v0.1.349 y v0.1.467**: la agenda de citas y el horario laboral de la empresa (Ajustes → Horario laboral, que usan las esperas de las automatizaciones) usan los festivos de 33 países. El SLA de la mesa de ayuda también lo usa desde v0.1.469 («Usar el horario laboral de la empresa»). Falta en las fórmulas de días hábiles (`SUMAR_DIAS_HABILES`, sólo Colombia) y en las fechas relativas de las plantillas de registro. |
 
 ### H. Celular
 | Idea | Valor · esfuerzo | Nota |

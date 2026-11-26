@@ -278,7 +278,7 @@ export function SlaPolicyPanel({ listId, onGoToMail }: { listId: number; onGoToM
                                     );
                                 })}
                             </div>
-                            <div className="imcrm-grid imcrm-max-w-md imcrm-grid-cols-2 imcrm-gap-3 sm:imcrm-grid-cols-3">
+                            <div className="imcrm-grid imcrm-max-w-xl imcrm-grid-cols-2 imcrm-gap-3 sm:imcrm-grid-cols-[minmax(0,8rem)_minmax(0,8rem)_minmax(13rem,1fr)]">
                                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                                     <Label htmlFor="sla-start">{__('Desde')}</Label>
                                     <Input id="sla-start" type="time" value={draft.calendar.start} onChange={(e) => set('calendar', { ...draft.calendar, start: e.target.value || '08:00' })} />
@@ -287,7 +287,7 @@ export function SlaPolicyPanel({ listId, onGoToMail }: { listId: number; onGoToM
                                     <Label htmlFor="sla-end">{__('Hasta')}</Label>
                                     <Input id="sla-end" type="time" value={draft.calendar.end === '24:00' ? '23:59' : draft.calendar.end} onChange={(e) => set('calendar', { ...draft.calendar, end: e.target.value || '18:00' })} />
                                 </div>
-                                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                                <div className="imcrm-col-span-2 imcrm-flex imcrm-flex-col imcrm-gap-1 sm:imcrm-col-span-1">
                                     <Label htmlFor="sla-holidays">{__('Festivos')}</Label>
                                     <Select id="sla-holidays" value={draft.calendar.holidays} onChange={(e) => set('calendar', { ...draft.calendar, holidays: e.target.value as 'co' | 'none' })}>
                                         <option value="co">{__('De Colombia (no cuentan)')}</option>
