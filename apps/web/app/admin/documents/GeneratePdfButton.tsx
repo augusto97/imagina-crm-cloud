@@ -26,6 +26,7 @@ import { formatDate } from '@/lib/tenantFormat';
 import { IssuedDocumentsDialog } from './IssuedDocuments';
 import { documentLink, downloadPdf, generateDocument, invalidateIssued, useDocumentTemplates, useIssuedDocuments } from './useDocuments';
 import { usePlanModuleOff } from '@/components/PlanModuleNotice';
+import { RecordAction, useRecordActionMode } from '@/admin/records/actions/RecordAction';
 
 // pdf.js pesa: el visor sólo se baja al abrir «Ver».
 const PdfViewDialog = lazy(() => import('./PdfViewDialog'));
@@ -63,6 +64,7 @@ function GeneratePdfButtonInner({
     const [issuedOpen, setIssuedOpen] = useState(false);
     const [signing, setSigning] = useState<number | null>(null);
     const issued = useIssuedDocuments(listId, recordId);
+    const { mode, closeMenu } = useRecordActionMode();
 
     const list = templates.data ?? [];
     if (list.length === 0 && !canDesign) return null;
@@ -117,12 +119,21 @@ function GeneratePdfButtonInner({
 
     return (
         <>
-            <DropdownMenu>
+            <DropdownMenu
+                // En el menú «Acciones», al elegir un documento el menú se pliega.
+                onOpenChange={(o) => {
+                    if (!o && mode === 'row') closeMenu();
+                }}
+            >
                 <DropdownMenuTrigger asChild>
                     {compact ? (
-                        <Button variant="ghost" size="icon" aria-label={__('Generar PDF')} title={__('Generar PDF')} data-testid="record-pdf">
-                            {icon}
-                        </Button>
+                        <RecordAction
+                            icon={icon}
+                            label={__('Generar PDF')}
+                            hint={list.length > 0 ? __('Un documento con los datos de este registro (cuenta de cobro, cotización…)') : __('Todavía no hay plantillas: arma la primera')}
+                            keepMenuOpen
+                            data-testid="record-pdf"
+                        />
                     ) : (
                         <Button variant="outline" className="imcrm-gap-2" data-testid="record-pdf">
                             {icon}

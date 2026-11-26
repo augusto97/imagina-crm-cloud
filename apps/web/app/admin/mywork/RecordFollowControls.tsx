@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AlarmClock, Eye, EyeOff, Trash2 } from 'lucide-react';
+import { AlarmClock, Check, Eye, EyeOff, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -8,6 +8,8 @@ import { useDeleteReminder, useFollowState, useReminders, useSetFollow } from '@
 import { __, sprintf } from '@/lib/i18n';
 import { formatDateTime } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
+
+import { RecordAction, useRecordActionMode } from '@/admin/records/actions/RecordAction';
 
 import { ReminderForm } from './ReminderForm';
 
@@ -36,13 +38,88 @@ export function RecordFollowControls({ listId, recordId, compact = false }: { li
     const followTitle = following
         ? sprintf(__('Lo sigues: te avisamos de comentarios y cambios (%d lo siguen)'), followers)
         : __('Seguir: avísame de comentarios y cambios');
+    const { mode, closeMenu } = useRecordActionMode();
+    const remindHint =
+        pending.length > 0
+            ? sprintf(__('Tienes %d pendiente(s). Te avisamos a la hora que elijas.'), pending.length)
+            : __('Te avisamos de este registro a la hora que elijas');
+
+    const reminderContent = (): JSX.Element => (
+        <PopoverContent align="end" className="imcrm-w-[340px] imcrm-max-w-[calc(100vw-1rem)] imcrm-p-3">
+            <p className="imcrm-mb-2 imcrm-text-sm imcrm-font-medium">{__('Recordarme este registro')}</p>
+            {pending.length > 0 && (
+                <ul className="imcrm-mb-3 imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-rounded-md imcrm-bg-muted/50 imcrm-p-2">
+                    {pending.map((r) => (
+                        <li key={r.id} className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-xs">
+                            <AlarmClock className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground" />
+                            <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate">
+                                {formatDateTime(new Date(r.remind_at))}
+                                {r.note ? ` · ${r.note}` : ''}
+                            </span>
+                            <button type="button" aria-label={__('Quitar')} className="imcrm-text-muted-foreground hover:imcrm-text-destructive" onClick={() => remove.mutate(r.id)}>
+                                <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                            </button>
+                        </li>
+                    ))}
+                </ul>
+            )}
+            <ReminderForm listId={listId} recordId={recordId} onDone={() => setOpen(false)} compact />
+        </PopoverContent>
+    );
+
+    // v0.1.471 — barra de la ficha: ícono con tooltip al instante, o fila del
+    // menú «Acciones» con su nombre (en el teléfono).
+    if (compact) {
+        return (
+            <div className={cn('imcrm-flex', mode === 'row' ? 'imcrm-flex-col' : 'imcrm-items-center imcrm-gap-0.5')} data-testid="record-follow-controls">
+                <RecordAction
+                    icon={<Eye className="imcrm-h-4 imcrm-w-4" />}
+                    label={mode === 'row' ? (following ? __('Siguiendo este registro') : __('Seguir este registro')) : following ? __('Siguiendo') : __('Seguir')}
+                    hint={
+                        following
+                            ? followers > 1
+                                ? sprintf(__('Te avisamos de sus comentarios y cambios. Lo siguen %d personas.'), followers)
+                                : __('Te avisamos de sus comentarios y cambios. Toca para dejar de seguirlo.')
+                            : __('Te avisamos de sus comentarios y cambios')
+                    }
+                    active={following}
+                    rowEnd={mode === 'row' && following ? <Check className="imcrm-h-4 imcrm-w-4 imcrm-text-primary" /> : undefined}
+                    keepMenuOpen
+                    onClick={toggle}
+                    disabled={setFollow.isPending || state.isLoading}
+                    aria-pressed={following}
+                    data-testid="record-follow"
+                />
+                <Popover
+                    open={open}
+                    onOpenChange={(o) => {
+                        setOpen(o);
+                        if (!o && mode === 'row') closeMenu();
+                    }}
+                >
+                    <PopoverTrigger asChild>
+                        <RecordAction
+                            icon={<AlarmClock className="imcrm-h-4 imcrm-w-4" />}
+                            label={__('Recordarme')}
+                            hint={remindHint}
+                            badge={pending.length}
+                            active={pending.length > 0}
+                            keepMenuOpen
+                            data-testid="record-remind"
+                        />
+                    </PopoverTrigger>
+                    {reminderContent()}
+                </Popover>
+            </div>
+        );
+    }
 
     return (
         <div className="imcrm-flex imcrm-items-center imcrm-gap-1" data-testid="record-follow-controls">
             <Button
-                variant={compact ? 'ghost' : 'outline'}
-                size={compact ? 'icon' : 'sm'}
-                className={cn(!compact && 'imcrm-gap-1.5', following && 'imcrm-text-primary')}
+                variant="outline"
+                size="sm"
+                className={cn('imcrm-gap-1.5', following && 'imcrm-text-primary')}
                 onClick={toggle}
                 disabled={setFollow.isPending || state.isLoading}
                 aria-pressed={following}
@@ -51,20 +128,20 @@ export function RecordFollowControls({ listId, recordId, compact = false }: { li
                 data-testid="record-follow"
             >
                 {following ? <Eye className="imcrm-h-4 imcrm-w-4" /> : <EyeOff className="imcrm-h-4 imcrm-w-4" />}
-                {!compact && (following ? __('Siguiendo') : __('Seguir'))}
+                {following ? __('Siguiendo') : __('Seguir')}
             </Button>
             <Popover open={open} onOpenChange={setOpen}>
                 <PopoverTrigger asChild>
                     <Button
-                        variant={compact ? 'ghost' : 'outline'}
-                        size={compact ? 'icon' : 'sm'}
-                        className={cn('imcrm-relative', !compact && 'imcrm-gap-1.5', pending.length > 0 && 'imcrm-text-primary')}
+                        variant="outline"
+                        size="sm"
+                        className={cn('imcrm-relative imcrm-gap-1.5', pending.length > 0 && 'imcrm-text-primary')}
                         aria-label={__('Recordarme')}
                         title={__('Recordarme')}
                         data-testid="record-remind"
                     >
                         <AlarmClock className="imcrm-h-4 imcrm-w-4" />
-                        {!compact && __('Recordarme')}
+                        {__('Recordarme')}
                         {pending.length > 0 && (
                             <span className="imcrm-absolute imcrm--right-0.5 imcrm--top-0.5 imcrm-flex imcrm-h-3.5 imcrm-min-w-3.5 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-primary imcrm-px-0.5 imcrm-text-[9px] imcrm-font-semibold imcrm-text-primary-foreground">
                                 {pending.length}
@@ -72,26 +149,7 @@ export function RecordFollowControls({ listId, recordId, compact = false }: { li
                         )}
                     </Button>
                 </PopoverTrigger>
-                <PopoverContent align="end" className="imcrm-w-[340px] imcrm-max-w-[calc(100vw-1rem)] imcrm-p-3">
-                    <p className="imcrm-mb-2 imcrm-text-sm imcrm-font-medium">{__('Recordarme este registro')}</p>
-                    {pending.length > 0 && (
-                        <ul className="imcrm-mb-3 imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-rounded-md imcrm-bg-muted/50 imcrm-p-2">
-                            {pending.map((r) => (
-                                <li key={r.id} className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-xs">
-                                    <AlarmClock className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground" />
-                                    <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate">
-                                        {formatDateTime(new Date(r.remind_at))}
-                                        {r.note ? ` · ${r.note}` : ''}
-                                    </span>
-                                    <button type="button" aria-label={__('Quitar')} className="imcrm-text-muted-foreground hover:imcrm-text-destructive" onClick={() => remove.mutate(r.id)}>
-                                        <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" />
-                                    </button>
-                                </li>
-                            ))}
-                        </ul>
-                    )}
-                    <ReminderForm listId={listId} recordId={recordId} onDone={() => setOpen(false)} compact />
-                </PopoverContent>
+                {reminderContent()}
             </Popover>
         </div>
     );

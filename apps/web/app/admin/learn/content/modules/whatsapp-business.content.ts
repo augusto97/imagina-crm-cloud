@@ -267,7 +267,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'steps',
                 items: [
-                    'Abre el registro (en el modal, la página o la ficha diseñada) y toca **Enviar WhatsApp**.',
+                    'Abre el registro (en el modal, la página o la ficha diseñada), toca **Acciones** y luego **Enviar WhatsApp**.',
                     'Arriba ves si la ventana está **abierta hasta** una hora o **cerrada: sólo plantillas**, y el estado del último envío.',
                     'Elige **Enviar desde** (si tienes varios números) y revisa **Para**: se completa con el teléfono del registro.',
                     'Elige **Plantilla** o, si la ventana está abierta, **Mensaje** (texto libre, con variables como `{{nombre}}`).',

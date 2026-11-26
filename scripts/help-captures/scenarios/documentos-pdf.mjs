@@ -122,11 +122,13 @@ export default [
                     const rec = (res?.data ?? res)[0];
                     if (!rec) throw new Error('la lista Facturas no tiene registros');
                     await page.goto(`${base}/#/lists/${lists.Facturas.slug}/records/${rec.id}`);
-                    await page.locator('[data-testid="record-pdf"]').first().waitFor({ state: 'visible', timeout: 30000 });
+                    await page.locator('[data-testid="imcrm-record-more"]').first().waitFor({ state: 'visible', timeout: 30000 });
                     await sleep(2500);
                 },
             },
-            { click: '[data-testid="record-pdf"] >> nth=0', caption: 'En la ficha de la factura, toca «Generar PDF».', then: '[role="menu"]' },
+            // v0.1.471 — «Generar PDF» vive en el menú «Acciones» de la barra.
+            { click: '[data-testid="imcrm-record-more"] >> nth=0', caption: 'En la ficha de la factura, abre «Acciones».', then: '[data-testid="record-pdf"]' },
+            { click: '[data-testid="record-pdf"] >> nth=0', caption: 'Toca «Generar PDF».', then: '[role="menu"]' },
             { wait: 600 },
             { shot: '[role="menu"] [role="menuitem"]:has-text("Cuenta de cobro")', caption: 'Aparecen las plantillas de la lista. Elige «Cuenta de cobro».' },
             {

@@ -91,7 +91,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'steps',
                 items: [
-                    'Abre el registro y toca el ícono de **Enviar SMS** en la barra de arriba.',
+                    'Abre el registro, toca **Acciones** en la barra de arriba y luego **Enviar SMS**.',
                     'El número sale del campo de teléfono de la lista (puedes cambiarlo para ese envío).',
                     'Escribe el mensaje: debajo ves **Así llega**, con las variables ya completadas con los datos de ese registro, y el contador.',
                     'Toca **Enviar**. En el registro quedan la fecha y el estado del último SMS, y en la actividad «envió un SMS a +57 300…, 1 segmento». El texto del mensaje no se guarda.',

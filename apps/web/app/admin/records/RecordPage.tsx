@@ -18,18 +18,12 @@ import { CommentsPanel } from '@/admin/comments/CommentsPanel';
 import { RecordLayoutView } from '@/admin/records/layout/RecordLayoutView';
 import { PortalAccessButton } from '@/admin/records/crm/PortalAccessButton';
 import { RecordFollowControls } from '@/admin/mywork/RecordFollowControls';
-import { GeneratePdfButton } from '@/admin/documents/GeneratePdfButton';
-import { RecordQrButton } from '@/admin/qr/RecordQrButton';
-import { RecordEditLinkButton } from '@/admin/forms/RecordEditLinkButton';
-import { RecordShareButton } from '@/admin/guests/RecordShareButton';
 import { useIsGuest } from '@/lib/guest';
 import { useGuestAccess } from '@/hooks/useGuests';
 import { IssuedDocumentsSection } from '@/admin/documents/IssuedDocuments';
 import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
 import { RecordSignaturesPanel } from '@/admin/signatures/RecordSignaturesPanel';
 import { RecordSubscriptionPanel } from '@/cloud/components/subscriptions/RecordSubscriptionPanel';
-import { SendWhatsappButton } from '@/cloud/components/whatsapp/SendWhatsappButton';
-import { SendSmsButton } from '@/cloud/components/sms/SendSmsButton';
 import { RecordDataConsentLine } from '@/cloud/components/RecordDataConsentLine';
 import { RecordBacklinks } from '@/admin/records/RecordBacklinks';
 import { RecordDescription, useDescriptionDraft } from '@/admin/records/description/RecordDescription';
@@ -41,9 +35,10 @@ import { RecordApprovals } from '@/admin/approvals/RecordApprovals';
 import { RecordBookingPanel } from '@/admin/booking/RecordBookingPanel';
 import { RecordShopOrderPanel } from '@/admin/shop/RecordShopOrderPanel';
 import { RecordAgentProposals } from '@/admin/agents/AgentProposals';
-import { RecordAgentRuns, RecordAiSummaryCard, RecordAskAgentButton } from './ai/RecordAi';
+import { RecordAgentRuns, RecordAiSummaryCard } from './ai/RecordAi';
+import { RecordActionsMenu } from './actions/RecordAction';
+import { RecordActionItems } from './actions/RecordActionItems';
 import { RecordChecklists } from '@/admin/records/checklists/RecordChecklists';
-import { SaveRecordAsTemplateButton } from '@/admin/records/templates/SaveRecordAsTemplateButton';
 import { TimeTrackingPanel } from '@/admin/records/time/TimeTrackingPanel';
 import { readMirrorListMarker } from '@imagina-base/shared';
 import { RecordTitleInput } from '@/admin/records/RecordTitleInput';
@@ -150,6 +145,8 @@ export function RecordPage(): JSX.Element {
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
     const [tab, setTab] = useState<'comments' | 'activity'>('comments');
     const [fieldsOpen, setFieldsOpen] = useState(true);
+    // v0.1.471 — el menú «Acciones» de la barra.
+    const [actionsOpen, setActionsOpen] = useState(false);
     const boot = getBootData();
 
     // Declarado ANTES de los retornos tempranos: la ficha diseñada lo usa y,
@@ -272,42 +269,22 @@ export function RecordPage(): JSX.Element {
                     onDelete={() => void handleDelete()}
                     deleting={remove.isPending}
                     actions={
-                        <>
-                            {/* Seguir / recordarme y el PDF, en la barra de la ficha. */}
+                        // v0.1.471 — «Seguir» y «Recordarme» a la vista; el resto, en «Acciones» con su nombre.
+                        <div className="imcrm-flex imcrm-items-center imcrm-gap-0.5" data-tour="record-toolbar">
                             {!isGuest && <RecordFollowControls listId={list.data.id} recordId={record.data.id} compact />}
-                            {!isGuest && <RecordAskAgentButton listId={list.data.id} recordId={record.data.id} compact />}
-                            {!isGuest && (
-                                <GeneratePdfButton
+                            <RecordActionsMenu open={actionsOpen} onOpenChange={setActionsOpen}>
+                                <RecordActionItems
                                     listId={list.data.id}
                                     listSlug={list.data.slug}
-                                    recordId={record.data.id}
-                                    fields={fields.data}
-                                    compact
-                                />
-                            )}
-                            {!isGuest && (
-                                <RecordQrButton
-                                    listId={list.data.id}
                                     recordId={record.data.id}
                                     fields={fields.data}
                                     listSettings={list.data.settings as Record<string, unknown>}
-                                    compact
-                                />
-                            )}
-                            {!isGuest && <RecordEditLinkButton listId={list.data.id} recordId={record.data.id} compact />}
-                            {!isGuest && <SendWhatsappButton listId={list.data.id} recordId={record.data.id} compact />}
-                            {!isGuest && <SendSmsButton listId={list.data.id} recordId={record.data.id} compact />}
-                            {!storeRules && !isGuest && (
-                                <SaveRecordAsTemplateButton
-                                    listId={list.data.id}
-                                    listSlug={list.data.slug}
-                                    recordId={record.data.id}
                                     title={recordTitleFor(fields.data, record.data.fields) ?? ''}
-                                    compact
+                                    isGuest={isGuest}
+                                    storeRules={Boolean(storeRules)}
                                 />
-                            )}
-                            <RecordShareButton listId={list.data.id} recordId={record.data.id} compact />
-                        </>
+                            </RecordActionsMenu>
+                        </div>
                     }
                 />
             </FieldAccessContext.Provider>
@@ -378,22 +355,22 @@ export function RecordPage(): JSX.Element {
                         </Link>
                     </Button>
                     <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-end imcrm-gap-1.5">
-                        {!isGuest && <RecordFollowControls listId={listInfo.id} recordId={rec.id} compact />}
-                        {/* v0.1.456 — pedirle a un agente de IA que trabaje en este registro. */}
-                        {!isGuest && <RecordAskAgentButton listId={listInfo.id} recordId={rec.id} compact />}
-                        {!isGuest && (
-                            <GeneratePdfButton listId={listInfo.id} listSlug={listInfo.slug} recordId={rec.id} fields={fields.data ?? []} compact />
-                        )}
-                        {!isGuest && (
-                            <RecordQrButton listId={listInfo.id} recordId={rec.id} fields={fields.data ?? []} listSettings={listInfo.settings as Record<string, unknown>} compact />
-                        )}
-                        {!isGuest && <RecordEditLinkButton listId={listInfo.id} recordId={rec.id} compact />}
-                        {!isGuest && <SendWhatsappButton listId={listInfo.id} recordId={rec.id} compact />}
-                        {!isGuest && <SendSmsButton listId={listInfo.id} recordId={rec.id} compact />}
-                        {!storeRules && !isGuest && (
-                            <SaveRecordAsTemplateButton listId={listInfo.id} listSlug={listInfo.slug} recordId={rec.id} title={title} compact />
-                        )}
-                        <RecordShareButton listId={listInfo.id} recordId={rec.id} title={title} compact />
+                        <div className="imcrm-flex imcrm-items-center imcrm-gap-0.5" data-tour="record-toolbar">
+                            {!isGuest && <RecordFollowControls listId={listInfo.id} recordId={rec.id} compact />}
+                            {/* v0.1.471 — el resto de las acciones, en «Acciones» con su nombre. */}
+                            <RecordActionsMenu open={actionsOpen} onOpenChange={setActionsOpen}>
+                                <RecordActionItems
+                                    listId={listInfo.id}
+                                    listSlug={listInfo.slug}
+                                    recordId={rec.id}
+                                    fields={fields.data ?? []}
+                                    listSettings={listInfo.settings as Record<string, unknown>}
+                                    title={title}
+                                    isGuest={isGuest}
+                                    storeRules={Boolean(storeRules)}
+                                />
+                            </RecordActionsMenu>
+                        </div>
                         {(!storeRules || goneInSource) && !isGuest && (
                             <Button
                                 variant="ghost"

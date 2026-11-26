@@ -730,7 +730,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'settings',
                 rows: [
-                    { name: 'Desde la ficha del registro', what: 'Toca el ícono **Enlace para actualizar** (arriba, junto a los otros botones), elige el formulario si tienes varios y toca **Crear y copiar el enlace**. Pégalo en un correo o un mensaje.', tip: 'El botón sólo aparece si algún formulario de la lista tiene los enlaces encendidos y tú puedes editar ese registro.' },
+                    { name: 'Desde la ficha del registro', what: 'Abre **Acciones** (arriba) y toca **Enlace para actualizar**, elige el formulario si tienes varios y toca **Crear y copiar el enlace**. Pégalo en un correo o un mensaje.', tip: 'El botón sólo aparece si algún formulario de la lista tiene los enlaces encendidos y tú puedes editar ese registro.' },
                     { name: 'En una automatización', what: 'En un correo, un WhatsApp o un SMS, usa la variable que aparece en **Actualizar un registro** (se ve como {{formulario.12.enlace}}). Cada registro recibe su propio enlace.', tip: 'Así puedes mandar «¿Tus datos siguen al día?» a todos tus clientes con una automatización programada.' },
                 ],
             },

@@ -450,7 +450,7 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'Con la plantilla guardada, cada registro de la lista tiene su botón **Generar PDF**: el ícono de documento en la barra de arriba de la ficha completa y de la ventana del registro. El menú muestra **Documentos de esta lista**; pasa el mouse (o toca) sobre una plantilla y aparecen sus opciones: verla, descargarla, copiar un enlace o guardarla como archivo del registro.',
+                md: 'Con la plantilla guardada, cada registro de la lista tiene **Generar PDF**: en el menú **Acciones** de la barra de arriba, en la ficha completa y en la ventana del registro. El menú muestra **Documentos de esta lista**; pasa el mouse (o toca) sobre una plantilla y aparecen sus opciones: verla, descargarla, copiar un enlace o guardarla como archivo del registro.',
             },
             { t: 'anim', key: 'pdf-emitir', caption: '«Descargar» emite el número CC-0042 y lo congela; después se anula y se emite el CC-0043.' },
             { t: 'h', text: 'Las opciones de cada plantilla' },
@@ -543,7 +543,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'steps',
                 items: [
-                    'Abre el registro. En la ficha, toca **Pedir firma de un documento** (o, en el botón **Generar PDF**, pasa por una plantilla y elige **Pedir firma**).',
+                    'Abre el registro. En la ficha, toca **Pedir firma de un documento** (o, en **Acciones** → **Generar PDF**, pasa por una plantilla y elige **Pedir firma**).',
                     'En **Documento**, elige una plantilla de la lista o un PDF que ya esté en un campo de archivos del registro.',
                     'Revisa **Quién firma**: la app sugiere el nombre y el correo del registro. Agrega más personas si hace falta (hasta 10), con su rol si quieres («Cliente», «Representante legal»).',
                     'Elige el **Orden**: **Todas a la vez** o **Uno después del otro** (cada una recibe el enlace cuando firma la anterior).',

@@ -8,6 +8,7 @@ import { useIsGuest } from '@/lib/guest';
 import { __ } from '@/lib/i18n';
 import { lazyDialog } from '@/lib/lazyDialog';
 import { usePlanModuleOff } from '@/components/PlanModuleNotice';
+import { RecordAction } from '@/admin/records/actions/RecordAction';
 
 /**
  * SMS (ADR-S82) — «Enviar SMS» desde un registro (modal, página y ficha
@@ -31,17 +32,14 @@ function SendSmsButtonInner({ listId, recordId, compact = false }: { listId: num
     return (
         <>
             {compact ? (
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={label}
-                    title={info.last ? `${label} · ${__('último SMS:')} ${info.last.status}` : label}
+                <RecordAction
+                    icon={<MessageSquareText className="imcrm-h-4 imcrm-w-4" />}
+                    label={label}
+                    hint={info.last ? `${__('Un mensaje de texto al celular de este registro. Último SMS:')} ${info.last.status}` : __('Un mensaje de texto al celular de este registro')}
                     onClick={() => setOpen(true)}
                     data-testid="record-sms"
                     data-tour="record-sms"
-                >
-                    <MessageSquareText className="imcrm-h-4 imcrm-w-4" />
-                </Button>
+                />
             ) : (
                 <Button variant="outline" className="imcrm-gap-2" onClick={() => setOpen(true)} data-testid="record-sms" data-tour="record-sms">
                     <MessageSquareText className="imcrm-h-4 imcrm-w-4" />

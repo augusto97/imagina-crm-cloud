@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { useLocation, useNavigate } from 'react-router';
@@ -16,10 +16,10 @@ import {
     FileText,
     Loader2,
     MessageSquare,
-    MoreHorizontal,
     Paintbrush,
     Save,
     Trash2,
+    X,
 } from 'lucide-react';
 
 import { ActivityPanel } from '@/admin/activity/ActivityPanel';
@@ -30,7 +30,6 @@ import { useToast } from '@/components/ui/toast';
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import {
     Sheet,
-    SheetCloseButton,
     SheetDescription,
     SheetFooter,
     SheetTitle,
@@ -55,18 +54,12 @@ import type { RecordEntity } from '@/types/record';
 
 import { PortalAccessButton } from './crm/PortalAccessButton';
 import { RecordFollowControls } from '@/admin/mywork/RecordFollowControls';
-import { GeneratePdfButton } from '@/admin/documents/GeneratePdfButton';
-import { RecordQrButton } from '@/admin/qr/RecordQrButton';
-import { RecordEditLinkButton } from '@/admin/forms/RecordEditLinkButton';
-import { RecordShareButton } from '@/admin/guests/RecordShareButton';
 import { useIsGuest } from '@/lib/guest';
 import { useGuestAccess } from '@/hooks/useGuests';
 import { IssuedDocumentsSection } from '@/admin/documents/IssuedDocuments';
 import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
 import { RecordSignaturesPanel } from '@/admin/signatures/RecordSignaturesPanel';
 import { RecordSubscriptionPanel } from '@/cloud/components/subscriptions/RecordSubscriptionPanel';
-import { SendWhatsappButton } from '@/cloud/components/whatsapp/SendWhatsappButton';
-import { SendSmsButton } from '@/cloud/components/sms/SendSmsButton';
 import { RecordDataConsentLine } from '@/cloud/components/RecordDataConsentLine';
 import { RecordBacklinks } from './RecordBacklinks';
 import { RecordDescription, useDescriptionDraft } from './description/RecordDescription';
@@ -78,9 +71,11 @@ import { RecordApprovals } from '@/admin/approvals/RecordApprovals';
 import { RecordBookingPanel } from '@/admin/booking/RecordBookingPanel';
 import { RecordShopOrderPanel } from '@/admin/shop/RecordShopOrderPanel';
 import { RecordAgentProposals } from '@/admin/agents/AgentProposals';
-import { RecordAgentRuns, RecordAiSummaryCard, RecordAskAgentButton } from './ai/RecordAi';
+import { RecordAgentRuns, RecordAiSummaryCard } from './ai/RecordAi';
 import { RecordChecklists } from './checklists/RecordChecklists';
-import { SaveRecordAsTemplateButton } from './templates/SaveRecordAsTemplateButton';
+import { RecordAction, RecordActionGroup, RecordActionsMenu } from './actions/RecordAction';
+import { RecordActionItems } from './actions/RecordActionItems';
+import { Tip } from '@/components/ui/tooltip';
 import { TimeTrackingPanel } from './time/TimeTrackingPanel';
 import { RecordTitleInput } from './RecordTitleInput';
 import { lockedReasonsFor, mirrorSourceOf, recordGoneInSource, useStoreRules } from './storeRules';
@@ -293,7 +288,6 @@ export function RecordDetailDrawer({
     // Con muchas acciones y poco ancho, van en un «…»: la ficha diseñada suma
     // botones a la barra (guardado, diseñar, eliminar) y los agrupa antes; la
     // simple, sólo en el teléfono (donde ya no entraban).
-    const compactBar = useMediaQuery('(max-width: 1279px)');
     const phoneBar = useMediaQuery('(max-width: 639px)');
     const canManageLists = useCanAny(CAP.MANAGE_LISTS);
     const impersonating = useSession((s) => s.impersonating !== undefined && s.impersonating !== null);
@@ -532,25 +526,57 @@ export function RecordDetailDrawer({
     };
     const canDeleteHere = !((storeRules && !goneInSource) || isGuest);
 
-    // Las acciones del registro (seguir, PDF, QR, WhatsApp, compartir…).
-    const actionNodes = (
-        <>
-            {!isGuest && <RecordFollowControls listId={listId} recordId={record.id} compact />}
-            {/* v0.1.456 — pedirle a un agente de IA que trabaje en este registro. */}
-            {!isGuest && <RecordAskAgentButton listId={listId} recordId={record.id} compact />}
-            {!isGuest && <GeneratePdfButton listId={listId} listSlug={listSlug} recordId={record.id} fields={fields} compact />}
-            {!isGuest && (
-                <RecordQrButton listId={listId} recordId={record.id} fields={fields} listSettings={listSettings} compact />
-            )}
-            {!isGuest && <RecordEditLinkButton listId={listId} recordId={record.id} compact />}
-            {!isGuest && <SendWhatsappButton listId={listId} recordId={record.id} compact />}
-            {!isGuest && <SendSmsButton listId={listId} recordId={record.id} compact />}
-            {/* C6 — «Guardar como plantilla» (no en listas de una tienda ni para un invitado). */}
-            {!storeRules && !isGuest && (
-                <SaveRecordAsTemplateButton listId={listId} listSlug={listSlug} recordId={record.id} title={title} compact />
-            )}
-            <RecordShareButton listId={listId} recordId={record.id} compact />
-        </>
+    // v0.1.471 — Las acciones del registro: «Seguir» y «Recordarme» quedan a la
+    // vista (dicen el estado); el resto va en el menú «Acciones», cada una con su
+    // nombre y para qué sirve. En el teléfono, todo va en el menú.
+    const deleteLabel = goneInSource ? __('Quitar de la app') : __('Eliminar');
+    const deleteHint = goneInSource
+        ? __('Ya se borró en el sitio o la tienda: lo quita sólo de aquí')
+        : __('Va a la papelera: lo recuperas durante 30 días');
+    const designHint = __('Elige qué se ve y cómo, para todos los registros de esta lista');
+    const actionsBar = (
+        <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-0.5" data-tour="record-toolbar">
+            {!phoneBar && !isGuest && <RecordFollowControls listId={listId} recordId={record.id} compact />}
+            <RecordActionsMenu open={moreOpen} onOpenChange={setMoreOpen} scopeRef={contentRef} showLabel={!phoneBar}>
+                <RecordActionItems
+                    listId={listId}
+                    listSlug={listSlug}
+                    recordId={record.id}
+                    fields={fields}
+                    listSettings={listSettings}
+                    title={title}
+                    isGuest={isGuest}
+                    storeRules={Boolean(storeRules)}
+                    includeFollow={phoneBar}
+                    extra={
+                        phoneBar && designed && (canDesign || canDeleteHere) ? (
+                            <RecordActionGroup title={__('Esta ficha')}>
+                                {canDesign && (
+                                    <RecordAction
+                                        icon={<Paintbrush className="imcrm-h-4 imcrm-w-4" />}
+                                        label={__('Diseñar esta ficha')}
+                                        hint={designHint}
+                                        onClick={() => void openDesigner()}
+                                        data-testid="imcrm-record-design"
+                                    />
+                                )}
+                                {canDeleteHere && (
+                                    <RecordAction
+                                        icon={<Trash2 className="imcrm-h-4 imcrm-w-4" />}
+                                        label={deleteLabel}
+                                        hint={deleteHint}
+                                        tone="danger"
+                                        onClick={() => void handleDelete()}
+                                        disabled={remove.isPending}
+                                        data-testid="imcrm-record-delete"
+                                    />
+                                )}
+                            </RecordActionGroup>
+                        ) : undefined
+                    }
+                />
+            </RecordActionsMenu>
+        </div>
     );
 
     const skeleton = (h: string): JSX.Element => (
@@ -606,30 +632,24 @@ export function RecordDetailDrawer({
                         <div className="imcrm-flex imcrm-h-12 imcrm-shrink-0 imcrm-items-center imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-px-4">
                             {onNavigate && (
                                 <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center">
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="imcrm-h-8 imcrm-w-8"
+                                    <RecordAction
+                                        icon={<ChevronUp className="imcrm-h-4 imcrm-w-4" />}
+                                        label={__('Registro anterior')}
+                                        hint={__('El de arriba en la lista')}
+                                        shortcut={__('K o ↑')}
                                         disabled={!canPrev}
                                         onClick={() => navRef.current.go(-1)}
-                                        aria-label={__('Registro anterior (K o ↑)')}
-                                        title={__('Registro anterior (K o ↑)')}
                                         data-testid="imcrm-record-prev"
-                                    >
-                                        <ChevronUp className="imcrm-h-4 imcrm-w-4" />
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="imcrm-h-8 imcrm-w-8"
+                                    />
+                                    <RecordAction
+                                        icon={<ChevronDown className="imcrm-h-4 imcrm-w-4" />}
+                                        label={__('Registro siguiente')}
+                                        hint={__('El de abajo en la lista')}
+                                        shortcut={__('J o ↓')}
                                         disabled={!canNext}
                                         onClick={() => navRef.current.go(1)}
-                                        aria-label={__('Registro siguiente (J o ↓)')}
-                                        title={__('Registro siguiente (J o ↓)')}
                                         data-testid="imcrm-record-next"
-                                    >
-                                        <ChevronDown className="imcrm-h-4 imcrm-w-4" />
-                                    </Button>
+                                    />
                                 </div>
                             )}
                             <SheetDescription className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate imcrm-text-[13px] imcrm-text-muted-foreground">
@@ -651,56 +671,51 @@ export function RecordDetailDrawer({
                                 )}
                             </span>
                             {designed && <AutosaveStatus saving={designedSaving} />}
-                            {view.ready && ((designed ? compactBar : phoneBar) ? (
-                                <ActionsOverflow open={moreOpen} onOpenChange={setMoreOpen} contentRef={contentRef}>
-                                    {actionNodes}
-                                </ActionsOverflow>
-                            ) : (
-                                <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-2" data-tour="record-toolbar">
-                                    {actionNodes}
-                                </div>
-                            ))}
-                            {designed && canDesign && (
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="imcrm-h-8 imcrm-shrink-0 imcrm-gap-1.5 imcrm-px-2"
-                                    onClick={() => void openDesigner()}
-                                    title={__('Diseñar esta ficha')}
-                                    aria-label={__('Diseñar esta ficha')}
-                                    data-tour="record-modal-design"
-                                    data-testid="imcrm-record-design"
-                                >
-                                    <Paintbrush className="imcrm-h-4 imcrm-w-4" />
-                                    <span className="imcrm-hidden xl:imcrm-inline">{__('Diseñar esta ficha')}</span>
-                                </Button>
+                            {view.ready && actionsBar}
+                            {designed && canDesign && !phoneBar && (
+                                <Tip label={__('Diseñar esta ficha')} hint={designHint}>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="imcrm-h-8 imcrm-shrink-0 imcrm-gap-1.5 imcrm-px-2"
+                                        onClick={() => void openDesigner()}
+                                        aria-label={__('Diseñar esta ficha')}
+                                        data-tour="record-modal-design"
+                                        data-testid="imcrm-record-design"
+                                    >
+                                        <Paintbrush className="imcrm-h-4 imcrm-w-4" />
+                                        <span className="imcrm-hidden lg:imcrm-inline">{__('Diseñar esta ficha')}</span>
+                                    </Button>
+                                </Tip>
                             )}
-                            {designed && canDeleteHere && (
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="imcrm-h-8 imcrm-w-8 imcrm-shrink-0 imcrm-text-destructive hover:imcrm-text-destructive"
+                            {designed && canDeleteHere && !phoneBar && (
+                                <RecordAction
+                                    icon={<Trash2 className="imcrm-h-4 imcrm-w-4" />}
+                                    label={deleteLabel}
+                                    hint={deleteHint}
+                                    tone="danger"
                                     onClick={() => void handleDelete()}
                                     disabled={remove.isPending}
-                                    aria-label={goneInSource ? __('Quitar de la app') : __('Eliminar')}
-                                    title={goneInSource ? __('Quitar de la app') : __('Eliminar')}
                                     data-testid="imcrm-record-delete"
-                                >
-                                    <Trash2 className="imcrm-h-4 imcrm-w-4" />
-                                </Button>
+                                />
                             )}
                             {listSlug !== undefined && (
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    aria-label={__('Abrir página completa')}
-                                    title={__('Abrir página completa')}
+                                <RecordAction
+                                    icon={<ExternalLink className="imcrm-h-4 imcrm-w-4" />}
+                                    label={__('Abrir página completa')}
+                                    hint={__('El registro en su propia página, con una dirección para compartir')}
                                     onClick={() => void openFullPage()}
-                                >
-                                    <ExternalLink className="imcrm-h-4 imcrm-w-4" />
-                                </Button>
+                                    data-testid="imcrm-record-open-page"
+                                />
                             )}
-                            <SheetCloseButton />
+                            <Tip label={__('Cerrar')} shortcut="Esc">
+                                <DialogPrimitive.Close
+                                    className="imcrm-inline-flex imcrm-h-8 imcrm-w-8 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground focus-visible:imcrm-outline-none focus-visible:imcrm-ring-2 focus-visible:imcrm-ring-ring"
+                                    aria-label={__('Cerrar')}
+                                >
+                                    <X className="imcrm-h-4 imcrm-w-4" />
+                                </DialogPrimitive.Close>
+                            </Tip>
                         </div>
 
                         {side === 'tabs' && (
@@ -1057,17 +1072,18 @@ export function RecordDetailDrawer({
 
                             {/* Botón flotante para re-expandir el aside colapsado. */}
                             {side === 'aside' && !asideOpen && (
+                                <Tip label={__('Mostrar comentarios y actividad')} side="left">
                                 <button
                                     type="button"
                                     onClick={toggleAside}
                                     aria-expanded={false}
-                                    aria-label={__('Ampliar')}
-                                    title={__('Ampliar')}
+                                    aria-label={__('Mostrar comentarios y actividad')}
                                     data-tour="record-side"
                                     className="imcrm-absolute imcrm-right-2 imcrm-top-2 imcrm-z-10 imcrm-inline-flex imcrm-h-7 imcrm-w-7 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground imcrm-transition-colors"
                                 >
                                     <ChevronsLeft className="imcrm-h-4 imcrm-w-4" aria-hidden />
                                 </button>
+                                </Tip>
                             )}
 
                             {/* ——— Aside derecho colapsable: Comentarios / Actividad ——— */}
@@ -1086,16 +1102,17 @@ export function RecordDetailDrawer({
                                  * mientras el width del aside anima. */}
                                 <div className="imcrm-flex imcrm-h-full imcrm-min-h-0 imcrm-flex-col lg:imcrm-w-[380px]" data-tour={asideOpen ? 'record-side' : undefined}>
                                     <div className="imcrm-flex imcrm-h-9 imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-border-b imcrm-border-border imcrm-px-2">
-                                        <button
-                                            type="button"
-                                            onClick={toggleAside}
-                                            aria-expanded
-                                            aria-label={__('Contraer')}
-                                            title={__('Contraer')}
-                                            className="imcrm-inline-flex imcrm-h-7 imcrm-w-7 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground imcrm-transition-colors"
-                                        >
-                                            <ChevronsRight className="imcrm-h-4 imcrm-w-4" aria-hidden />
-                                        </button>
+                                        <Tip label={__('Ocultar comentarios y actividad')} hint={__('La ficha usa todo el ancho')}>
+                                            <button
+                                                type="button"
+                                                onClick={toggleAside}
+                                                aria-expanded
+                                                aria-label={__('Ocultar comentarios y actividad')}
+                                                className="imcrm-inline-flex imcrm-h-7 imcrm-w-7 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground imcrm-transition-colors"
+                                            >
+                                                <ChevronsRight className="imcrm-h-4 imcrm-w-4" aria-hidden />
+                                            </button>
+                                        </Tip>
                                         <span className="imcrm-text-xs imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
                                             {__('Actividad')}
                                         </span>
@@ -1162,68 +1179,6 @@ function AutosaveStatus({ saving }: { saving: boolean }): JSX.Element {
             )}
             <span className="imcrm-hidden sm:imcrm-inline">{saving ? __('Guardando…') : __('Guardado')}</span>
         </span>
-    );
-}
-
-/**
- * v0.1.470 — Las acciones del registro en un «…» cuando no caben en la barra.
- * El panel queda MONTADO aunque esté cerrado: un diálogo que se abre desde una
- * de sus acciones (el QR, el WhatsApp) no se cierra al plegarlo. Un click en
- * otra parte de la ficha lo pliega; uno en una capa flotante (un menú, un
- * diálogo que abrió una acción) no.
- */
-function ActionsOverflow({
-    open,
-    onOpenChange,
-    contentRef,
-    children,
-}: {
-    open: boolean;
-    onOpenChange: (open: boolean) => void;
-    contentRef: React.RefObject<HTMLDivElement>;
-    children: ReactNode;
-}): JSX.Element {
-    const wrapRef = useRef<HTMLDivElement>(null);
-    useEffect(() => {
-        if (!open) return;
-        const onDown = (e: PointerEvent): void => {
-            const t = e.target as Node | null;
-            if (!t || wrapRef.current?.contains(t)) return;
-            // Sólo un click dentro de la ficha (fuera del panel) lo pliega.
-            if (contentRef.current?.contains(t)) onOpenChange(false);
-        };
-        document.addEventListener('pointerdown', onDown, true);
-        return () => document.removeEventListener('pointerdown', onDown, true);
-    }, [open, onOpenChange, contentRef]);
-    return (
-        <div ref={wrapRef} className="imcrm-relative imcrm-shrink-0" data-tour="record-toolbar">
-            <Button
-                variant="ghost"
-                size="icon"
-                className="imcrm-h-8 imcrm-w-8"
-                aria-label={__('Más acciones')}
-                title={__('Más acciones')}
-                aria-expanded={open}
-                aria-haspopup="true"
-                onClick={() => onOpenChange(!open)}
-                data-testid="imcrm-record-more"
-            >
-                <MoreHorizontal className="imcrm-h-4 imcrm-w-4" />
-            </Button>
-            <div
-                className={cn(
-                    // En el teléfono, a lo ancho bajo la barra (anclado al «…»
-                    // se salía por la izquierda); desde sm, colgado del «…».
-                    'imcrm-fixed imcrm-inset-x-3 imcrm-top-12 imcrm-z-30 imcrm-mt-1 sm:imcrm-absolute sm:imcrm-inset-x-auto sm:imcrm-right-0 sm:imcrm-top-full sm:imcrm-w-max sm:imcrm-max-w-[300px]',
-                    'imcrm-flex-wrap imcrm-items-center imcrm-gap-1.5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-popover imcrm-p-2 imcrm-shadow-imcrm-lg',
-                    open ? 'imcrm-flex' : 'imcrm-hidden',
-                )}
-                data-imcrm-floating-menu={open ? '' : undefined}
-                data-testid="imcrm-record-more-panel"
-            >
-                {children}
-            </div>
-        </div>
     );
 }
 

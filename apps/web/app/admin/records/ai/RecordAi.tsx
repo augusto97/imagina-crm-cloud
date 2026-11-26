@@ -12,6 +12,7 @@ import { __, sprintf } from '@/lib/i18n';
 import { lazyWithReload } from '@/lib/lazyWithReload';
 import { CAP, useCan } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
+import { RecordAction } from '@/admin/records/actions/RecordAction';
 
 /**
  * v0.1.456 (ADR-S109) — ¿Esta persona puede usar la IA en la ficha?
@@ -219,9 +220,14 @@ export function RecordAskAgentButton({ listId, recordId, compact = false }: { li
     return (
         <>
             {compact ? (
-                <Button variant="ghost" size="icon" aria-label={label} title={label} onClick={() => setOpen(true)} data-testid="record-ask-agent" data-tour="record-ask-agent">
-                    <Bot className="imcrm-h-4 imcrm-w-4" />
-                </Button>
+                <RecordAction
+                    icon={<Bot className="imcrm-h-4 imcrm-w-4" />}
+                    label={label}
+                    hint={__('Un agente de IA trabaja en este registro con lo que le pidas')}
+                    onClick={() => setOpen(true)}
+                    data-testid="record-ask-agent"
+                    data-tour="record-ask-agent"
+                />
             ) : (
                 <Button variant="ghost" size="sm" className="imcrm-gap-2" onClick={() => setOpen(true)} data-testid="record-ask-agent" data-tour="record-ask-agent">
                     <Bot className="imcrm-h-4 imcrm-w-4" />

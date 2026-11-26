@@ -53,12 +53,15 @@ export const articles: LearnArticle[] = [
                 rows: [
                     { name: 'Seguir (el ojo)', what: 'Te avisa de los comentarios y cambios de este registro en la campana.' },
                     { name: 'Recordarme (el reloj)', what: 'Un recordatorio para ti sobre este registro: en 1 hora, mañana, el lunes…' },
-                    { name: 'Generar PDF', what: 'Un documento PDF con los datos del registro (una cuenta de cobro, una cotización).' },
-                    { name: 'Enviar WhatsApp', what: 'Aparece si la empresa tiene WhatsApp Business conectado.' },
-                    { name: 'Guardar como plantilla', what: 'Convierte este registro en una plantilla para crear otros iguales.' },
-                    { name: 'Compartir este registro', what: 'Invita a alguien de afuera a ver sólo este registro.' },
+                    { name: 'Acciones', what: 'El menú con todo lo que puedes hacer con el registro, cada cosa con su nombre y para qué sirve: enviar un WhatsApp o un SMS, compartirlo con alguien de afuera, el enlace para que la persona corrija sus datos, el código QR, generar un PDF, guardarlo como plantilla y pedirle algo a un agente de IA.' },
+                    { name: 'Anterior y siguiente', what: 'Pasan al registro de arriba o de abajo en la lista (también con K o ↑ y J o ↓).' },
                     { name: 'Abrir página completa', what: 'Pasa del modal a la página del registro.' },
                 ],
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                md: 'Pasa el mouse por cualquier ícono de la barra: enseguida aparece su nombre y para qué sirve (y su atajo de teclado, si tiene).',
             },
             {
                 t: 'p',
@@ -67,7 +70,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Si la lista usa la ficha diseñada' },
             {
                 t: 'p',
-                md: 'El modal muestra **la misma ficha diseñada** que la página completa: su portada, sus pestañas y sus gráficos. Cada cambio **se guarda solo** y la barra de arriba dice **Guardando…** y después **Guardado** (no hay **Guardar cambios**). Si cierras o pasas al registro siguiente mientras se guarda, primero termina de guardar.\n\nLas acciones del registro (seguir, PDF, QR, WhatsApp, compartir…) van en la barra de arriba; si no caben, en el botón **…**. **Eliminar** también está arriba. Si el diseño ya trae la conversación (un bloque de actividad o de comentarios), no hay panel al costado; si no, el panel de **Comentarios** y **Actividad** sigue ahí.\n\nQuien administra la lista ve además **Diseñar esta ficha**: abre el editor con ese registro de ejemplo y, al salir, vuelves a él.',
+                md: 'El modal muestra **la misma ficha diseñada** que la página completa: su portada, sus pestañas y sus gráficos. Cada cambio **se guarda solo** y la barra de arriba dice **Guardando…** y después **Guardado** (no hay **Guardar cambios**). Si cierras o pasas al registro siguiente mientras se guarda, primero termina de guardar.\n\nArriba quedan **Seguir**, **Recordarme** y el menú **Acciones** (PDF, QR, WhatsApp, compartir…). **Eliminar** también está arriba; en el celular, junto con **Seguir** y **Recordarme**, va dentro de **Acciones**. Si el diseño ya trae la conversación (un bloque de actividad o de comentarios), no hay panel al costado; si no, el panel de **Comentarios** y **Actividad** sigue ahí.\n\nQuien administra la lista ve además **Diseñar esta ficha**: abre el editor con ese registro de ejemplo y, al salir, vuelves a él.',
             },
             { t: 'h', text: 'En el celular' },
             {
@@ -502,7 +505,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'steps',
                 items: [
-                    'Abre un registro que esté como quieres repetirlo y toca **Guardar como plantilla** (el ícono del marcador con +).',
+                    'Abre un registro que esté como quieres repetirlo; en **Acciones**, toca **Guardar como plantilla**.',
                     'Ponle **Nombre** y, si quieres, una **Descripción (opcional)**.',
                     'En **Incluir** marca qué lleva: **Los valores de los campos** (las fechas pasan a ser relativas a hoy: +N días), **Sus subtareas** (con responsable y fechas), **Sus checklists** (los ítems quedan sin marcar) y **La descripción**.',
                     'Toca **Guardar plantilla**.',
@@ -558,7 +561,7 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'La barra de arriba de la ficha reúne las acciones que se hacen **sobre** el registro: seguirlo para enterarte de todo, pedir que la app te lo recuerde, generar un PDF, compartirlo con alguien de afuera, darle acceso al cliente a su portal y pedir una aprobación.',
+                md: 'La barra de arriba de la ficha reúne las acciones que se hacen **sobre** el registro. **Seguir** (el ojo) y **Recordarme** (el reloj) quedan a la vista; lo demás está en el menú **Acciones**, cada cosa con su nombre y una línea que dice para qué sirve: generar un PDF, compartirlo con alguien de afuera, mandarle un WhatsApp, el código QR… El acceso del cliente a su portal y las aprobaciones tienen su propia sección dentro de la ficha.',
             },
             { t: 'anim', key: 'ficha-acciones', caption: 'Seguir el registro, programar un recordatorio y generar su PDF desde la barra de la ficha.' },
             { t: 'h', text: 'Seguir un registro' },
@@ -580,12 +583,12 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Generar PDF' },
             {
                 t: 'p',
-                md: 'Toca **Generar PDF** y elige la plantilla de documento (una cuenta de cobro, una cotización, un recibo). Para cada una puedes **Ver** (revisar sin emitir número), **Descargar** (la primera vez lo emite y lo congela), **Copiar enlace (30 días)** o **Guardar en** un campo de archivo. Las plantillas se diseñan en **Configurar lista → Documentos**.',
+                md: 'Abre **Acciones**, toca **Generar PDF** y elige la plantilla de documento (una cuenta de cobro, una cotización, un recibo). Para cada una puedes **Ver** (revisar sin emitir número), **Descargar** (la primera vez lo emite y lo congela), **Copiar enlace (30 días)** o **Guardar en** un campo de archivo. Las plantillas se diseñan en **Configurar lista → Documentos**.',
             },
             { t: 'h', text: 'Compartir este registro con alguien de afuera' },
             {
                 t: 'p',
-                md: 'El ícono de la persona con **+** abre **Compartir este registro**: invitas por email a alguien que no es de tu equipo (un proveedor, un socio) a ver **sólo** ese registro, sin nada más de la empresa. No ocupa un usuario de tu plan. Desde ahí también le cambias el nivel o le quitas el acceso.',
+                md: 'En **Acciones**, **Compartir con alguien de afuera** abre **Compartir este registro**: invitas por email a alguien que no es de tu equipo (un proveedor, un socio) a ver **sólo** ese registro, sin nada más de la empresa. No ocupa un usuario de tu plan. Desde ahí también le cambias el nivel o le quitas el acceso.',
             },
             { t: 'h', text: 'Acceso al portal del cliente' },
             {
