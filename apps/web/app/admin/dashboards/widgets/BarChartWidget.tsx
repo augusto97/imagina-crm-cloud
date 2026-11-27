@@ -21,7 +21,8 @@ import {
     type ChartSort,
 } from './useChartColors';
 import { formatMetricValue } from './widgetFormat';
-import { CompareBadge, RowDelta, rowCompareTitle } from './CompareParts';
+import { CompareBadge, RowDelta } from './CompareParts';
+import { compareTipRows, openHint, shareText, useChartTip, type ChartTip } from './ChartTip';
 import { isAdditiveMetric, isReadyCompare, previousByKey, previousTotal, widgetCompareOf, type ReadyCompare } from './compareView';
 import { useSegmentNav } from './useSegmentNav';
 import { AverageBadge, AVG_LINE_COLOR, useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
@@ -95,6 +96,8 @@ export function BarChartWidget({ dashboardId, widget }: BarChartWidgetProps): JS
     const compare = widgetCompareOf(data.data);
     const ready = isReadyCompare(compare) ? compare : null;
     const before = previousByKey(ready);
+    // v0.1.474 — el recuadro al pasar el mouse sale al instante.
+    const tip = useChartTip();
     const total = ready && isAdditiveMetric(metric)
         ? { current: rows.reduce((s, r) => s + r.value, 0), previous: previousTotal(ready, rows.reduce((s, r) => s + (before.get(r.label) ?? 0), 0)) }
         : null;
@@ -130,6 +133,7 @@ export function BarChartWidget({ dashboardId, widget }: BarChartWidgetProps): JS
                 right={compare ? <CompareBadge compare={compare} total={total} format={fmt} /> : showAvg && avg !== null ? <AverageBadge value={avg} format={fmt} /> : null}
             />
 
+            {tip.layer}
             {/* Sin justify-center en el scroll container: con muchas filas
               * + overflow, centraría recortando las primeras (inaccesibles).
               * El centrado vertical lo hace el my-auto del contenido. */}
@@ -142,9 +146,9 @@ export function BarChartWidget({ dashboardId, widget }: BarChartWidgetProps): JS
                     <WidgetError error={data.error} />
                 ) : rows.length > 0 ? (
                     vertical ? (
-                        <ColumnBars rows={rows} showAvg={showAvg} colorMap={colorMap} labelMap={labelMap} onSegment={onSegment} format={fmt} compare={ready} before={before} />
+                        <ColumnBars rows={rows} showAvg={showAvg} colorMap={colorMap} labelMap={labelMap} onSegment={onSegment} format={fmt} compare={ready} before={before} tip={tip} />
                     ) : (
-                        <BarRows rows={rows} showAvg={showAvg} colorMap={colorMap} labelMap={labelMap} onSegment={onSegment} format={fmt} compare={ready} before={before} />
+                        <BarRows rows={rows} showAvg={showAvg} colorMap={colorMap} labelMap={labelMap} onSegment={onSegment} format={fmt} compare={ready} before={before} tip={tip} />
                     )
                 ) : (
                     <p className="imcrm-text-center imcrm-text-xs imcrm-text-muted-foreground">
@@ -177,6 +181,7 @@ function BarRows({
     format,
     compare,
     before,
+    tip,
 }: {
     rows: Array<{ label: string; value: number; others?: number }>;
     showAvg: boolean;
@@ -188,6 +193,7 @@ function BarRows({
     /** v0.1.462 — con «Comparar con…»: la barra de antes debajo. */
     compare: ReadyCompare | null;
     before: Map<string, number | null>;
+    tip: ChartTip;
 }): JSX.Element {
     const max = Math.max(...rows.map((r) => Math.max(r.value, compare ? (before.get(r.label) ?? 0) : 0)), 1);
     const total = rows.reduce((sum, r) => sum + r.value, 0) || 1;
@@ -211,12 +217,20 @@ function BarRows({
                         <li
                             key={row.label}
                             className={`imcrm-group/bar imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded imcrm-text-xs${navigable ? ' imcrm-cursor-pointer hover:imcrm-bg-accent/40' : ''}`}
-                            title={compare
-                                ? `${rowCompareTitle(compare, name, row.value, before.get(row.label), format)}${navigable ? `\n${__('Click para ver los registros')}` : ''}`
-                                : navigable
-                                    ? `${name}: ${format(row.value)} — ${__('click para ver los registros')}`
-                                    : `${name}: ${format(row.value)} (${sharePct.toFixed(1)}%)`}
-                            onClick={navigable && onSegment !== null ? () => onSegment(row.label) : undefined}
+                            aria-label={`${name}: ${format(row.value)}`}
+                            data-testid="imcrm-bar-row"
+                            {...tip.bind(
+                                row.label,
+                                () => ({
+                                    title: name,
+                                    subtitle: compare?.label,
+                                    rows: compare
+                                        ? compareTipRows(compare, row.value, before.get(row.label), format)
+                                        : [{ color, value: format(row.value) }, { label: __('Del total'), value: shareText(row.value, total) }],
+                                    hint: openHint(navigable),
+                                }),
+                                navigable && onSegment !== null ? () => onSegment(row.label) : null,
+                            )}
                         >
                             <span className="imcrm-w-28 imcrm-shrink-0 imcrm-truncate imcrm-text-muted-foreground">
                                 {name}
@@ -288,6 +302,7 @@ function ColumnBars({
     format,
     compare,
     before,
+    tip,
 }: {
     rows: Array<{ label: string; value: number; others?: number }>;
     showAvg: boolean;
@@ -297,8 +312,10 @@ function ColumnBars({
     format: (n: number) => string;
     compare: ReadyCompare | null;
     before: Map<string, number | null>;
+    tip: ChartTip;
 }): JSX.Element {
     const max = Math.max(...rows.map((r) => Math.max(r.value, compare ? (before.get(r.label) ?? 0) : 0)), 1);
+    const colTotal = rows.reduce((sum, r) => sum + r.value, 0) || 1;
     const avg = rows.reduce((sum, r) => sum + r.value, 0) / rows.length;
     return (
         <div className="imcrm-h-full imcrm-overflow-x-auto" data-testid="imcrm-column-bars">
@@ -311,10 +328,20 @@ function ColumnBars({
                         <div
                             key={row.label}
                             className={`imcrm-group/col imcrm-flex imcrm-min-w-[28px] imcrm-flex-1 imcrm-flex-col imcrm-gap-1${navigable ? ' imcrm-cursor-pointer' : ''}`}
-                            title={compare
-                                ? `${rowCompareTitle(compare, name, row.value, before.get(row.label), format)}${navigable ? `\n${__('Click para ver los registros')}` : ''}`
-                                : navigable ? `${name}: ${format(row.value)} — ${__('click para ver los registros')}` : `${name}: ${format(row.value)}`}
-                            onClick={navigable && onSegment !== null ? () => onSegment(row.label) : undefined}
+                            aria-label={`${name}: ${format(row.value)}`}
+                            data-testid="imcrm-column-bar"
+                            {...tip.bind(
+                                row.label,
+                                () => ({
+                                    title: name,
+                                    subtitle: compare?.label,
+                                    rows: compare
+                                        ? compareTipRows(compare, row.value, before.get(row.label), format)
+                                        : [{ color, value: format(row.value) }, { label: __('Del total'), value: shareText(row.value, colTotal) }],
+                                    hint: openHint(navigable),
+                                }),
+                                navigable && onSegment !== null ? () => onSegment(row.label) : null,
+                            )}
                         >
                             <span className="imcrm-truncate imcrm-text-center imcrm-text-[10px] imcrm-font-semibold imcrm-tabular-nums imcrm-text-foreground">
                                 {format(row.value)}

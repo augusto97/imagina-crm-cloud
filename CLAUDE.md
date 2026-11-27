@@ -17907,6 +17907,51 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         en celular 390×844 oscuro con el dedo, llegar al final sin mover la
         ficha, volver a subir, elegir la última opción la guarda, la ficha
         misma sigue scrolleando, la tabla sin cambios; 10/15 sin el arreglo).
+  - [x] **El período del tablero filtra todos los gráficos, recuadro al
+        instante y columnas verticales (v0.1.474, addendum ADR-S113, reporte
+        del usuario: "mi dashboard no está filtrando por fecha desde el
+        selector de arriba… al pasar el mouse por un gráfico se demora mucho
+        en aparecer la información… los gráficos en vertical no sé cuáles
+        son")**. Sin migración. (a) **Qué fecha filtra cada widget**:
+        `widgetPeriodField` (shared,
+        `packages/shared/src/dashboard-report/period-field.ts`, la misma regla
+        en el servidor y en la interfaz): el campo del período del widget → su
+        fecha (tendencia, delta, pronóstico) → **el campo por el que agrupa si
+        es fecha** (antes un gráfico «ventas por mes» sin período propio
+        quedaba fuera del período del tablero) → el desglose si es fecha → la
+        fecha elegida en el tablero para su lista (`settings.period_fields`,
+        `readDashboardPeriodFields`/`writeDashboardPeriodFields`). Sólo tipos
+        de fecha que quien mira ve; sin período del tablero no cambia nada.
+        `DashboardsService.effectivePeriod` lo usa en el bundle, la vista
+        previa del widget, el tablero público y el correo programado; los
+        informes sólo la fecha de agrupación. (b) **«N widgets sin fecha»**
+        junto al período (`DashboardPeriodFields.tsx`,
+        `data-tour="dashboard-period-fields"`): por lista, qué fecha filtra
+        sus indicadores, donas y tablas, con la sugerida por nombre
+        (`suggestPeriodField`: pago, venta, cierre, factura…; nunca
+        nacimiento) y «Usar la fecha sugerida»; lo elige quien edita y queda
+        para todos («Fecha de cada lista» cuando ya están todas); quien no
+        edita lo lee. (c) **Recuadro al instante** (`widgets/ChartTip.tsx`,
+        `useChartTip`): reemplaza el `title` del navegador en barras,
+        columnas, dona, embudo, línea y pronóstico: aparece al entrar el
+        mouse (≈60 ms medido), muestra el valor y la parte del total (o
+        ahora/antes/diferencia si compara), va por portal y no vuelve a
+        dibujar el gráfico al moverse; en táctil el primer toque lo muestra y
+        el segundo abre los registros. La línea gana zonas de toque por punto
+        y una guía vertical. (d) **Columnas**: «Gráfico de columnas
+        (verticales)» en el tipo del widget, «Cómo se dibuja» con dos
+        tarjetas (Columnas / Barras, `data-tour="widget-orientation"`) y un
+        gráfico de barras nuevo agrupado por una fecha arranca en columnas.
+        Ayuda: guía nueva `dashboard-period`, Aprende → Tableros al día
+        (también decía que un gráfico por fecha no se abría con un clic:
+        sí se abre, con los registros de ese mes) y novedad con carrusel.
+        Tests: `period-field.test` (14) en shared, `ChartTip.test` (4) en el
+        front y el caso nuevo de `dashboards-bundle.spec` — shared 1243 — +
+        E2E navegador 26/26 en escritorio y 21/21 en celular 390×844 oscuro
+        (columnas al agrupar por fecha, recuadro en 66 ms, «Este mes» filtra
+        las columnas, «2 widgets sin fecha» con «Fecha de pago (sugerida)»,
+        el KPI pasa de 7 a 3 y sigue así al recargar, el segundo toque abre
+        los registros del mes, sin scroll lateral ni errores de JS).
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

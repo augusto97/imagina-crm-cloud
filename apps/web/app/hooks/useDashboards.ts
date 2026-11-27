@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 
+import { readDashboardPeriodFields } from '@imagina-base/shared';
 import { api } from '@/lib/api';
 import { getBootData } from '@/lib/boot';
 import { CAP, useCan, useCanAny } from '@/lib/permissions';
@@ -155,7 +156,10 @@ export function useUpdateDashboard(id: number) {
                 list?.map((d) => (d.id === id ? data : input.is_default ? { ...d, is_default: false } : d)),
             );
             // Sólo si cambió lo que se CALCULA (no en un drag/resize).
-            if (input.widgets !== undefined && widgetsDataChanged(ctx?.prev?.widgets ?? [], input.widgets)) {
+            // v0.1.474 — y si cambió la fecha elegida por lista para el período.
+            const periodFieldsChanged = input.settings !== undefined
+                && JSON.stringify([...readDashboardPeriodFields(input.settings)]) !== JSON.stringify([...readDashboardPeriodFields(ctx?.prev?.settings)]);
+            if (periodFieldsChanged || (input.widgets !== undefined && widgetsDataChanged(ctx?.prev?.widgets ?? [], input.widgets))) {
                 void qc.invalidateQueries({ queryKey: dashboardsKeys.widgetsDataOf(id) });
             }
         },

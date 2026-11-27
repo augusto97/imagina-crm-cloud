@@ -12,11 +12,11 @@ import { AverageBadge, AVG_LINE_COLOR, useWidgetSubtitle, WidgetHeader } from '.
 import { useBreakdownModel } from './BreakdownChart';
 import { BreakdownLines } from './BreakdownLines';
 import type { BreakdownPayload } from './breakdownModel';
+import { useChartTip } from './ChartTip';
 import { useSegmentNav } from './useSegmentNav';
 import { useElementSize } from './useElementSize';
 import { CompareBadge, compareLegendText } from './CompareParts';
 import {
-    compareTooltip,
     deltaView,
     diffText,
     isAdditiveMetric,
@@ -177,6 +177,10 @@ function SparkLine({
     // pueden compartir el id del gradiente (el <defs> del primero en el
     // DOM gana y el segundo puede quedar sin fill si se desmonta).
     const gradId = useId().replace(/:/g, '');
+    // v0.1.474 — recuadro al instante + línea vertical en el punto (antes,
+    // un `<title>` sobre un círculo de 3 px: tardaba y casi no se acertaba).
+    const tip = useChartTip();
+    const [hover, setHover] = useState<number | null>(null);
 
     const max = Math.max(...rows.map((r) => r.value), 1);
     const min = 0;
@@ -275,18 +279,19 @@ function SparkLine({
                             strokeLinecap="round"
                             strokeLinejoin="round"
                         />
-                        {points.map((p) => (
+                        {hover !== null && points[hover] && (
+                            <line x1={points[hover]!.x} x2={points[hover]!.x} y1={PAD_TOP} y2={baseY} stroke="hsl(var(--imcrm-border))" strokeWidth="1" />
+                        )}
+                        {points.map((p, i) => (
                             <circle
                                 key={p.label}
                                 cx={p.x}
                                 cy={p.y}
-                                r={3}
+                                r={hover === i ? 4.5 : 3}
                                 className="imcrm-fill-primary"
                                 stroke="hsl(var(--imcrm-card))"
                                 strokeWidth="1.5"
-                            >
-                                <title>{`${formatBucketLabel(p.label)}: ${format(p.value)}`}</title>
-                            </circle>
+                            />
                         ))}
                         {showLabels && points.map((p) => (
                             <text
@@ -300,8 +305,41 @@ function SparkLine({
                                 {format(p.value)}
                             </text>
                         ))}
+                        {/* Zonas anchas para pasar el mouse o tocar cada punto. */}
+                        {points.map((p, i) => {
+                            const step = points.length > 1 ? innerW / (points.length - 1) : innerW;
+                            const h = tip.bind(p.label, () => ({
+                                title: formatBucketLabel(p.label),
+                                rows: [{ value: format(p.value) }],
+                            }));
+                            return (
+                                <rect
+                                    key={`h-${p.label}`}
+                                    x={Math.max(0, p.x - step / 2)}
+                                    y={0}
+                                    width={Math.max(step, 8)}
+                                    height={height}
+                                    fill="transparent"
+                                    data-testid="imcrm-line-hit"
+                                    {...h}
+                                    onPointerEnter={(e) => {
+                                        h.onPointerEnter(e);
+                                        if (e.pointerType !== 'touch') setHover(i);
+                                    }}
+                                    onPointerLeave={(e) => {
+                                        h.onPointerLeave(e);
+                                        if (e.pointerType !== 'touch') setHover((cur) => (cur === i ? null : cur));
+                                    }}
+                                    onClick={(e) => {
+                                        h.onClick(e);
+                                        setHover(i);
+                                    }}
+                                />
+                            );
+                        })}
                     </svg>
                 )}
+                {tip.layer}
             </div>
             <div className="imcrm-flex imcrm-shrink-0 imcrm-justify-between imcrm-text-[10px] imcrm-text-muted-foreground">
                 <span>{points[0] ? formatBucketLabel(points[0].label) : null}</span>
@@ -445,8 +483,7 @@ function ComparedSparkLine({
                             ) : null,
                         )}
                         {/* Zonas para pasar el mouse o tocar cada punto. */}
-                        {points.map((p, i) => {
-                            const t = hoverText(p);
+                        {points.map((_p, i) => {
                             return (
                                 <rect
                                     key={`h-${i}`}
@@ -462,18 +499,7 @@ function ComparedSparkLine({
                                     }}
                                     onClick={() => setHover(i)}
                                     data-testid="imcrm-line-compare-hit"
-                                >
-                                    <title>
-                                        {compareTooltip({
-                                            compare,
-                                            name: pointName(p),
-                                            nowText: t.now,
-                                            beforeText: t.before,
-                                            diff: t.delta ? diffText(t.delta.diff, format) : null,
-                                            delta: t.delta?.text ?? null,
-                                        })}
-                                    </title>
-                                </rect>
+                                />
                             );
                         })}
                     </svg>

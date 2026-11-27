@@ -21,7 +21,8 @@ import {
     type ChartSort,
 } from './useChartColors';
 import { formatMetricValue } from './widgetFormat';
-import { CompareBadge, RowDelta, rowCompareTitle } from './CompareParts';
+import { compareTipRows, openHint, shareText, useChartTip } from './ChartTip';
+import { CompareBadge, RowDelta } from './CompareParts';
 import { isAdditiveMetric, isReadyCompare, previousByKey, previousTotal, widgetCompareOf, type ReadyCompare } from './compareView';
 import { useSegmentNav } from './useSegmentNav';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
@@ -137,9 +138,12 @@ function FunnelRows({
 }): JSX.Element {
     const max = Math.max(...rows.map((r) => Math.max(r.value, compare ? (before.get(r.label) ?? 0) : 0)), 1);
     const first = rows[0]?.value ?? 0;
+    // v0.1.474 — el recuadro de cada etapa, al instante (antes `title`).
+    const tip = useChartTip();
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+            {tip.layer}
             {rows.map((row, i) => {
                 const widthPct = (row.value / max) * 100;
                 // Conversión respecto de la PRIMERA etapa — la lectura
@@ -152,10 +156,22 @@ function FunnelRows({
                     <div
                         key={row.label}
                         className={`imcrm-group/stage imcrm-flex imcrm-items-center imcrm-gap-2${navigable ? ' imcrm-cursor-pointer hover:imcrm-bg-accent/40 imcrm-rounded' : ''}`}
-                        title={compare
-                            ? `${rowCompareTitle(compare, name, row.value, before.get(row.label), format)}\n${convPct.toFixed(1)}% ${__('de la primera etapa')}${navigable ? `\n${__('Click para ver los registros')}` : ''}`
-                            : `${name}: ${format(row.value)} (${convPct.toFixed(1)}% ${__('de la primera etapa')})${navigable ? ` — ${__('click para ver los registros')}` : ''}`}
-                        onClick={navigable && onSegment !== null ? () => onSegment(row.label) : undefined}
+                        data-testid="imcrm-funnel-stage"
+                        {...tip.bind(
+                            row.label,
+                            () => ({
+                                title: name,
+                                subtitle: compare?.label,
+                                rows: [
+                                    ...(compare
+                                        ? compareTipRows(compare, row.value, before.get(row.label), format)
+                                        : [{ color, value: format(row.value) }]),
+                                    { label: __('De la primera etapa'), value: shareText(row.value, first) },
+                                ],
+                                hint: openHint(navigable),
+                            }),
+                            navigable && onSegment !== null ? () => onSegment(row.label) : null,
+                        )}
                     >
                         <span className="imcrm-w-24 imcrm-shrink-0 imcrm-truncate imcrm-text-right imcrm-text-xs imcrm-text-muted-foreground">
                             {name}

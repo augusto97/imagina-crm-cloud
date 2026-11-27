@@ -165,6 +165,9 @@ export function WidgetFormDialog({
     const [stackPercent, setStackPercent] = useState(false);
     const [seriesTopN, setSeriesTopN] = useState<number>(0);
     const [barOrientation, setBarOrientation] = useState<'horizontal' | 'vertical'>('horizontal');
+    // v0.1.474 — «Columnas» elegido a mano (o guardado): al agrupar por una
+    // fecha, un gráfico de barras NUEVO pasa solo a columnas (ventas por mes).
+    const orientationChosen = useRef(false);
     const [colTopN, setColTopN] = useState<number>(0);
     const [colSort, setColSort] = useState<string>('');
     const [heatmap, setHeatmap] = useState(false);
@@ -277,6 +280,7 @@ export function WidgetFormDialog({
             setStackPercent(initial.config.stack_percent === true);
             setSeriesTopN(typeof initial.config.series_top_n === 'number' ? initial.config.series_top_n : 0);
             setBarOrientation(initial.config.bar_orientation === 'vertical' ? 'vertical' : 'horizontal');
+            orientationChosen.current = true;
             setColTopN(typeof initial.config.col_top_n === 'number' ? initial.config.col_top_n : 0);
             setColSort(typeof initial.config.col_sort === 'string' ? initial.config.col_sort : '');
             setHeatmap(initial.config.heatmap === true);
@@ -347,6 +351,7 @@ export function WidgetFormDialog({
             setStackPercent(false);
             setSeriesTopN(0);
             setBarOrientation('horizontal');
+            orientationChosen.current = false;
             setColTopN(0);
             setColSort('');
             setHeatmap(false);
@@ -386,6 +391,39 @@ export function WidgetFormDialog({
     const changeBreakdown = (id: number): void => {
         if (id > 0 && subGroupByFieldId === 0) setShowLegend(true);
         setSubGroupByFieldId(id);
+    };
+
+    // v0.1.474 — agrupar por una fecha en un gráfico de barras nuevo lo pasa a
+    // columnas (la lectura natural de «ventas por mes»), salvo que la persona
+    // ya haya elegido la orientación.
+    const changeGroupBy = (id: number): void => {
+        setGroupByFieldId(id);
+        if (type === 'chart_bar' && !orientationChosen.current && isDateField(fields.data ?? [], id)) {
+            setBarOrientation('vertical');
+        }
+    };
+
+    const chooseOrientation = (next: 'horizontal' | 'vertical'): void => {
+        orientationChosen.current = true;
+        setBarOrientation(next);
+    };
+
+    /** El valor del selector de tipo: «Columnas» es un gráfico de barras vertical. */
+    const typeSelectValue = type === 'chart_bar' && barOrientation === 'vertical' ? 'chart_columns' : type;
+    const changeTypeSelect = (value: string): void => {
+        if (value === 'chart_columns') {
+            if (type !== 'chart_bar') changeType('chart_bar');
+            chooseOrientation('vertical');
+            return;
+        }
+        if (value === 'chart_bar' && type === 'chart_bar') {
+            chooseOrientation('horizontal');
+            return;
+        }
+        changeType(value as WidgetType);
+        if (value === 'chart_bar' && isDateField(fields.data ?? [], groupByFieldId) && !orientationChosen.current) {
+            setBarOrientation('vertical');
+        }
     };
 
     /** El widget tal como quedaría guardado (también alimenta la vista previa). */
@@ -597,13 +635,15 @@ export function WidgetFormDialog({
                                 <Label htmlFor="w-type">{__('Tipo')}</Label>
                                 <Select
                                     id="w-type"
-                                    value={type}
-                                    onChange={(e) => changeType(e.target.value as WidgetType)}
+                                    value={typeSelectValue}
+                                    onChange={(e) => changeTypeSelect(e.target.value)}
+                                    data-testid="imcrm-widget-type"
                                 >
                                     <option value="kpi">{__('KPI · Número')}</option>
                                     <option value="stat_delta">{__('KPI · Delta vs período')}</option>
                                     <option value="gauge">{__('Medidor · Progreso vs meta')}</option>
-                                    <option value="chart_bar">{__('Gráfico de barras')}</option>
+                                    <option value="chart_bar">{__('Gráfico de barras (horizontales)')}</option>
+                                    <option value="chart_columns">{__('Gráfico de columnas (verticales)')}</option>
                                     <option value="chart_pie">{__('Gráfico de torta')}</option>
                                     <option value="funnel">{__('Embudo (etapas de pipeline)')}</option>
                                     <option value="chart_line">{__('Línea (tendencia mensual)')}</option>
@@ -734,7 +774,7 @@ export function WidgetFormDialog({
                                     label={__('Agrupar por')}
                                     value={groupByFieldId}
                                     fields={groupableFields}
-                                    onChange={setGroupByFieldId}
+                                    onChange={changeGroupBy}
                                     emptyHint={__('La lista no tiene campos agrupables (select, multi_select, text, email, url, date, datetime, checkbox).')}
                                 />
                                 {isDateField(fields.data ?? [], groupByFieldId) && (
@@ -744,17 +784,7 @@ export function WidgetFormDialog({
                                     />
                                 )}
                                 {type === 'chart_bar' && (
-                                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-                                        <Label htmlFor="w-orientation">{__('Orientación')}</Label>
-                                        <Select
-                                            id="w-orientation"
-                                            value={barOrientation}
-                                            onChange={(e) => setBarOrientation(e.target.value === 'vertical' ? 'vertical' : 'horizontal')}
-                                        >
-                                            <option value="horizontal">{__('Barras horizontales')}</option>
-                                            <option value="vertical">{__('Columnas (verticales)')}</option>
-                                        </Select>
-                                    </div>
+                                    <OrientationChoice value={barOrientation} onChange={chooseOrientation} />
                                 )}
                                 {type === 'chart_bar' && (
                                     <BreakdownConfig
@@ -2461,5 +2491,69 @@ function WidgetPreview({
                 )}
             </div>
         </div>
+    );
+}
+
+/**
+ * v0.1.474 — Barras o columnas, a la vista (antes un selector «Orientación»
+ * que pocos encontraban). Cada opción con un dibujito de cómo se ve.
+ */
+function OrientationChoice({
+    value,
+    onChange,
+}: {
+    value: 'horizontal' | 'vertical';
+    onChange: (next: 'horizontal' | 'vertical') => void;
+}): JSX.Element {
+    const options: Array<{ id: 'horizontal' | 'vertical'; label: string; hint: string }> = [
+        { id: 'vertical', label: __('Columnas'), hint: __('Una columna por mes, día o categoría, con su valor arriba.') },
+        { id: 'horizontal', label: __('Barras'), hint: __('Una barra por categoría, de izquierda a derecha.') },
+    ];
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5" data-tour="widget-orientation">
+            <span className="imcrm-text-sm imcrm-font-medium">{__('Cómo se dibuja')}</span>
+            <div role="radiogroup" aria-label={__('Cómo se dibuja')} className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
+                {options.map((o) => {
+                    const active = value === o.id;
+                    return (
+                        <button
+                            key={o.id}
+                            type="button"
+                            role="radio"
+                            aria-checked={active}
+                            onClick={() => onChange(o.id)}
+                            data-testid={`imcrm-orientation-${o.id}`}
+                            className={cn(
+                                'imcrm-flex imcrm-items-center imcrm-gap-2.5 imcrm-rounded-md imcrm-border imcrm-px-2.5 imcrm-py-2 imcrm-text-left imcrm-transition-colors',
+                                active
+                                    ? 'imcrm-border-primary imcrm-bg-primary/5 imcrm-ring-1 imcrm-ring-primary'
+                                    : 'imcrm-border-input hover:imcrm-bg-accent',
+                            )}
+                        >
+                            <OrientationGlyph vertical={o.id === 'vertical'} active={active} />
+                            <span className="imcrm-flex imcrm-min-w-0 imcrm-flex-col">
+                                <span className="imcrm-text-[13px] imcrm-font-medium">{o.label}</span>
+                                <span className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">{o.hint}</span>
+                            </span>
+                        </button>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+function OrientationGlyph({ vertical, active }: { vertical: boolean; active: boolean }): JSX.Element {
+    const bars = [0.55, 0.85, 0.4, 0.7];
+    return (
+        <svg viewBox="0 0 32 32" className={cn('imcrm-h-8 imcrm-w-8 imcrm-shrink-0', active ? 'imcrm-text-primary' : 'imcrm-text-muted-foreground')} aria-hidden>
+            {bars.map((v, i) =>
+                vertical ? (
+                    <rect key={i} x={3 + i * 7} y={29 - v * 24} width={5} height={v * 24} rx={1} fill="currentColor" />
+                ) : (
+                    <rect key={i} x={3} y={3 + i * 7} width={v * 26} height={5} rx={1} fill="currentColor" />
+                ),
+            )}
+        </svg>
     );
 }
