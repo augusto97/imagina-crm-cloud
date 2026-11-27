@@ -21,6 +21,8 @@ import {
     effectiveCompare,
     MAX_COMPARE_POINTS,
     parseCompareOverride,
+    readDashboardPeriodFields,
+    widgetPeriodField,
     resolveStageProbabilities,
     stageOptionsOf,
     weightForecast,
@@ -319,7 +321,7 @@ export class DashboardsService {
         viewer: DashboardViewer,
         body: DashboardBundleRequest = {},
     ): Promise<Record<string, unknown>> {
-        return this.evaluateWidgets(tenantId, viewer, dash.widgets, body);
+        return this.evaluate(tenantId, viewer, dash.widgets, { ...bundleOptions(body), periodFields: readDashboardPeriodFields(dash.settings) });
     }
 
     /**
@@ -370,7 +372,7 @@ export class DashboardsService {
         const dash = await this.get(tenantId, dashboardId, viewer);
         // Compat: los llamadores viejos pasaban el preset suelto.
         const req: DashboardBundleRequest = typeof body === 'string' ? { period_preset: body } : (body ?? {});
-        return this.evaluate(tenantId, viewer, dash.widgets, bundleOptions(req));
+        return this.evaluate(tenantId, viewer, dash.widgets, { ...bundleOptions(req), periodFields: readDashboardPeriodFields(dash.settings) });
     }
 
     /**
@@ -385,8 +387,8 @@ export class DashboardsService {
         widget: WidgetSpec,
         body: DashboardBundleRequest = {},
     ): Promise<unknown> {
-        await this.get(tenantId, dashboardId, viewer);
-        const out = await this.evaluate(tenantId, viewer, [widget], bundleOptions(body));
+        const dash = await this.get(tenantId, dashboardId, viewer);
+        const out = await this.evaluate(tenantId, viewer, [widget], { ...bundleOptions(body), periodFields: readDashboardPeriodFields(dash.settings) });
         return out[widget.id] ?? {};
     }
 
@@ -487,7 +489,7 @@ export class DashboardsService {
                 const w = queue.shift()!;
                 try {
                     out[w.id] = await this.computeWidget(
-                        { tx, tenantId, viewer, ctx, periodOverride: opts.periodOverride, compareOverride: opts.compareOverride, filters: opts.filters, rootsDefault: true },
+                        { tx, tenantId, viewer, ctx, periodOverride: opts.periodOverride, periodFields: opts.periodFields, compareOverride: opts.compareOverride, filters: opts.filters, rootsDefault: true },
                         w,
                     );
                 } catch (err) {
@@ -540,7 +542,7 @@ export class DashboardsService {
         // v0.1.97 — el "Período" del widget POR FIN filtra: se inyecta como
         // condición `between_relative` en AND con el filter_tree (se resuelve
         // contra now() en cada evaluación — "este mes" es siempre el actual).
-        const period = effectivePeriod(cfg, env.periodOverride);
+        const period = effectivePeriod(cfg, env.periodOverride, ctx, env.periodFields?.get(ctx.list.id));
         const periodTree = period
             ? combineTrees(baseTree, [{ type: 'condition', field_id: period.fieldId, op: 'between_relative', value: period.value }])
             : baseTree;
@@ -1081,6 +1083,8 @@ const FIELD_METRICS = new Set(['count_unique', 'count_empty', 'sum', 'avg', 'min
 
 interface BundleOptions {
     periodOverride?: string;
+    /** v0.1.474 — la fecha elegida por lista en el tablero (`settings.period_fields`). */
+    periodFields?: Map<number, number>;
     /** v0.1.462 — la comparación del tablero (pisa la de cada widget). */
     compareOverride?: CompareSpec | 'none' | null;
     filters?: DashboardFilterValue[];
@@ -1102,6 +1106,7 @@ interface WidgetEnv {
     viewer: DashboardViewer;
     ctx: AggregateListContext;
     periodOverride?: string;
+    periodFields?: Map<number, number>;
     compareOverride?: CompareSpec | 'none' | null;
     filters?: DashboardFilterValue[];
     related?: RelatedScope;
@@ -1364,11 +1369,19 @@ function widgetPeriodValue(
 function effectivePeriod(
     cfg: Record<string, unknown>,
     override?: string,
+    ctx?: AggregateListContext,
+    dashboardChoice?: number,
 ): { fieldId: number; value: string | { from: string; to: string } } | undefined {
     const period = cfg.period as { field_id?: unknown; preset?: unknown; from?: unknown; to?: unknown } | null | undefined;
     const overrideValue = parsePeriodOverride(override);
-    const fieldId = numOrUndef(period?.field_id)
-        ?? (overrideValue !== undefined ? numOrUndef(cfg.date_field_id) : undefined);
+    // v0.1.474 — con el período del TABLERO, la fecha del widget se busca en
+    // orden (campo del período, fecha de tendencia, la fecha por la que
+    // agrupa, la del desglose y la elegida para la lista en el tablero):
+    // antes un gráfico «por mes» o un KPI sin fecha quedaban sin filtrar.
+    // El agrupado y la elección cuentan sólo si son fechas que quien mira ve.
+    const fieldId = overrideValue !== undefined
+        ? widgetPeriodField(cfg, (id) => ctx?.byId.get(id)?.type, dashboardChoice)?.fieldId
+        : numOrUndef(period?.field_id);
     const value = overrideValue ?? widgetPeriodValue(period);
     if (fieldId === undefined || value === undefined) return undefined;
     return { fieldId, value };

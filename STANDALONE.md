@@ -10941,6 +10941,40 @@ porcentajes se escriben con el formato numérico de la empresa y espacio duro
 («+12 %»). El período del widget se oculta en la cabecera cuando la
 comparación ya lo nombra («Este mes vs. mes anterior»).
 
+**Addendum v0.1.474 — El período del tablero filtra todos los gráficos;
+recuadro al instante; columnas a la vista.** Reporte del usuario: el selector
+de período de su tablero no filtraba, el valor de un gráfico tardaba en
+aparecer y no encontraba las columnas verticales.
+1. **Qué fecha usa cada widget** (`widgetPeriodField`, shared, la misma regla
+   en el servidor y en la interfaz): el `period.field_id` del widget → su
+   `date_field_id` (tendencia, delta, pronóstico) → el campo por el que
+   AGRUPA si es fecha («ventas por mes») → el desglose si es fecha → la fecha
+   elegida en el tablero para su lista (`settings.period_fields`,
+   `{listId: fieldId}`, lectura tolerante con `readDashboardPeriodFields`).
+   Cada paso exige un tipo de fecha que quien mira VE (un campo oculto o que
+   ya no es fecha se ignora). Sin período del tablero nada cambia. Antes, un
+   gráfico agrupado por fecha sin período propio quedaba fuera del período
+   global aunque su eje fuera la fecha.
+2. **Elegir la fecha de cada lista** (botón junto al período, «N widgets sin
+   fecha» / «Fecha de cada lista»): por lista, la fecha que filtra sus
+   indicadores, donas y tablas, con una sugerida por el nombre
+   (`suggestPeriodField`: pago, venta, cierre, factura… nunca nacimiento) y
+   «Usar la fecha sugerida». Lo elige quien edita el tablero y queda para
+   todos; el tablero público, el correo programado, el PDF y la vista previa
+   del widget lo usan igual. Los informes (ADR-S114) usan sólo la fecha por la
+   que agrupa cada bloque.
+3. **Recuadro al instante** (`useChartTip`): reemplaza el `title` del
+   navegador (≈1 s de demora, nunca en táctil) en barras, columnas, dona,
+   embudo, línea y pronóstico. Store por gráfico (moverse no vuelve a dibujar
+   el gráfico), portal al `<body>`, se va con el scroll; en táctil el primer
+   toque lo muestra y el segundo abre los registros. Muestra el valor y la
+   parte del total (o ahora / antes / diferencia si compara).
+4. **Columnas**: el tipo suma «Gráfico de columnas (verticales)» (un
+   `chart_bar` con `bar_orientation: 'vertical'`), «Cómo se dibuja» pasa a
+   dos tarjetas con dibujo, y un gráfico de barras nuevo agrupado por una
+   fecha arranca en columnas.
+Sin migración (`settings` del tablero es un registro libre).
+
 ### ADR-S114 — Informes: documentos armados con bloques de varias listas
 
 **Contexto.** Los tableros muestran una grilla viva de widgets de cualquier

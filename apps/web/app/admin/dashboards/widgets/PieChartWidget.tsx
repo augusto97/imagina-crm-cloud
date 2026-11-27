@@ -24,6 +24,7 @@ import {
 import { formatMetricValue } from './widgetFormat';
 import { CompareBadge, RowDelta, rowCompareTitle } from './CompareParts';
 import { isAdditiveMetric, isReadyCompare, previousByKey, previousTotal, widgetCompareOf, type ReadyCompare } from './compareView';
+import { compareTipRows, openHint, shareText, useChartTip } from './ChartTip';
 import { useContainerWidth } from './useContainerWidth';
 import { useSegmentNav } from './useSegmentNav';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
@@ -157,6 +158,8 @@ function Donut({ rows, format, showLabels, showLegend, narrow, ringMax, colorMap
     const [hidden, setHidden] = useState<Set<string>>(new Set());
     // v0.1.105 — "+N más" ahora EXPANDE la leyenda completa (con scroll).
     const [legendExpanded, setLegendExpanded] = useState(false);
+    // v0.1.474 — el recuadro de cada sector, al instante (antes `<title>`).
+    const tip = useChartTip();
     const toggleLabel = (label: string): void => {
         setHidden((prev) => {
             const next = new Set(prev);
@@ -240,11 +243,21 @@ function Donut({ rows, format, showLabels, showLegend, narrow, ringMax, colorMap
                                 strokeDasharray={dasharray}
                                 strokeDashoffset={-offset}
                                 transform={`rotate(-90 ${cx} ${cy})`}
-                                onClick={navigable && onSegment !== null ? () => onSegment(row.label) : undefined}
                                 style={navigable ? { cursor: 'pointer' } : undefined}
-                            >
-                                <title>{`${othersAwareLabel(row, labelMap)}: ${format(row.value)} (${(pct * 100).toFixed(1)}%)${navigable ? ` — ${__('click para ver los registros')}` : ''}`}</title>
-                            </circle>
+                                data-testid="imcrm-pie-slice"
+                                {...tip.bind(
+                                    row.label,
+                                    () => ({
+                                        title: othersAwareLabel(row, labelMap),
+                                        subtitle: compare?.label,
+                                        rows: compare
+                                            ? compareTipRows(compare, row.value, before.get(row.label), format)
+                                            : [{ color, value: format(row.value) }, { label: __('Del total'), value: shareText(row.value, total) }],
+                                        hint: openHint(navigable),
+                                    }),
+                                    navigable && onSegment !== null ? () => onSegment(row.label) : null,
+                                )}
+                            />
                         );
                         offset += len;
                         return seg;
@@ -310,6 +323,7 @@ function Donut({ rows, format, showLabels, showLegend, narrow, ringMax, colorMap
                         {centerLabel}
                     </text>
                 </svg>
+                {tip.layer}
             </div>
 
             {showLegend && (() => {

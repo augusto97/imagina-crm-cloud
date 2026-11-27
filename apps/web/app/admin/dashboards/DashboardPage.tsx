@@ -61,6 +61,7 @@ import { SaveDashboardTemplateDialog } from './SaveDashboardTemplateDialog';
 import { ShareDashboardDialog, type ShareTab } from './ShareDashboardDialog';
 import { WidgetCard } from './WidgetCard';
 import { WidgetFormDialog } from './WidgetFormDialog';
+import { nextPeriodFields, PeriodFieldsButton, unfilteredWidgets, useDashboardPeriodScope, type DashboardPeriodScope } from './DashboardPeriodFields';
 
 /**
  * Página de un dashboard. Renderiza una grid responsive con todos los
@@ -96,13 +97,7 @@ function periodLabel(preset: string): string {
     return DATE_RANGE_PRESETS.find((p) => p.id === preset)?.label ?? preset;
 }
 
-/** ¿El período global aplica a este widget? (necesita un campo de fecha). */
-function periodApplies(widget: WidgetSpec): boolean {
-    if (isContentWidget(widget.type)) return false;
-    const period = widget.config.period;
-    if (period && typeof period === 'object' && typeof period.field_id === 'number' && period.field_id > 0) return true;
-    return typeof widget.config.date_field_id === 'number' && widget.config.date_field_id > 0;
-}
+const EMPTY_WIDGETS: WidgetSpec[] = [];
 
 function DashboardView({ id }: { id: number }): JSX.Element {
     const navigate = useNavigate();
@@ -164,6 +159,9 @@ function DashboardView({ id }: { id: number }): JSX.Element {
         () => readDashboardFilterDefs(dashboard.data?.settings),
         [dashboard.data?.settings],
     );
+    // v0.1.474 — qué fecha usa el período del tablero en cada widget (la del
+    // widget, la que agrupa o la elegida para su lista).
+    const periodScope = useDashboardPeriodScope(dashboard.data?.widgets ?? EMPTY_WIDGETS, dashboard.data?.settings);
     // v0.1.462 — «Comparar con…» GLOBAL del tablero (persistido por
     // dashboard): '' = lo de cada widget; `previous`/`last_year` = todos los
     // widgets con período; `none` = ninguno.
@@ -418,7 +416,16 @@ function DashboardView({ id }: { id: number }): JSX.Element {
     // arrastre, ni el cursor de "agarrar".
     const editing = canEdit && !tvMode;
     const dataWidgets = d.widgets.filter((w) => !isContentWidget(w.type));
-    const unaffected = globalPeriod !== '' ? dataWidgets.filter((w) => !periodApplies(w)) : [];
+    const unaffected = globalPeriod !== '' ? unfilteredWidgets(periodScope, dataWidgets) : [];
+    const choosePeriodFields = async (changes: Array<{ listId: number; fieldId: number | null }>): Promise<void> => {
+        let settings: Record<string, unknown> = { ...d.settings };
+        for (const c of changes) settings = { ...settings, period_fields: nextPeriodFields(settings, c.listId, c.fieldId) };
+        try {
+            await update.mutateAsync({ settings });
+        } catch (err) {
+            if (err instanceof Error) toast.error(__('No se pudo guardar'), err.message);
+        }
+    };
 
     return (
         <DashboardBundleContext.Provider value={scope}>
@@ -533,16 +540,14 @@ function DashboardView({ id }: { id: number }): JSX.Element {
                         <option value="last_year">{__('Comparar con el año pasado')}</option>
                         <option value="none">{__('No comparar')}</option>
                     </Select>
-                    {unaffected.length > 0 && (
-                        <span
-                            className="imcrm-max-w-[16rem] imcrm-truncate imcrm-text-[11px] imcrm-text-muted-foreground"
-                            title={unaffected.map((w) => w.title || __('Sin título')).join(', ')}
-                            data-testid="imcrm-period-unaffected"
-                        >
-                            {unaffected.length === 1
-                                ? sprintf(__('No aplica a «%s» (sin campo de fecha)'), unaffected[0]!.title || __('Sin título'))
-                                : sprintf(__('No aplica a %d widgets sin campo de fecha'), unaffected.length)}
-                        </span>
+                    {globalPeriod !== '' && !tvMode && (
+                        <PeriodFieldsButton
+                            scope={periodScope}
+                            unfiltered={unaffected}
+                            canEdit={editing}
+                            saving={update.isPending}
+                            onChoose={(changes) => void choosePeriodFields(changes)}
+                        />
                     )}
                     <DashboardFiltersBar defs={filterDefs} values={filterValues} onChange={changeFilter} />
                     {tvMode ? (
@@ -689,7 +694,7 @@ function DashboardView({ id }: { id: number }): JSX.Element {
                                 dragWhole={editing && isContentWidget(widget.type)}
                                 overlay={
                                     <>
-                                        <PeriodBadge dashboardId={id} widget={widget} globalPeriod={globalPeriod} />
+                                        <PeriodBadge dashboardId={id} widget={widget} globalPeriod={globalPeriod} periodScope={periodScope} />
                                         {(editing || (!tvMode && !isContentWidget(widget.type))) && (
                                             <div className="imcrm-no-drag imcrm-absolute imcrm-right-2 imcrm-top-2 imcrm-z-10 imcrm-flex imcrm-gap-1 imcrm-rounded imcrm-bg-card/90 imcrm-opacity-0 imcrm-transition-opacity group-hover:imcrm-opacity-100 focus-within:imcrm-opacity-100 [@media(hover:none)]:imcrm-opacity-100">
                                                 {!tvMode && <WidgetExportMenu dashboardId={id} widget={widget} />}
@@ -759,13 +764,14 @@ function DashboardView({ id }: { id: number }): JSX.Element {
 /** Los widgets que muestran la comparación en su cabecera (no debajo de la cifra). */
 const HEADER_COMPARE_TYPES = new Set<string>(['chart_bar', 'chart_pie', 'chart_line', 'chart_area', 'funnel', 'table', 'pivot', 'forecast']);
 
-function PeriodBadge({ dashboardId, widget, globalPeriod }: { dashboardId: number; widget: WidgetSpec; globalPeriod: string }): JSX.Element | null {
+function PeriodBadge({ dashboardId, widget, globalPeriod, periodScope }: { dashboardId: number; widget: WidgetSpec; globalPeriod: string; periodScope: DashboardPeriodScope }): JSX.Element | null {
     const data = useWidgetData(dashboardId, widget.id);
     // v0.1.462 — con una comparación lista, la cabecera del gráfico ya dice
     // «Este mes vs. mes anterior»: la etiqueta del período la taparía.
     if (HEADER_COMPARE_TYPES.has(widget.type) && isReadyCompare(widgetCompareOf(data.data))) return null;
     const period = widget.config.period;
-    const overridden = globalPeriod !== '' && periodApplies(widget);
+    const by = globalPeriod !== '' ? periodScope.fieldFor(widget) : null;
+    const overridden = by !== null;
     const preset = overridden ? globalPeriod : period?.preset;
     if (! preset) return null;
     const label = overridden
@@ -782,7 +788,9 @@ function PeriodBadge({ dashboardId, widget, globalPeriod }: { dashboardId: numbe
                 'imcrm-pointer-events-none imcrm-absolute imcrm-right-2 imcrm-top-2 imcrm-z-10 imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-rounded imcrm-px-1.5 imcrm-py-0.5 imcrm-text-[10px] imcrm-font-medium imcrm-transition-opacity group-hover:imcrm-opacity-0 [@media(hover:none)]:imcrm-top-auto [@media(hover:none)]:imcrm-bottom-2 [@media(hover:none)]:group-hover:imcrm-opacity-100',
                 overridden ? 'imcrm-bg-primary/10 imcrm-text-primary' : 'imcrm-bg-muted/60 imcrm-text-muted-foreground',
             )}
-            title={overridden ? __('Período del tablero') : __('Período del widget')}
+            title={overridden
+                ? by.name !== '' ? sprintf(__('Período del tablero, por «%s»'), by.name) : __('Período del tablero')
+                : __('Período del widget')}
             data-testid="imcrm-period-badge"
         >
             <CalendarRange className="imcrm-h-3 imcrm-w-3" />

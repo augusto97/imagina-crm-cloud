@@ -208,3 +208,4 @@ export * from './list-suggestions';
 export * from './schemas/record-ai';
 export * from './dashboard-report/compare';
 export * from './dashboard-report/forecast';
+export * from './dashboard-report/period-field';

@@ -190,6 +190,55 @@ describe('Dashboards — bundle (Postgres real)', () => {
         expect(o.previous).toBe(300);
     });
 
+    it('v0.1.474 — el período del tablero filtra un gráfico agrupado por fecha y los KPI por la fecha elegida para su lista', async () => {
+        // Global: los últimos 10 días (a y b; 300 de monto).
+        const custom = `custom:${daysAgo(9)}:${daysAgo(0)}`;
+        const sumOf = (v: unknown): number => (v as { data: Array<{ value: number }> }).data.reduce((s, r) => s + r.value, 0);
+        const widgets = [
+            // Barras «por mes»: sin campo de período propio, se filtra por la fecha que agrupa.
+            { id: 'm1', type: 'chart_bar', list_id: listId, title: 'Ventas por mes', config: { metric: 'sum', metric_field_id: f.monto!.id, group_by_field_id: f.fecha!.id, time_bucket: 'month', bar_orientation: 'vertical' }, layout },
+            // KPI y dona sin ninguna fecha: dependen de la elección del tablero.
+            { id: 'k1', type: 'kpi', list_id: listId, title: 'Total', config: { metric: 'count' }, layout },
+            { id: 'p1', type: 'chart_pie', list_id: listId, title: 'Por estado', config: { metric: 'count', group_by_field_id: f.estado!.id }, layout },
+        ];
+        await service.update(tenantId, dashId, admin, { settings: {} } as never);
+        const sinPeriodo = await withWidgets(widgets);
+        expect(sumOf(sinPeriodo.m1)).toBe(1000);
+        expect((sinPeriodo.k1 as { value: number }).value).toBe(4);
+
+        const sinEleccion = await withWidgets(widgets, { period_preset: custom });
+        expect(sumOf(sinEleccion.m1)).toBe(300);
+        // Sin fecha elegida para la lista, el KPI y la dona muestran todo (y la pantalla lo avisa).
+        expect((sinEleccion.k1 as { value: number }).value).toBe(4);
+        expect(sumOf(sinEleccion.p1)).toBe(4);
+
+        // Una elección que no es fecha (moneda) se ignora.
+        await service.update(tenantId, dashId, admin, { settings: { period_fields: { [String(listId)]: f.monto!.id } } } as never);
+        const noFecha = await withWidgets(widgets, { period_preset: custom });
+        expect((noFecha.k1 as { value: number }).value).toBe(4);
+
+        await service.update(tenantId, dashId, admin, { settings: { period_fields: { [String(listId)]: f.fecha!.id } } } as never);
+        const conEleccion = await withWidgets(widgets, { period_preset: custom });
+        expect((conEleccion.k1 as { value: number }).value).toBe(2);
+        expect(sumOf(conEleccion.p1)).toBe(2);
+        expect(sumOf(conEleccion.m1)).toBe(300);
+        // Sin período global la elección no cambia nada.
+        const conEleccionSinPeriodo = await withWidgets(widgets);
+        expect((conEleccionSinPeriodo.k1 as { value: number }).value).toBe(4);
+
+        // La vista previa de un widget sin guardar usa la misma elección.
+        const preview = await service.previewWidget(tenantId, dashId, admin, widgets[1] as never, { period_preset: custom });
+        expect((preview as { value: number }).value).toBe(2);
+
+        // Un widget con su propio campo de período manda sobre la elección del tablero.
+        const own = await withWidgets(
+            [{ id: 'k2', type: 'kpi', list_id: listId, title: 'Por cuándo', config: { metric: 'count', period: { field_id: f.cuando!.id, preset: 'all' } }, layout }],
+            { period_preset: 'custom:2026-03-01:2026-03-31' },
+        );
+        expect((own.k2 as { value: number }).value).toBe(1);
+        await service.update(tenantId, dashId, admin, { settings: {} } as never);
+    });
+
     it('las series temporales rellenan con 0 los buckets vacíos', async () => {
         const data = await withWidgets([
             {

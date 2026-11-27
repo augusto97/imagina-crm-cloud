@@ -267,7 +267,8 @@ function ForecastColumns({ forecast, format, onOpen }: { forecast: ForecastData;
                             onMouseEnter={() => setHover(b.key)}
                             onFocus={() => setHover(b.key)}
                             onClick={onOpen ? () => onOpen(b.key, 'all') : () => setHover((x) => (x === b.key ? null : b.key))}
-                            title={title}
+                            // Ya tiene su recuadro al instante (abajo): sin el
+                            // `title` del navegador, que salía encima un segundo después.
                             aria-label={title}
                             data-testid="imcrm-forecast-bucket"
                             data-key={b.key}

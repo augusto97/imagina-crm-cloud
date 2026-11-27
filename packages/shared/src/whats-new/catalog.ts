@@ -4129,4 +4129,37 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
             '- En el celular, deslizar con el dedo sobre las opciones también funciona.',
         ].join('\n'),
     },
+    {
+        key: 'v0.1.474-tableros-periodo-columnas',
+        version: '0.1.474',
+        date: '2026-11-27',
+        kind: 'improvement',
+        title: 'Tableros: el período filtra todos los gráficos, y columnas por mes',
+        summary:
+            'El período de arriba del tablero ahora filtra también los gráficos agrupados por fecha, y los indicadores y donas por la fecha que elijas para cada lista. El valor de cada barra aparece al instante y hay gráfico de columnas verticales.',
+        media: {
+            slides: [
+                {
+                    title: 'El período filtra todo el tablero',
+                    text: 'Elige «Este mes» arriba: las ventas por mes, las tendencias y, desde ahora, los indicadores y las donas se recalculan juntos.',
+                    illustration: 'tab-explorar',
+                },
+                {
+                    title: 'Elige la fecha de cada lista',
+                    text: 'Si un widget no usa una fecha, toca «N widgets sin fecha» junto al período y elige la que manda, por ejemplo «Fecha de pago». La app sugiere una.',
+                    illustration: 'tab-configurar',
+                },
+                {
+                    title: 'Columnas por mes y valores al instante',
+                    text: 'Crea un «Gráfico de columnas (verticales)» con la suma de las ventas agrupada por mes. Al pasar el mouse, el valor aparece en el momento.',
+                    illustration: 'tab-hero',
+                },
+            ],
+        },
+        body: [
+            '- Agrupar por una fecha pone el gráfico en columnas solo.',
+            '- En el celular, el primer toque muestra el valor y el segundo abre los registros.',
+        ].join('\n'),
+        action: { label: 'Ir a tableros', href: '/dashboards' },
+    },
 ];

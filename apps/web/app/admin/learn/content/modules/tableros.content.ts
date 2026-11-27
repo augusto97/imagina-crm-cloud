@@ -279,7 +279,7 @@ export const articles: LearnArticle[] = [
                 rows: [
                     { name: 'Agrupar por', what: 'El campo que forma cada barra, porción o etapa: selección, texto, email, enlace, fecha, casilla, persona o equipo.' },
                     { name: 'Granularidad temporal', what: 'Si agrupas por una fecha: **Día**, **Semana**, **Mes**, **Trimestre** o **Año**. Línea y área usan Mes si no eliges.', tip: 'Semana para el día a día, Mes para la tendencia del año.' },
-                    { name: 'Orientación', what: 'En barras: **Barras horizontales** (mejor con nombres largos) o **Columnas (verticales)** (mejor con meses).' },
+                    { name: 'Cómo se dibuja', what: 'En barras: **Columnas** (verticales, mejor con meses) o **Barras** (horizontales, mejor con nombres largos). También puedes elegir **Gráfico de columnas (verticales)** directo en el **Tipo**.', tip: 'Si agrupas por una fecha, el gráfico pasa solo a columnas.' },
                     { name: 'Orden', what: '**Automático**, **Mayor valor primero**, **Menor valor primero**, **Alfabético** u **Orden de las opciones del campo**.', tip: 'Para un embudo, el orden de las opciones respeta el orden de las etapas.' },
                     { name: 'Categorías a mostrar', what: 'Hasta 50, o sólo **Las 5 / 10 / 20 mayores**. El resto se junta en una barra «Otros».' },
                     { name: 'Mostrar: Línea de promedio', what: 'Dibuja una línea punteada con el promedio en barras, líneas y áreas.' },
@@ -327,7 +327,7 @@ export const articles: LearnArticle[] = [
                 items: [
                     { q: '¿Puedo sumar un campo calculado o un resumen de otra lista?', a: 'Sí, si da un número: los campos calculados de suma, resta, multiplicación y división, y los resúmenes (rollup) numéricos se pueden sumar, promediar y agrupar como cualquier número.' },
                     { q: '¿Por qué mi gráfico de línea muestra pocos puntos?', a: 'Revisa la **Granularidad temporal**: con «Mes» y datos de un solo mes verás un punto. Cambia a «Semana» o «Día».' },
-                    { q: '¿Qué pasa si el período del widget y el del tablero no coinciden?', a: 'Si eliges un período arriba del tablero, ese manda sobre el de cada widget con fecha. Al volver a «Cada widget con su período», cada uno usa el suyo.' },
+                    { q: '¿Qué pasa si el período del widget y el del tablero no coinciden?', a: 'Si eliges un período arriba del tablero, ese manda sobre el de cada widget con fecha (también los que agrupan por una fecha, como las ventas por mes). Al volver a «Cada widget con su período», cada uno usa el suyo.' },
                 ],
             },
             {
@@ -620,14 +620,14 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'El período de todo el tablero' },
             {
                 t: 'p',
-                md: 'Arriba del tablero está el selector de período. Por defecto dice **Cada widget con su período**: cada widget usa el que le pusieron al configurarlo. Si eliges otro (**Hoy**, **Ayer**, **Esta semana**, **Semana pasada**, **Este mes**, **Mes pasado**, **Últimos 7 / 15 / 30 / 90 días**, **Próximos 7 / 30 días**, **De hoy en adelante**, **Este trimestre**, **Trimestre pasado**, **Este año**, **Año pasado**), ese período manda sobre todos los widgets que tienen un campo de fecha.',
+                md: 'Arriba del tablero está el selector de período. Por defecto dice **Cada widget con su período**: cada widget usa el que le pusieron al configurarlo. Si eliges otro (**Hoy**, **Ayer**, **Esta semana**, **Semana pasada**, **Este mes**, **Mes pasado**, **Últimos 7 / 15 / 30 / 90 días**, **Próximos 7 / 30 días**, **De hoy en adelante**, **Este trimestre**, **Trimestre pasado**, **Este año**, **Año pasado**), ese período manda sobre todos los widgets que usan una fecha: la de su período, la de una tendencia o la fecha por la que agrupan (las ventas por mes).',
             },
             {
                 t: 'steps',
                 items: [
                     'Abre el selector de período y elige, por ejemplo, **Mes pasado** para la reunión de cierre.',
                     'Para un rango exacto elige **Personalizado…** y completa **Desde** y **Hasta**.',
-                    'Si algún widget no tiene campo de fecha, la app avisa al lado: «No aplica a… (sin campo de fecha)».',
+                    'Si algún widget no usa una fecha (un indicador, una dona, una tabla), al lado aparece **N widgets sin fecha**: tócalo y elige, para cada lista, la fecha que manda (por ejemplo, **Fecha de pago**). La app sugiere una y **Usar la fecha sugerida** la elige de una vez. Queda guardado en el tablero para todos.',
                     'Para volver, elige **Cada widget con su período**.',
                 ],
             },
@@ -651,7 +651,7 @@ export const articles: LearnArticle[] = [
             { t: 'anim', key: 'tab-click', caption: 'Un clic en una porción abre la lista ya filtrada por ese valor.' },
             {
                 t: 'p',
-                md: 'Haz clic en una **barra**, una **porción** de la dona o una **etapa** del embudo y se abre la lista con esos registros, ya filtrada por ese valor (y por los dos valores si la barra está desglosada). Ahí puedes abrirlos, editarlos o exportarlos. En los gráficos agrupados por fecha el clic no navega.',
+                md: 'Haz clic en una **barra**, una **porción** de la dona o una **etapa** del embudo y se abre la lista con esos registros, ya filtrada por ese valor (y por los dos valores si la barra está desglosada); en un gráfico por mes, con los registros de ese mes. Ahí puedes abrirlos, editarlos o exportarlos. Al pasar el mouse sobre una barra, una porción o un punto de la línea aparece al instante un recuadro con el valor y cuánto es del total. En el celular, el primer toque muestra ese recuadro y el segundo abre los registros.',
             },
             {
                 t: 'example',

@@ -430,7 +430,13 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.473**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.474**
+(**el período del tablero filtra todos los gráficos** — también los agrupados
+por fecha, y los indicadores/donas/tablas por la fecha que se elige para cada
+lista con «N widgets sin fecha»; **recuadro al instante** al pasar el mouse
+(antes el `title` del navegador) y **gráfico de columnas verticales** a la
+vista; sin migración; addendum ADR-S113. Su tablero «Anualidades LIC — Panel»
+necesita elegir una vez «Fecha de cada lista»). Antes **v0.1.473**
 (**las listas de opciones vuelven a moverse con la rueda** dentro de una
 ventana — el bloqueo de scroll de la ventana cancelaba la rueda y el dedo sobre
 los desplegables, que se dibujan fuera de ella; arreglado en el componente
@@ -2416,6 +2422,32 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-27 · v0.1.474** — **El período del tablero filtra todos los
+  gráficos, recuadro al instante y columnas verticales** (sin migración;
+  addendum ADR-S113). Reporte del usuario: en su tablero «Anualidades LIC —
+  Panel» el selector de período de arriba no filtraba, el valor al pasar el
+  mouse por un gráfico tardaba en aparecer, y no encontraba los gráficos
+  verticales («una barra con su valor de ventas por mes»). No se leyó su
+  tablero en producción (no hubo aprobación): se reprodujo con datos propios.
+  Causas: (1) el período global sólo pisaba el período de los widgets que
+  tenían `period.field_id` o `date_field_id`; un gráfico agrupado por mes, un
+  KPI o una dona sin fecha propia quedaban con todos los registros; (2) los
+  gráficos usaban el `title` del navegador (≈1 s, nada en táctil); (3) las
+  columnas existían (`bar_orientation: 'vertical'`) pero escondidas dentro de
+  «Barras». Arreglo: `widgetPeriodField` en shared (período propio → fecha →
+  la fecha por la que agrupa → el desglose → la fecha elegida para la lista
+  en `settings.period_fields`), botón «N widgets sin fecha» junto al período
+  con la fecha sugerida por nombre, `useChartTip` (recuadro inmediato con el
+  valor y la parte del total; táctil: primer toque muestra, segundo abre), y
+  el tipo «Gráfico de columnas (verticales)» con «Cómo se dibuja» en
+  tarjetas (agrupar por fecha lo pone en columnas). De paso: la ayuda decía
+  que un gráfico por fecha no se abría al hacer clic (sí se abre, con los
+  registros de ese mes). Pruebas: shared 1243 (14 de `period-field`), front
+  (`ChartTip.test`, 4), `dashboards-bundle.spec` con el caso nuevo; E2E
+  navegador 26/26 en escritorio y 21/21 en celular oscuro con el dedo.
+  **Pendiente para el usuario**: en su tablero, tocar «N widgets sin fecha» y
+  elegir la fecha de cada lista (o «Usar la fecha sugerida») una vez.
 
 - **2026-11-27 · v0.1.473** — **Las listas de opciones vuelven a moverse con
   la rueda** (sin servidor ni migración; addendum ADR-S26). Reporte del
