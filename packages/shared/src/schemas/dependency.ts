@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { idSchema, isoDateTimeSchema } from './common';
 import { isDoneOptionLabel, pickStatusField } from './notifications';
+import { readListFeatures } from './list-features';
 
 /**
  * Dependencias entre registros (A8): «bloquea» / «bloqueado por».
@@ -130,7 +131,9 @@ export function readDependencySettings(listSettings: unknown): DependencySetting
     const s = listSettings !== null && typeof listSettings === 'object' ? (listSettings as Record<string, unknown>) : {};
     const d = s.dependencies !== null && typeof s.dependencies === 'object' ? (s.dependencies as Record<string, unknown>) : {};
     return {
-        reschedule: d.reschedule === true,
+        // v0.1.475 — con las dependencias apagadas en la lista («Funciones de la
+        // lista») tampoco se reprograma en cadena.
+        reschedule: d.reschedule === true && readListFeatures(s).dependencies,
         start_field_id: posInt(d.start_field_id),
         end_field_id: posInt(d.end_field_id),
     };

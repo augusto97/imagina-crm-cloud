@@ -11,6 +11,9 @@ import {
     SCAN_SEARCH_FIELD_TYPES,
     TITLE_FIELD_TYPES,
     recordLayoutV3Schema,
+    LIST_FEATURES_BASE,
+    listFeaturesInputSchema,
+    mergeListFeatures,
     type CreateListInput,
     type FieldType,
     type List,
@@ -354,6 +357,9 @@ export class ListsService {
             // carpeta). Misma verificación que al mover: carpeta del tenant.
             const groupId = input.group_id ?? null;
             if (groupId !== null) await this.assertGroup(tx, tenantId, groupId);
+            // v0.1.475 — nace con sus funciones: la base (descripción y
+            // resumen con IA) más lo que pida quien la crea (una plantilla).
+            const features = mergeListFeatures({ features: { ...LIST_FEATURES_BASE } }, input.features ?? {});
             return this.repo.insert(tx, {
                 tenantId,
                 slug,
@@ -362,6 +368,7 @@ export class ListsService {
                 color: input.color ?? null,
                 position,
                 groupId,
+                settings: { features },
             });
         });
         this.realtime.lists(tenantId);
@@ -523,6 +530,7 @@ export class ListsService {
                     }
                 }
                 let nextSettings = patch.settings;
+                let stored = (current.settings ?? {}) as Record<string, unknown>;
                 if (opts.mergeSettings) {
                     // La fila bloqueada: dos guardados a la vez no se pisan.
                     const [locked] = await tx
@@ -530,7 +538,27 @@ export class ListsService {
                         .from(lists)
                         .where(and(eq(lists.tenantId, tenantId), eq(lists.id, current.id)))
                         .for('update');
-                    nextSettings = mergeListSettings((locked?.settings as Record<string, unknown> | undefined) ?? current.settings ?? {}, patch.settings);
+                    stored = (locked?.settings as Record<string, unknown> | undefined) ?? stored;
+                    nextSettings = mergeListSettings(stored, patch.settings);
+                }
+                // v0.1.475 — las funciones de la lista: se guardan siempre
+                // enteras (lo guardado + lo que cambia), así una pantalla que
+                // manda sólo «duplicates: false» no deja las demás a medias.
+                const rawFeatures = (patch.settings as Record<string, unknown>).features;
+                if (rawFeatures !== undefined && rawFeatures !== null) {
+                    const parsed = listFeaturesInputSchema.safeParse(rawFeatures);
+                    if (!parsed.success) {
+                        throw new BadRequestException({
+                            code: 'invalid_list_features',
+                            message: 'Las funciones de la lista no son válidas',
+                            data: { status: 400 },
+                        });
+                    }
+                    nextSettings = { ...nextSettings, features: mergeListFeatures(stored, parsed.data) };
+                } else if (!('features' in (nextSettings as Record<string, unknown>)) && 'features' in stored) {
+                    // Un reemplazo entero (usos internos: una plantilla que se
+                    // aplica, una sincronización) no se lleva las funciones.
+                    nextSettings = { ...nextSettings, features: stored.features };
                 }
                 changes.settings = opts.helpdeskMailbox ? nextSettings : keepHelpdeskMailbox(current.settings, nextSettings);
             }

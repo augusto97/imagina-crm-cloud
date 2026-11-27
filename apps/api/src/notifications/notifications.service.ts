@@ -9,6 +9,7 @@ import {
     jsonbKeyForField,
     pickDueField,
     pickStatusField,
+    readListFeatures,
     readNotificationPrefs,
     resolveTitleFieldId,
     teamIdsOf,
@@ -1242,6 +1243,8 @@ export class NotificationsService implements OnModuleInit {
     private async myChecklistItems(tenantId: number, actor: { userId: number; role: Role }, schema: WorkSchema): Promise<MyWorkChecklistItem[]> {
         const parts: SQL[] = [];
         for (const view of schema.views.values()) {
+            // v0.1.475 — una lista con los checklists apagados no los trae.
+            if (!readListFeatures(view.list.settings).checklists) continue;
             parts.push(view.scope ? and(eq(records.listId, view.list.id), view.scope)! : eq(records.listId, view.list.id));
         }
         if (parts.length === 0) return [];

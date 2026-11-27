@@ -109,7 +109,9 @@ describe('duplicados y fusionar (v0.1.445)', () => {
             await tx.delete(fields).where(eq(fields.tenantId, tenantId));
             await tx.delete(lists).where(eq(lists.tenantId, tenantId));
         });
-        clientesId = (await listsService.create(tenantId, { name: 'Clientes', slug: 'clientes' })).id;
+        // v0.1.475 — una lista en blanco nace sin el aviso de duplicados; la de
+        // clientes lo enciende (como la plantilla de contactos).
+        clientesId = (await listsService.create(tenantId, { name: 'Clientes', slug: 'clientes', features: { duplicates: true } })).id;
         const defs: CreateFieldInput[] = [
             { label: 'Nombre', type: 'text', slug: 'nombre' },
             { label: 'Correo', type: 'email', slug: 'correo' },

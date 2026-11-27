@@ -51,6 +51,7 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'automation_template.create': { text: 'guardó la plantilla de automatización' },
     'automation_template.delete': { text: 'borró la plantilla de automatización', danger: true },
     'list.permissions': { text: 'cambió los permisos de' },
+    'list.features': { text: 'cambió las funciones de la lista' },
     'list.public_enable': { text: 'publicó al público la lista', danger: true },
     'form.publish': { text: 'publicó el formulario', danger: true },
     'form.unpublish': { text: 'dejó de publicar el formulario' },

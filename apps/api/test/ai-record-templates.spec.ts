@@ -29,6 +29,10 @@ import { RelationsRepository } from '../src/records/relations.repository';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
 import { startPostgres, startRedis, type TestPg, type TestRedis } from './helpers/containers';
 
+/** v0.1.475 — una lista de trabajo enciende sus funciones (una en blanco nace sólo con descripción y resumen). */
+const PROJECT_FEATURES = { subtasks: true, checklists: true, dependencies: true, time_tracking: true } as const;
+
+
 /**
  * C6 / A9 — el asistente y el MCP: leen las plantillas de registro, proponen
  * una nueva (en el vocabulario de slugs, validada con el MISMO saneo que la
@@ -97,7 +101,7 @@ describe('Asistente IA — plantillas de registro (Postgres + Redis reales)', ()
         manager = { tenantId, userId: managerId, role: 'manager' };
         agent = { tenantId, userId: agentId, role: 'agent' };
 
-        const list = await lists.create(tenantId, { name: 'Proyectos' });
+        const list = await lists.create(tenantId, { name: 'Proyectos', features: PROJECT_FEATURES });
         const mkf = (label: string, slug: string, type: Field['type'], config: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) =>
             fields.create(tenantId, String(list.id), { label, slug, type, config, ...extra });
         f = {

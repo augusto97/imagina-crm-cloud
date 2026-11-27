@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { idSchema } from './common';
 import { isUserWritableType, resolveTitleFieldId, type Field, type FieldType } from './field';
+import { readListFeatures } from './list-features';
 
 /**
  * A14 — Duplicados: avisar al crear y FUSIONAR (v0.1.445, ADR-S106).
@@ -99,7 +100,11 @@ export function duplicateRuleKey(rule: readonly number[], fieldsById: ReadonlyMa
 
 export const duplicateSettingsInputSchema = z
     .object({
-        /** Apagado: ni aviso al crear ni banner en la ficha (el panel sigue buscando). */
+        /**
+         * Apagado: ni aviso al crear ni banner en la ficha (el panel sigue
+         * buscando). Desde v0.1.475 es la función «Duplicados» de la lista
+         * (`settings.features.duplicates`): este ajuste escribe ahí.
+         */
         enabled: z.boolean().optional(),
         /** Avisar en el alta cuando lo escrito coincide con un registro. */
         warn_on_create: z.boolean().optional(),
@@ -167,7 +172,9 @@ export function readDuplicateSettings(
         rules = suggestDuplicateRules(fields, listSettings ?? null);
     }
     return {
-        enabled: obj.enabled !== false,
+        // v0.1.475 — el aviso es una función de la lista (apagada de fábrica
+        // salvo reglas elegidas a mano): ver `readListFeatures`.
+        enabled: readListFeatures(listSettings).duplicates,
         warn_on_create: obj.warn_on_create !== false,
         rules,
         custom,

@@ -1,7 +1,9 @@
 import { NotFoundException } from '@nestjs/common';
 import {
+    LIST_FEATURES_BASE,
     SYSTEM_AUTOMATION_TEMPLATES,
     collectAutomationSlugs,
+    readListFeatures,
     collectFieldTokens,
     remapAutomationSlugs,
     resolveFieldRefs,
@@ -783,6 +785,23 @@ describe('Duplicar listas y plantillas (Postgres real, v0.1.166)', () => {
         const in10 = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
         expect(values).toContain(in10);
         expect(values).toContain(actor);
+    });
+
+    it('v0.1.475 — cada plantilla nace con sus funciones; duplicar conserva las elegidas', async () => {
+        const featuresOf = async (id: number) => readListFeatures((await listsService.get(tenantB, String(id))).settings);
+        const proyectos = await templates.apply(tenantB, actor, 'sys:proyectos-tareas', { include_records: false, name: 'Funciones proyectos' });
+        expect(await featuresOf(proyectos.lists[0]!.id)).toEqual({ ...LIST_FEATURES_BASE, subtasks: true, checklists: true, dependencies: true, time_tracking: true });
+        const soporte = await templates.apply(tenantB, actor, 'sys:soporte-tickets', { include_records: false, name: 'Funciones soporte' });
+        expect(await featuresOf(soporte.lists[0]!.id)).toEqual({ ...LIST_FEATURES_BASE, time_tracking: true });
+        const crm = await templates.apply(tenantB, actor, 'sys:crm-clientes', { include_records: false, name: 'Funciones CRM' });
+        expect(await featuresOf(crm.lists[0]!.id)).toEqual({ ...LIST_FEATURES_BASE, duplicates: true });
+        // Una lista en blanco: sólo la descripción y el resumen con IA.
+        const blank = await listsService.create(tenantB, { name: 'Funciones en blanco' });
+        expect(readListFeatures(blank.settings)).toEqual(LIST_FEATURES_BASE);
+        // Duplicar trae lo que eligió la persona, no lo de fábrica.
+        await listsService.update(tenantB, String(blank.id), { settings: { features: { checklists: true, ai_summary: false } } }, { mergeSettings: true });
+        const copy = await templates.duplicate(tenantB, actor, String(blank.id), { include: { views: true, automations: true, settings: true, records: false } });
+        expect(await featuresOf(copy.lists[0]!.id)).toEqual({ ...LIST_FEATURES_BASE, checklists: true, ai_summary: false });
     });
 
     it('D5 — «Agenda de citas» trae su página de agenda: sin publicar, con los campos NUEVOS y quien la aplica atendiendo', async () => {

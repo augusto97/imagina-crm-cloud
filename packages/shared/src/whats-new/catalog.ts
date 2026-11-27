@@ -4162,4 +4162,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         ].join('\n'),
         action: { label: 'Ir a tableros', href: '/dashboards' },
     },
+    {
+        key: 'v0.1.475-funciones-de-la-lista',
+        version: '0.1.475',
+        date: '2026-11-27',
+        kind: 'feature',
+        title: 'Cada lista elige qué funciones usa',
+        summary:
+            'En Configurar → Funciones de cada lista enciendes o apagas la descripción, el resumen con IA, las subtareas, los checklists, las dependencias, el tiempo registrado y el aviso de duplicados. Una lista simple se ve simple.',
+        media: {
+            slides: [
+                {
+                    title: 'Sólo lo que la lista necesita',
+                    text: 'Unas anualidades o unos pagos no necesitan subtareas ni checklists; un proyecto sí. Apaga lo que sobra y la ficha queda limpia.',
+                    illustration: 'ficha-checklist',
+                },
+                {
+                    title: 'Sin el aviso de duplicados donde repetir es normal',
+                    text: 'Apaga «Aviso de duplicados» y la ficha deja de mostrar «Posibles duplicados» en esa lista.',
+                    illustration: 'duplicados-fusionar',
+                },
+            ],
+        },
+        body: [
+            '- Nunca se borra nada: al volver a encender una función, todo aparece como estaba.',
+            '- Tus listas quedaron según su uso: lo que ya usaban sigue encendido y lo vacío se apagó. El aviso de duplicados quedó encendido sólo donde alguien eligió sus reglas.',
+            '- Una lista nueva en blanco empieza con la descripción y el resumen con IA; una de plantilla, con lo que esa plantilla necesita.',
+        ].join('\n'),
+        audience: { roles: ['admin', 'manager'] },
+        action: { label: 'Ir a mis listas', href: '/lists' },
+    },
 ];

@@ -3,6 +3,7 @@ import type { JSONContent } from '@tiptap/react';
 import type { RichDoc } from '@imagina-base/shared';
 import { AlignLeft, Check, Dot, Loader2 } from 'lucide-react';
 
+import { useListFeatures } from '@/hooks/useListFeatures';
 import { useRecordDescription, useUpdateRecordDescription } from '@/hooks/useRecordDescription';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -145,6 +146,8 @@ export function RecordDescription({
     draft,
 }: RecordDescriptionProps): JSX.Element {
     const { data, isLoading } = useRecordDescription(listKey, recordId);
+    // v0.1.475 — sin subtareas en la lista, el menú «/» no ofrece crearlas.
+    const features = useListFeatures(listKey);
     const save = useUpdateRecordDescription(listKey, recordId);
     const { mutate } = save;
 
@@ -291,6 +294,7 @@ export function RecordDescription({
                         listSlug={listSlug ?? (typeof listKey === 'string' ? listKey : undefined)}
                         recordId={recordId}
                         aiListKey={listKey}
+                        allowSubtasks={features?.subtasks ?? true}
                         onChange={handleChange}
                         onBlurFlush={draft ? undefined : flush}
                     />

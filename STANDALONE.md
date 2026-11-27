@@ -11024,3 +11024,61 @@ es definitivo y en cascada con sus envíos) y no tienen módulo del plan propio
 lleva con bloques re-mapeados y envíos pausados. Quedan fuera por ahora:
 plantillas de informes y herramientas del asistente/MCP para leerlos o
 proponerlos.
+
+### ADR-S115 — Funciones de la lista: cada lista enciende lo que usa (v0.1.475)
+
+**Contexto.** La ficha de cada registro fue sumando funciones: descripción,
+resumen con IA, subtareas, checklists, dependencias, tiempo registrado y el
+aviso de duplicados (ADR-S106). Todas valían en todas las listas. En una lista
+simple —unos clientes, unas anualidades, unos pagos— eso era ruido, y el aviso
+de duplicados con las reglas sugeridas aparecía en TODO registro con un correo
+o un teléfono repetido, aunque repetirse fuera lo normal (el mismo cliente paga
+varias anualidades). Reporte del usuario sobre «Anualidades LIC».
+
+**Decisión.**
+1. **`lists.settings.features`** (sin migración de esquema) con siete claves:
+   `description`, `ai_summary`, `subtasks`, `checklists`, `dependencies`,
+   `time_tracking`, `duplicates`. Schema y lectores en
+   `packages/shared/src/schemas/list-features.ts`. Lectura tolerante por
+   clave: una clave que falta se lee como antes de esta versión (encendida),
+   salvo `duplicates`, que sin dato vale sólo si la lista tiene reglas propias
+   y no las apagó. Al guardar siempre se escribe el objeto completo.
+2. **Apagar esconde, nunca borra.** La función sale de la ficha (modal,
+   página y ficha diseñada: los bloques con `BLOCK_FEATURE`), de la tabla (los
+   indicadores de descripción, checklist y bloqueo no se calculan en el
+   servidor) y de los menús. Al encenderla vuelve todo como estaba. La única
+   excepción: las subtareas que ya existen se siguen viendo (si no, quedarían
+   registros sin forma de abrirlos); apagadas, sólo deja de ofrecerse crear
+   nuevas.
+3. **El servidor también la respeta**, no sólo la interfaz: resumir o escribir
+   con IA, sumar una dependencia y el aviso de duplicados (`check`,
+   `forRecord`) responden 409 `list_feature_off` o vacío; el asistente y el
+   MCP lo reciben como error corregible y pueden encenderla con
+   `propose_update_list` (`features`). `updateSettings({enabled})` de
+   duplicados escribe `features.duplicates`.
+4. **Valores de fábrica**:
+   - listas que ya existían (migración 0143): **según el uso** — encendido lo
+     que la lista ya usa (algún registro con padre, checklists o un campo de
+     progreso, dependencias o su configuración, entradas de tiempo o un campo
+     «Tiempo registrado»), descripción y resumen con IA encendidos, y el aviso
+     de duplicados sólo con reglas elegidas a mano. Sólo toca listas sin
+     `features`;
+   - listas nuevas en blanco, desde un archivo o de Airtable: sólo
+     descripción y resumen con IA (`LIST_FEATURES_BASE`);
+   - de una plantilla del sistema: las que declara la plantilla (proyectos:
+     subtareas, checklists, dependencias y tiempo; soporte: tiempo; CRM:
+     duplicados); duplicar una lista copia las suyas;
+   - armadas por la IA: las que sugiere el tipo de lista
+     (`suggestListFeatures`).
+5. **Dónde se elige**: Configuración de la lista → **Funciones** (grupo «La
+   lista»), con un interruptor por función, su explicación y lo que pasa al
+   apagarla; quien no administra listas las ve sin poder cambiarlas. Cada
+   toque guarda sólo esa clave (el PATCH de ajustes mezcla con la fila
+   bloqueada) y el interruptor se mueve al instante.
+
+**Consecuencias.** Migración 0143. Una lista vieja no pierde nada que use, y
+las que tenían el aviso de duplicados sólo por las reglas sugeridas dejan de
+mostrarlo. Un reemplazo interno de `settings` (sin mezcla) conserva
+`features`: perderlas volvería a encender todo. Quedan fuera por ahora:
+apagar comentarios, actividad y archivos (son de toda ficha) y funciones por
+rol dentro de una misma lista.

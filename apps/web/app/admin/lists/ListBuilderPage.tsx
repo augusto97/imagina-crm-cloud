@@ -25,6 +25,7 @@ import { SlaPolicyPanel } from '../helpdesk/SlaPolicyPanel';
 import { HowItWorksLink } from '../help/HowItWorksLink';
 import { RecordTemplatesPanel } from '../records/templates/RecordTemplatesPanel';
 import { AppearancePanel } from './AppearancePanel';
+import { ListFeaturesPanel } from './ListFeaturesPanel';
 import { DuplicateTemplatePanel } from './DuplicateTemplatePanel';
 import { DangerZonePanel, GeneralPanel } from './GeneralPanel';
 import { FieldBuilder } from './FieldBuilder';
@@ -256,6 +257,14 @@ export function ListBuilderPage(): JSX.Element {
                 <Card>
                     <CardContent className="imcrm-pt-5">
                         <AppearancePanel list={data} />
+                    </CardContent>
+                </Card>
+            )}
+
+            {active === 'funciones' && (
+                <Card>
+                    <CardContent className="imcrm-pt-5">
+                        <ListFeaturesPanel list={data} />
                     </CardContent>
                 </Card>
             )}

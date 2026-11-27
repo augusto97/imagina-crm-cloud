@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import {
     DEFAULT_DEPENDENCY_SETTINGS,
     DEPENDENCY_MAX_PER_RECORD,
@@ -7,6 +7,7 @@ import {
     isDoneValue,
     jsonbKeyForField,
     readDependencySettings,
+    readListFeatures,
     resolveTitleFieldId,
     type CreateDependencyInput,
     type DependencyKind,
@@ -118,6 +119,15 @@ export class DependenciesService {
             });
         }
         const list = await this.lists.get(tenantId, listKey);
+        // v0.1.475 — con las dependencias apagadas en la lista no se crean nuevas
+        // (las que ya hay se conservan y vuelven al encenderlas).
+        if (!readListFeatures(list.settings).dependencies) {
+            throw new ConflictException({
+                code: 'list_feature_off',
+                message: 'Las dependencias están apagadas en esta lista. Se encienden en Configuración de la lista → Funciones de la lista.',
+                data: { status: 409, feature: 'dependencies' },
+            });
+        }
         const result = await this.tenantDb.withTenant(tenantId, async (tx) => {
             await this.repo.lockList(tx, tenantId, list.id);
             const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);

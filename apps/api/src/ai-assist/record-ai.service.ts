@@ -81,7 +81,7 @@ export class RecordAiService {
 
     async summary(tenantId: number, actor: AiAssistActor, listKey: string, recordId: number, opts: { refresh: boolean }): Promise<RecordAiSummary> {
         assertMayUseAi(actor);
-        const gathered = await this.context.gather(tenantId, actor, listKey, recordId);
+        const gathered = await this.context.gather(tenantId, actor, listKey, recordId, { need: 'ai_summary' });
         const access = await this.access(tenantId, false);
         const fp = contextFingerprint(gathered.context, access.model);
         const key = `airsum:${tenantId}:${gathered.record.id}:${fp}`;
@@ -109,8 +109,10 @@ export class RecordAiService {
 
     async write(tenantId: number, actor: AiAssistActor, listKey: string, recordId: number, input: RecordAiWriteInput): Promise<RecordAiTextResult> {
         assertMayUseAi(actor);
-        // Escribir es para la descripción: hace falta poder EDITAR el registro.
+        // Escribir es para la descripción: hace falta poder EDITAR el registro
+        // y que la lista use la descripción.
         await this.records.checkUpdate(tenantId, actor, listKey, recordId, {});
+        await this.context.assertFeature(tenantId, listKey, 'description');
         const access = await this.access(tenantId, true);
         let user: string;
         if (input.mode === 'compose') {

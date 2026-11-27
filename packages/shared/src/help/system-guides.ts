@@ -348,6 +348,24 @@ export const SYSTEM_GUIDES: readonly HelpGuide[] = /* @__PURE__ */ (() => [
         related: ['bulk-edit', 'duplicates'],
     },
     {
+        id: 'list-features',
+        title: '¿Cómo apago lo que una lista no usa (subtareas, checklists, duplicados…)?',
+        category: 'lists',
+        minutes: 1,
+        body: [
+            '1. En la lista toca **Configurar** y entra a **Funciones**.',
+            '2. Enciende o apaga cada función: **Descripción**, **Resumen con IA**, **Subtareas**, **Checklists**, **Dependencias**, **Tiempo registrado** y **Aviso de duplicados**.',
+            '3. El cambio se guarda solo y vale para todos los que usan esa lista.',
+            'Lo que apagas se esconde de la ficha, la tabla y los menús de esa lista. **Nunca se borra nada**: al volver a encenderla, todo aparece como estaba.',
+            'Una lista nueva en blanco empieza sólo con la descripción y el resumen con IA; una de una plantilla trae lo que esa plantilla necesita (proyectos, por ejemplo, con subtareas y checklists).',
+        ].join('\n'),
+        tip: 'En listas donde repetir es normal (pagos, anualidades, pedidos de un mismo cliente) apaga el **Aviso de duplicados**: la ficha deja de mostrar «Posibles duplicados».',
+        screens: ['list-settings:funciones', 'list-settings', 'record'],
+        keywords: 'funciones modulos activar desactivar apagar encender subtareas checklist dependencias tiempo duplicados aviso resumen ia descripcion simple',
+        route: '/lists/{list}/edit?s=funciones',
+        related: ['duplicates', 'trash'],
+    },
+    {
         id: 'duplicates',
         title: '¿Cómo encuentro y junto registros duplicados?',
         category: 'lists',
@@ -363,7 +381,7 @@ export const SYSTEM_GUIDES: readonly HelpGuide[] = /* @__PURE__ */ (() => [
         screens: ['records'],
         keywords: 'duplicados repetidos duplicado fusionar juntar combinar unir mismo correo telefono nit limpiar contactos',
         route: '/lists/{list}/records',
-        related: ['bulk-edit', 'trash', 'import-excel'],
+        related: ['list-features', 'bulk-edit', 'trash', 'import-excel'],
     },
 
     // ── Vistas ────────────────────────────────────────────────────────────

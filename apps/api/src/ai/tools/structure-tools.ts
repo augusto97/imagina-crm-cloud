@@ -124,6 +124,11 @@ import {
     GANTT_MAX_COLUMNS,
     GANTT_ZOOMS,
     readDependencySettings,
+    readListFeatures,
+    listFeaturesInputSchema,
+    LIST_FEATURE_KEYS,
+    type ListFeatureKey,
+    type ListFeaturesInput,
     readGanttSettings,
     readWorkloadSettings,
     WORKLOAD_DATE_TYPES,
@@ -1007,7 +1012,7 @@ export class StructureTools implements AiProposalApplier {
             name: 'propose_update_list',
             label: 'Armando el cambio de la lista',
             description:
-                'Propone cambiar el nombre, icono, color, campo de título, campo «Código» del escáner (QR o código de barras) o carpeta del menú de una lista existente.',
+                'Propone cambiar el nombre, icono, color, campo de título, campo «Código» del escáner (QR o código de barras), carpeta del menú o las funciones (subtareas, checklists, dependencias, tiempo registrado, duplicados, descripción, resumen con IA) de una lista existente.',
             capability: 'manage_lists',
             input: z.object({
                 list: z.string().max(63),
@@ -1020,6 +1025,11 @@ export class StructureTools implements AiProposalApplier {
                     .optional()
                     .describe('H3 — campo «Código» (texto, número o ID automático) que busca el escáner de la lista y que se llena con lo escaneado al crear; null = quitarlo'),
                 folder: z.string().max(190).nullable().optional().describe('Nombre de una carpeta EXISTENTE del menú; null = sacarla de su carpeta'),
+                features: listFeaturesInputSchema
+                    .optional()
+                    .describe(
+                        'v0.1.475 — «Funciones de la lista»: encender (true) o apagar (false) description, ai_summary, subtasks, checklists, dependencies, time_tracking, duplicates. Sólo las que cambian. Apagar las esconde de la ficha y la tabla; nunca borra datos.',
+                    ),
             }),
             run: (ctx, input) => this.proposeUpdateList(ctx, input as UpdateListSpec),
         });
@@ -1408,6 +1418,11 @@ export class StructureTools implements AiProposalApplier {
                     folder,
                     // H3 — el campo que busca el escáner de la lista (el elegido o el que lo dice en el nombre).
                     scan_code_field: pickScanField(fields, settings)?.slug ?? null,
+                },
+                // v0.1.475 — qué funciones usa la lista (apagadas = no se muestran en la ficha ni en la tabla).
+                features: {
+                    _nota: 'Funciones de la lista. Las apagadas no se ven en la ficha, la tabla ni los menús; sus datos se conservan. Se cambian con propose_update_list (features).',
+                    ...readListFeatures(settings),
                 },
                 dependencies: {
                     _nota:
@@ -2693,6 +2708,19 @@ export class StructureTools implements AiProposalApplier {
                 }
             }
         }
+        if (input.features !== undefined) {
+            const current = readListFeatures(list.settings as Record<string, unknown>);
+            const changed: ListFeaturesInput = {};
+            for (const key of LIST_FEATURE_KEYS) {
+                const v = input.features[key];
+                if (typeof v === 'boolean' && v !== current[key]) {
+                    changed[key] = v;
+                    changes.push({ label: LIST_FEATURE_AI_LABEL[key], from: current[key] ? 'Encendida' : 'Apagada', to: v ? 'Encendida' : 'Apagada' });
+                }
+            }
+            // Las funciones viajan solas: el servicio las mezcla con las guardadas.
+            if (Object.keys(changed).length > 0) patch.settings = { ...((patch.settings ?? {}) as Record<string, unknown>), features: changed };
+        }
         if (Object.keys(patch).length === 0) throw new AiToolError('No hay ningún cambio respecto a la lista actual.');
         const parsed = updateListSchema.safeParse(patch);
         if (!parsed.success) throw new AiToolError(zodIssues(parsed.error));
@@ -3464,6 +3492,7 @@ export class StructureTools implements AiProposalApplier {
                 const res = await this.blueprint.materialize(ctx.tenantId, ctx.userId, payload.blueprint, {
                     includeRecords: payload.includeRecords,
                     suggestRecordLayout: true,
+                    suggestFeatures: true,
                 });
                 return {
                     message: res.lists.length === 1 ? `Lista «${res.lists[0]!.name}» creada.` : `${res.lists.length} listas creadas.`,
@@ -5291,7 +5320,19 @@ interface UpdateListSpec {
     scan_field?: string | null;
     /** v0.1.195 — nombre de una carpeta existente; null = raíz. */
     folder?: string | null;
+    /** v0.1.475 — funciones de la lista que cambian. */
+    features?: ListFeaturesInput;
 }
+
+const LIST_FEATURE_AI_LABEL: Record<ListFeatureKey, string> = {
+    description: 'Descripción',
+    ai_summary: 'Resumen con IA',
+    subtasks: 'Subtareas',
+    checklists: 'Checklists',
+    dependencies: 'Dependencias',
+    time_tracking: 'Tiempo registrado',
+    duplicates: 'Aviso de duplicados',
+};
 
 interface ConfigurePortalSpec {
     list: string;

@@ -40,7 +40,7 @@ import { RecordActionsMenu } from './actions/RecordAction';
 import { RecordActionItems } from './actions/RecordActionItems';
 import { RecordChecklists } from '@/admin/records/checklists/RecordChecklists';
 import { TimeTrackingPanel } from '@/admin/records/time/TimeTrackingPanel';
-import { readMirrorListMarker } from '@imagina-base/shared';
+import { readListFeatures, readMirrorListMarker } from '@imagina-base/shared';
 import { RecordTitleInput } from '@/admin/records/RecordTitleInput';
 import { useRecordDraft } from '@/admin/records/recordDraft';
 import { lockedReasonsFor, mirrorSourceOf, recordGoneInSource, StoreRulesContext, type StoreRules } from '@/admin/records/storeRules';
@@ -295,6 +295,8 @@ export function RecordPage(): JSX.Element {
 
     const listInfo = list.data;
     const rec = record.data;
+    // v0.1.475 — «Funciones de la lista»: lo apagado no se dibuja.
+    const features = readListFeatures(listInfo.settings as Record<string, unknown>);
     const titleField = titleFieldOf(fields.data);
     const liveTitle = titleField ? values[titleField.slug] : undefined;
     const title =
@@ -418,7 +420,7 @@ export function RecordPage(): JSX.Element {
                     {/* Cuándo se creó y cuándo cambió (lo que no es un campo). */}
                     <RecordMetaGrid record={rec} />
                     {/* A14 — «Posible duplicado de X» (Fusionar / No es duplicado). */}
-                    {!isGuest && !storeRules && !rec.parent_id && (
+                    {!isGuest && !storeRules && !rec.parent_id && features.duplicates && (
                         <RecordDuplicateBanner
                             listId={listInfo.id}
                             listSlug={listInfo.slug}
@@ -434,7 +436,7 @@ export function RecordPage(): JSX.Element {
                     {/* C5 — aprobación (sin flujos en la lista, no aparece; no para un invitado). */}
                     {/* E6 — lo que propone un agente de IA. */}
                     {/* v0.1.456 — «Resumir con IA» y lo que se le pidió a un agente. */}
-                    {!isGuest && <RecordAiSummaryCard listId={listInfo.id} recordId={rec.id} />}
+                    {!isGuest && features.ai_summary && <RecordAiSummaryCard listId={listInfo.id} recordId={rec.id} />}
                     {!isGuest && <RecordAgentRuns listId={listInfo.id} recordId={rec.id} />}
                     {!isGuest && <RecordAgentProposals listId={listInfo.id} recordId={rec.id} />}
                     {!isGuest && <RecordApprovals listId={listInfo.id} recordId={rec.id} />}
@@ -443,12 +445,14 @@ export function RecordPage(): JSX.Element {
 
                     {/* Descripción rica (v0.1.133) — mismo componente que el
                         modal del registro. */}
-                    <RecordDescription
-                        listKey={listSlug ?? listInfo.id}
-                        recordId={rec.id}
-                        editable={canEditRecords}
-                        draft={descDraft}
-                    />
+                    {features.description && (
+                        <RecordDescription
+                            listKey={listSlug ?? listInfo.id}
+                            recordId={rec.id}
+                            editable={canEditRecords}
+                            draft={descDraft}
+                        />
+                    )}
 
                     {/* Sección "Campos" colapsable: una fila por campo custom
                      * (icono del tipo + label a la izquierda, editor inline a
@@ -497,32 +501,39 @@ export function RecordPage(): JSX.Element {
                             portal, cobros, documentos, vínculos). */}
                         {!isGuest && (
                             <>
-                                {!rec.parent_id && (
+                                {!rec.parent_id && (features.subtasks || (rec.subtask_count ?? 0) > 0) && (
                                     <RecordSubtasks
                                         listId={listInfo.id}
                                         listSlug={listInfo.slug}
                                         record={rec}
                                         fields={fields.data ?? []}
+                                        allowCreate={features.subtasks}
                                         className="imcrm-mt-4"
                                     />
                                 )}
 
                                 {/* A9 — checklists del registro. */}
-                                <RecordChecklists
-                                    listId={listInfo.id}
-                                    recordId={id}
-                                    isSubtask={rec.parent_id !== null}
-                                    storeManaged={storeRules !== null}
-                                    className="imcrm-mt-5"
-                                />
+                                {features.checklists && (
+                                    <RecordChecklists
+                                        listId={listInfo.id}
+                                        recordId={id}
+                                        isSubtask={rec.parent_id !== null}
+                                        storeManaged={storeRules !== null}
+                                        className="imcrm-mt-5"
+                                    />
+                                )}
 
                                 {/* A8 — dependencias («bloqueado por» / «bloquea»). */}
-                                <RecordDependencies listId={listInfo.id} listSlug={listInfo.slug} recordId={id} className="imcrm-mt-5" />
+                                {features.dependencies && (
+                                    <RecordDependencies listId={listInfo.id} listSlug={listInfo.slug} recordId={id} className="imcrm-mt-5" />
+                                )}
 
                                 {/* v0.1.291 — registro de tiempo (cronómetro + cargas a mano). */}
-                                <div className="imcrm-mt-4 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-p-3">
-                                    <TimeTrackingPanel listId={listInfo.id} listKey={listInfo.slug} recordId={id} />
-                                </div>
+                                {features.time_tracking && (
+                                    <div className="imcrm-mt-4 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-p-3">
+                                        <TimeTrackingPanel listId={listInfo.id} listKey={listInfo.slug} recordId={id} />
+                                    </div>
+                                )}
 
                                 {/* Acceso al portal del cliente — también sin
                                     plantilla CRM (se auto-oculta si el portal de

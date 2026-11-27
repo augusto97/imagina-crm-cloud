@@ -38,6 +38,7 @@ import {
     layoutChartKindSchema,
     resolveEmbed,
     type LayoutBlock,
+    type ListFeatureKey,
     type LayoutDataSource,
 } from '@imagina-base/shared';
 
@@ -75,7 +76,7 @@ import { ButtonFieldControl, usePortalButtonHidden } from '@/admin/records/butto
 import { ActivityFeed } from './ActivityFeed';
 import { RecordAiSummaryCard } from '../ai/RecordAi';
 import { FieldDisplay, optionsOf } from './FieldDisplay';
-import { fieldEditable, useConditionHiddenIds, useLayoutCtx } from './LayoutContext';
+import { fieldEditable, useConditionHiddenIds, useLayoutCtx, useLayoutFeatures } from './LayoutContext';
 import { surfaceClass, tint } from './layoutTheme';
 import { RecordStatsView } from './RecordStatsView';
 import { RelatedBlockView } from './RelatedBlockView';
@@ -136,6 +137,16 @@ const GUEST_HIDDEN_BLOCKS = new Set<string>([
  * v0.1.230 — Un bloque de la ficha dentro de su marco (tarjeta del tema,
  * título, capa de estilo compartida con los tableros).
  */
+/** v0.1.475 — Qué función de la lista necesita cada bloque. */
+const BLOCK_FEATURE: Partial<Record<LayoutBlock['type'], ListFeatureKey>> = {
+    description: 'description',
+    ai_summary: 'ai_summary',
+    subtasks: 'subtasks',
+    checklist: 'checklists',
+    dependencies: 'dependencies',
+    time_tracking: 'time_tracking',
+};
+
 export function LayoutBlockView({
     block,
     open: openProp,
@@ -172,6 +183,15 @@ export function LayoutBlockView({
     // Un botón que el portal no deja usar no se le muestra al cliente (ni su hueco).
     const buttonField = block.type === 'field' ? ctx.fieldsById.get(Number(block.config.field_id)) : undefined;
     const portalHidden = usePortalButtonHidden(buttonField?.type === 'button' ? buttonField.id : null);
+    // v0.1.475 — una función apagada en la lista no dibuja su bloque (en el
+    // editor queda con un aviso, para que se entienda por qué no aparece). Las
+    // subtareas que ya existen se siguen viendo aunque se apague crear nuevas.
+    const features = useLayoutFeatures();
+    const featureKey = BLOCK_FEATURE[block.type];
+    const featureOff =
+        featureKey !== undefined &&
+        !features[featureKey] &&
+        !(featureKey === 'subtasks' && ctx.preview !== true && (ctx.record.subtask_count ?? 0) > 0);
 
     if (portalHidden) return null;
     // C3 — a un invitado no se le dibuja lo que mira otras listas o la
@@ -180,7 +200,14 @@ export function LayoutBlockView({
     if (isEmptyActionButton(block, ctx)) return null;
     // Sin conexión de cobro (o sin nada que mostrar) el cliente no ve «Pagos».
     if (ctx.mode === 'portal' && !ctx.preview && block.type === 'payments' && !ctx.portalPayments?.[block.id]) return null;
-    const body = <BlockBody block={block} />;
+    if (featureOff && ctx.preview !== true) return null;
+    const body = featureOff ? (
+        <p className="imcrm-text-sm imcrm-text-muted-foreground" data-testid="imcrm-block-feature-off">
+            {__('Esta función está apagada en esta lista: el bloque no se ve en la ficha. Se enciende en Configuración de la lista → Funciones.')}
+        </p>
+    ) : (
+        <BlockBody block={block} />
+    );
     if (!card) {
         return (
             <div className={blockStyleClass(style)} style={styled ? blockStyleCss(style, { dark }) : undefined} data-block={block.type}>
@@ -298,6 +325,7 @@ function blockTitle(block: LayoutBlock, fieldsById: Map<number, FieldEntity>): s
 
 function BlockBody({ block }: { block: LayoutBlock }): JSX.Element | null {
     const ctx = useLayoutCtx();
+    const features = useLayoutFeatures();
     const c = block.config;
     switch (block.type) {
         case 'field':
@@ -452,6 +480,7 @@ function BlockBody({ block }: { block: LayoutBlock }): JSX.Element | null {
                     record={ctx.record}
                     fields={ctx.fields}
                     readOnly={ctx.preview === true}
+                    allowCreate={features.subtasks}
                 />
             );
         default:

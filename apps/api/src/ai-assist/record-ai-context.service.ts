@@ -1,6 +1,8 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, Optional } from '@nestjs/common';
+import type { ListFeatureKey } from '@imagina-base/shared';
 import {
     listRecordsQuerySchema,
+    readListFeatures,
     resolveTitleFieldId,
     richDocToMarkdown,
     zonedToday,
@@ -99,9 +101,21 @@ export class RecordAiContextService {
         return { list, fields: visible, record, title, hidden, names, values };
     }
 
-    async gather(tenantId: number, actor: Actor, listKey: string, recordId: number): Promise<GatheredRecord> {
+    /**
+     * v0.1.475 — una función apagada en la lista («Funciones de la lista») no
+     * se usa: 409 con el motivo, antes de leer nada más.
+     */
+    async assertFeature(tenantId: number, listKey: string, key: ListFeatureKey): Promise<void> {
+        const list = await this.lists.get(tenantId, listKey);
+        if (!readListFeatures(list.settings)[key]) throw featureOff(key);
+    }
+
+    async gather(tenantId: number, actor: Actor, listKey: string, recordId: number, opts: { need?: ListFeatureKey } = {}): Promise<GatheredRecord> {
         const base = await this.basic(tenantId, actor, listKey, recordId);
         const { list, record, names } = base;
+        // Lo apagado en la lista no se lee ni le llega a la IA.
+        const features = readListFeatures(list.settings);
+        if (opts.need && !features[opts.need]) throw featureOff(opts.need);
         const key = String(list.id);
         const fieldById = new Map(base.fields.map((f) => [f.id, f]));
         const tz = await this.timeZones.orUtc(tenantId);
@@ -117,7 +131,7 @@ export class RecordAiContextService {
         };
 
         const tasks: Array<() => Promise<unknown>> = [
-            () => soft('descripción', () => this.records.getDescription(tenantId, actor, key, recordId)),
+            () => (features.description ? soft('descripción', () => this.records.getDescription(tenantId, actor, key, recordId)) : Promise.resolve(null)),
             () => soft('comentarios', () => this.tenantDb.withTenant(tenantId, (tx) => this.comments.listInTx(tx, tenantId, recordId))),
             () =>
                 soft('actividad', async () =>
@@ -135,12 +149,12 @@ export class RecordAiContextService {
                     : soft('subtareas', () => this.records.list(tenantId, actor, key, listRecordsQuerySchema.parse({ parent: recordId, limit: CTX_SUBTASKS, page: 1 }))),
             () => soft('relaciones', () => this.fields.relationPaths(tenantId, key)),
             () =>
-                this.checklists
+                this.checklists && features.checklists
                     ? soft('checklists', () => this.tenantDb.withTenant(tenantId, (tx) => this.checklists!.forRecordInTx(tx, tenantId, recordId)))
                     : Promise.resolve(null),
             () => (this.approvals ? soft('aprobaciones', () => this.approvals!.recordApprovals(tenantId, actor, key, recordId)) : Promise.resolve(null)),
             () => (this.collections ? soft('cobros', () => this.collections!.recordPayments(tenantId, actor, key, recordId)) : Promise.resolve(null)),
-            () => (this.dependencies ? soft('dependencias', () => this.dependencies!.forRecord(tenantId, actor, key, recordId)) : Promise.resolve(null)),
+            () => (this.dependencies && features.dependencies ? soft('dependencias', () => this.dependencies!.forRecord(tenantId, actor, key, recordId)) : Promise.resolve(null)),
             () =>
                 soft('citas', () =>
                     this.tenantDb.withTenant(tenantId, (tx) =>
@@ -369,4 +383,23 @@ export class RecordAiContextService {
             relations,
         };
     }
+}
+
+const FEATURE_OFF: Record<ListFeatureKey, string> = {
+    description: 'La descripción está apagada en esta lista.',
+    ai_summary: 'El resumen con IA está apagado en esta lista.',
+    subtasks: 'Las subtareas están apagadas en esta lista.',
+    checklists: 'Los checklists están apagados en esta lista.',
+    dependencies: 'Las dependencias están apagadas en esta lista.',
+    time_tracking: 'El tiempo registrado está apagado en esta lista.',
+    duplicates: 'El aviso de duplicados está apagado en esta lista.',
+};
+
+/** 409 cuando la lista tiene apagada la función que se pide. */
+export function featureOff(key: ListFeatureKey): ConflictException {
+    return new ConflictException({
+        code: 'list_feature_off',
+        message: `${FEATURE_OFF[key]} Se enciende en Configuración de la lista → Funciones de la lista.`,
+        data: { status: 409, feature: key },
+    });
 }

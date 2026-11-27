@@ -47,6 +47,10 @@ import { ViewsService } from '../src/views/views.service';
 import { startPostgres, startRedis, type TestPg, type TestRedis } from './helpers/containers';
 import { memoryIntegrationApps, memoryOAuthStore } from './helpers/oauth-store';
 
+/** v0.1.475 — una lista de trabajo enciende sus funciones (una en blanco nace sólo con descripción y resumen). */
+const PROJECT_FEATURES = { subtasks: true, checklists: true, dependencies: true, time_tracking: true } as const;
+
+
 class FakeHookStore implements HookCaptureStore {
     lpush(): Promise<number> {
         return Promise.resolve(1);
@@ -125,7 +129,7 @@ describe('Asistente/MCP + plantillas: dependencias y vista Gantt', () => {
         await pg.db.insert(memberships).values([{ tenantId, userId: adminId, role: 'admin' }]);
         const admin: AiToolContext = { tenantId, userId: adminId, role: 'admin' };
 
-        await lists.create(tenantId, { name: 'Obra' });
+        await lists.create(tenantId, { name: 'Obra', features: PROJECT_FEATURES });
         const mk = async (label: string, slug: string, type: string, config?: Record<string, unknown>): Promise<void> => {
             f[slug] = (await fields.create(tenantId, 'obra', { label, slug, type, ...(config ? { config } : {}) } as never)).id;
         };

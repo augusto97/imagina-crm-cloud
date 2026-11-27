@@ -17953,6 +17953,64 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         el KPI pasa de 7 a 3 y sigue así al recargar, el segundo toque abre
         los registros del mes, sin scroll lateral ni errores de JS).
 
+  - [x] **Cada lista elige qué funciones usa (v0.1.475, ADR-S115, reporte del
+        usuario con capturas: "el aviso de posibles duplicados sale en todos
+        los registros y es muy invasivo para listas que sí necesitan tener
+        duplicados… dejarlo como módulos activables o desactivables en cada
+        lista, lo de subtareas, checklist y demás")**. (a) **Siete
+        funciones por lista** en `lists.settings.features` (sin migración de
+        esquema; `packages/shared/src/schemas/list-features.ts`): Descripción,
+        Resumen con IA, Subtareas, Checklists, Dependencias, Tiempo registrado
+        y Aviso de duplicados. Lectura tolerante por clave (lo que falta se lee
+        encendido, salvo duplicados: sólo con reglas propias y sin apagar);
+        el PATCH de ajustes mezcla con la fila bloqueada, valida `features`
+        (400 `invalid_list_features`) y siempre escribe el objeto completo; un
+        reemplazo interno de `settings` también las conserva. (b)
+        **Configuración de la lista → Funciones** (grupo «La lista»,
+        `ListFeaturesPanel`, `data-tour="list-settings-features"`): un
+        interruptor por función con su explicación y qué pasa al apagarla,
+        optimista y guardando sólo esa clave; quien no administra listas las
+        ve sin cambiarlas. (c) **Apagar esconde, nunca borra**: sale de la
+        ficha (modal, página y ficha diseñada, `BLOCK_FEATURE` en los
+        bloques), de la tabla (el servidor deja de calcular el ícono de
+        descripción, el progreso del checklist y el candado de bloqueado) y de
+        los menús; encender trae todo de vuelta. Las subtareas que ya existen
+        se siguen viendo; apagadas, sólo deja de ofrecerse crear nuevas. (d)
+        **El servidor lo respeta**: resumen y escritura con IA y sumar una
+        dependencia → 409 `list_feature_off` con el motivo; duplicados
+        `check`/`forRecord` → nada, y `updateSettings({enabled})` escribe
+        `features.duplicates`; el asistente/MCP lo recibe como error
+        corregible y puede encenderlas con `propose_update_list` (`features`),
+        y `get_list_schema` las muestra. (e) **Valores de fábrica** (elegidos
+        por el usuario): listas que ya existían, **según el uso** (migración
+        0143: encendido lo que ya usan —algún registro con padre, checklists o
+        campo de progreso, dependencias o su configuración, entradas de tiempo
+        o campo de tiempo—, descripción y resumen con IA encendidos, duplicados
+        sólo con reglas a mano); nuevas, **según cómo se crean**: en blanco,
+        desde un archivo o de Airtable sólo descripción y resumen con IA; de
+        una plantilla del sistema lo que esa plantilla declara (proyectos:
+        subtareas, checklists, dependencias y tiempo; soporte: tiempo; CRM:
+        duplicados); duplicar una lista copia las suyas; armadas por la IA,
+        `suggestListFeatures`. Así «Anualidades LIC» deja de mostrar el aviso
+        de duplicados sin que nadie toque nada. Ayuda: guía `list-features`
+        (y la de duplicados la enlaza), sección «Funciones: una lista simple
+        se ve simple» en Aprende → Listas y campos y novedad con carrusel
+        (ilustraciones `ficha-checklist` y `duplicados-fusionar`). Tests:
+        `list-features.spec` (6: crear con la base o con las pedidas, PATCH que
+        mezcla y rechaza claves inválidas, duplicados apagados en una lista
+        nueva y encendidos con reglas, dependencias 409 con el candado
+        escondido y el vínculo conservado, descripción escondida en el listado
+        con el documento conservado, y la migración 0143 por uso),
+        `templates.spec` (funciones por plantilla y al duplicar), `lists.spec`
+        y specs afectados en verde, shared 1251, front 1058 — bundle de la app
+        826/830 KB gz — + E2E navegador 29/29 en escritorio y 27/27 en celular
+        390×844 oscuro (ficha con todo encendido, apagar seis en Configuración
+        → Funciones con el contador «1 de 7», guardado y persistido al
+        recargar, ficha sin duplicados/descripción/checklists/tiempo/
+        dependencias, la subtarea vieja visible sin «Agregar», tabla sin el
+        ícono de descripción, al encender vuelven el aviso y el texto, lista en
+        blanco con la base, sin scroll lateral ni errores de JS).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

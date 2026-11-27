@@ -1,5 +1,6 @@
 import {
     BLUEPRINT_VERSION,
+    listFeaturesWith,
     type ListBlueprint,
     type TemplateCategory,
 } from '@imagina-base/shared';
@@ -84,7 +85,7 @@ const crmClientes: SystemTemplate = {
                 f('Notas', 'notas', 'long_text'),
             ],
             {
-                settings: { title_field_id: ref('nombre') },
+                settings: { features: listFeaturesWith('duplicates'), title_field_id: ref('nombre') },
                 views: [table(), kanban('Por estado', 'estado')],
                 records: [
                     { data: { nombre: 'Ana Gómez', empresa: 'Acme S.A.', email: 'ana@acme.com', estado: 'activo', ciudad: 'Bogotá' } },
@@ -126,7 +127,7 @@ const pipelineVentas: SystemTemplate = {
                 f('Próximo paso', 'proximo_paso', 'text'),
             ],
             {
-                settings: { title_field_id: ref('oportunidad') },
+                settings: { features: listFeaturesWith(), title_field_id: ref('oportunidad') },
                 views: [kanban('Pipeline', 'etapa'), table('Tabla', false), calendar('Cierres', 'cierre_estimado')],
                 automations: [
                     {
@@ -190,7 +191,7 @@ const facturacion: SystemTemplate = {
                         'Fecha de emisión de la factura más reciente.'),
                 ],
                 {
-                    settings: { title_field_id: ref('razon_social') },
+                    settings: { features: listFeaturesWith('duplicates'), title_field_id: ref('razon_social') },
                     records: [
                         { key: 'c1', data: { razon_social: 'Acme S.A.', identificacion: '900123456', modalidad: 'anticipado', monto_mensual: 250 } },
                         { key: 'c2', data: { razon_social: 'Globex', identificacion: '900654321', modalidad: 'vencido', monto_mensual: 480 } },
@@ -223,7 +224,7 @@ const facturacion: SystemTemplate = {
                         'La identificación del cliente vinculado.'),
                 ],
                 {
-                    settings: { title_field_id: ref('numero') },
+                    settings: { features: listFeaturesWith(), title_field_id: ref('numero') },
                     views: [table(), kanban('Por estado', 'estado'), calendar('Vencimientos', 'vencimiento')],
                     automations: [
                         {
@@ -300,7 +301,7 @@ const proyectos: SystemTemplate = {
                 }),
             ],
             {
-                settings: { title_field_id: ref('tarea') },
+                settings: { features: listFeaturesWith('subtasks', 'checklists', 'dependencies', 'time_tracking'), title_field_id: ref('tarea') },
                 views: [kanban('Tablero', 'estado'), table('Tabla', false), calendar('Entregas', 'fecha_limite')],
                 automations: [
                     {
@@ -387,6 +388,7 @@ const soporte: SystemTemplate = {
             ],
             {
                 settings: {
+                    features: listFeaturesWith('time_tracking'),
                     title_field_id: ref('asunto'),
                     // D2/E5 — la mesa de ayuda lista para usar: falta sólo conectar el buzón
                     // (Ajustes de la lista → Correo entrante).
@@ -475,7 +477,7 @@ const inventario: SystemTemplate = {
                 f('Ubicación', 'ubicacion', 'text'),
             ],
             {
-                settings: { title_field_id: ref('producto') },
+                settings: { features: listFeaturesWith(), title_field_id: ref('producto') },
                 views: [table(), kanban('Por categoría', 'categoria')],
                 records: [
                     { data: { producto: 'Monitor 27"', sku: 'MON-27', categoria: 'hardware', stock: 12, stock_minimo: 5, precio: 220, activo: true } },
@@ -532,7 +534,7 @@ const reclutamiento: SystemTemplate = {
                         'Promedio de la evaluación de sus candidatos.'),
                 ],
                 {
-                    settings: { title_field_id: ref('vacante') },
+                    settings: { features: listFeaturesWith(), title_field_id: ref('vacante') },
                     views: [table(), kanban('Por estado', 'estado')],
                     records: [
                         { key: 'v1', data: { vacante: 'Diseñador/a UX', area: 'producto', estado: 'en_proceso', salario: 2200 } },
@@ -575,7 +577,7 @@ const reclutamiento: SystemTemplate = {
                         'Lo que ofrece la vacante, para la conversación con el candidato.'),
                 ],
                 {
-                    settings: { title_field_id: ref('candidato') },
+                    settings: { features: listFeaturesWith('duplicates'), title_field_id: ref('candidato') },
                     views: [kanban('Proceso', 'etapa'), table('Tabla', false), calendar('Entrevistas', 'entrevista')],
                     records: [
                         { data: { candidato: 'Laura Martínez', etapa: 'entrevista', fuente: 'linkedin', evaluacion: 4 }, relations: { vacante: ['v1'] } },
@@ -642,7 +644,7 @@ const eventos: SystemTemplate = {
                     }),
                 ],
                 {
-                    settings: { title_field_id: ref('evento') },
+                    settings: { features: listFeaturesWith(), title_field_id: ref('evento') },
                     views: [table(), calendar('Calendario', 'fecha'), kanban('Por estado', 'estado')],
                     records: [
                         { key: 'e1', data: { evento: 'Lanzamiento de producto', lugar: 'Auditorio central', capacidad: 120, estado: 'confirmado' } },
@@ -675,7 +677,7 @@ const eventos: SystemTemplate = {
                         'El lugar del evento al que está invitado.'),
                 ],
                 {
-                    settings: { title_field_id: ref('invitado') },
+                    settings: { features: listFeaturesWith('duplicates'), title_field_id: ref('invitado') },
                     views: [table(), kanban('Confirmaciones', 'confirmacion')],
                     records: [
                         { data: { invitado: 'María Salas', confirmacion: 'confirmado', acompanantes: 1, mesa: '3' }, relations: { evento: ['e1'] } },
@@ -732,7 +734,7 @@ const gastos: SystemTemplate = {
                 f('Notas', 'notas', 'long_text'),
             ],
             {
-                settings: { title_field_id: ref('concepto') },
+                settings: { features: listFeaturesWith(), title_field_id: ref('concepto') },
                 views: [table(), kanban('Por categoría', 'categoria'), calendar('Por fecha', 'fecha')],
                 records: [
                     { data: { concepto: 'Hosting mensual', categoria: 'software', monto: 49, aprobado: true } },
@@ -789,7 +791,7 @@ const contratos: SystemTemplate = {
                 f('Contrato firmado', 'documento', 'file'),
             ],
             {
-                settings: { title_field_id: ref('cliente') },
+                settings: { features: listFeaturesWith(), title_field_id: ref('cliente') },
                 views: [table(), kanban('Por estado', 'estado'), calendar('Renovaciones', 'renovacion')],
                 automations: [
                     {
@@ -865,7 +867,7 @@ const contenidos: SystemTemplate = {
                 f('Guion / notas', 'notas', 'long_text'),
             ],
             {
-                settings: { title_field_id: ref('titulo') },
+                settings: { features: listFeaturesWith('checklists'), title_field_id: ref('titulo') },
                 views: [kanban('Editorial', 'estado'), table('Tabla', false), calendar('Salidas', 'publicacion')],
                 records: [
                     { data: { titulo: 'Lanzamiento de la nueva versión', canales: ['linkedin', 'blog'], estado: 'borrador' } },
@@ -912,7 +914,7 @@ const incidencias: SystemTemplate = {
                 f('Captura', 'captura', 'file'),
             ],
             {
-                settings: { title_field_id: ref('titulo') },
+                settings: { features: listFeaturesWith('subtasks', 'checklists'), title_field_id: ref('titulo') },
                 views: [table(), kanban('Por estado', 'estado')],
                 records: [
                     { data: { titulo: 'El login no carga en Safari', severidad: 'alta', estado: 'confirmada', modulo: 'Acceso' } },
@@ -970,7 +972,7 @@ const activos: SystemTemplate = {
                 f('Ubicación', 'ubicacion', 'text'),
             ],
             {
-                settings: { title_field_id: ref('nombre') },
+                settings: { features: listFeaturesWith(), title_field_id: ref('nombre') },
                 views: [table(), kanban('Por estado', 'estado')],
                 records: [
                     { data: { nombre: 'MacBook Pro 14"', tipo: 'laptop', serie: 'C02XY123', estado: 'en_uso', valor: 2200 } },
@@ -1023,7 +1025,7 @@ const compras: SystemTemplate = {
                         'Fecha de la orden más reciente.'),
                 ],
                 {
-                    settings: { title_field_id: ref('nombre') },
+                    settings: { features: listFeaturesWith('duplicates'), title_field_id: ref('nombre') },
                     records: [
                         { key: 'p1', data: { nombre: 'Papelería Central', categoria: 'insumos', calificacion: 4 } },
                         { key: 'p2', data: { nombre: 'CloudHost', categoria: 'tecnologia', calificacion: 5 } },
@@ -1056,7 +1058,7 @@ const compras: SystemTemplate = {
                         'La categoría del proveedor vinculado.'),
                 ],
                 {
-                    settings: { title_field_id: ref('numero') },
+                    settings: { features: listFeaturesWith(), title_field_id: ref('numero') },
                     views: [table(), kanban('Por estado', 'estado'), calendar('Entregas', 'entrega')],
                     records: [
                         { data: { numero: 'OC-001', monto: 180, estado: 'recibida' }, relations: { proveedor: ['p1'] } },
@@ -1119,7 +1121,7 @@ const inmuebles: SystemTemplate = {
                 f('Asesor', 'asesor', 'user'),
             ],
             {
-                settings: { title_field_id: ref('titulo') },
+                settings: { features: listFeaturesWith(), title_field_id: ref('titulo') },
                 views: [table(), kanban('Por estado', 'estado')],
                 records: [
                     { data: { titulo: 'Apartamento en Chapinero', tipo: 'apartamento', operacion: 'venta', estado: 'disponible', precio: 180000, area: 72, habitaciones: 2, ciudad: 'Bogotá' } },
@@ -1178,7 +1180,7 @@ const citas: SystemTemplate = {
                 f('Notas', 'notas', 'long_text'),
             ],
             {
-                settings: { title_field_id: ref('cliente') },
+                settings: { features: listFeaturesWith(), title_field_id: ref('cliente') },
                 // B4 — la agenda abre en la semana, cada cita dura lo que dice
                 // «Duración» y se pinta con el color de su estado.
                 views: [
@@ -1291,7 +1293,7 @@ const okrs: SystemTemplate = {
                 f('Notas', 'notas', 'long_text'),
             ],
             {
-                settings: { title_field_id: ref('objetivo') },
+                settings: { features: listFeaturesWith('subtasks', 'checklists'), title_field_id: ref('objetivo') },
                 views: [table(), kanban('Por trimestre', 'trimestre')],
                 records: [
                     { data: { objetivo: 'Duplicar los clientes activos', resultado_clave: 'Pasar de 50 a 100', trimestre: 'q1', avance: 35, estado: 'en_curso' } },
@@ -1413,6 +1415,7 @@ const contactosWhatsapp: SystemTemplate = {
             ],
             {
                 settings: {
+                    features: listFeaturesWith('duplicates'),
                     title_field_id: ref('nombre'),
                     whatsapp: {
                         phone_field_id: ref('telefono'),

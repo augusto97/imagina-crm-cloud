@@ -79,3 +79,21 @@ describe('niveles de acceso por rol', () => {
         expect(levelOf(blankRolePermissions())).toBe('none');
     });
 });
+
+describe('funciones de la lista (v0.1.475)', () => {
+    it('la sección «Funciones» está en el grupo de la lista, después de Apariencia', async () => {
+        const groups = groupedListSettingsSections(() => true);
+        const list = groups.find((g) => g.id === 'list');
+        expect(list?.sections.map((s) => s.id)).toEqual(['campos', 'general', 'apariencia', 'funciones']);
+        expect(resolveListSettingsSection('funciones')).toBe('funciones');
+    });
+
+    it('el panel ofrece cada función una sola vez, con su explicación', async () => {
+        const { LIST_FEATURE_KEYS } = await import('@imagina-base/shared');
+        const { LIST_FEATURE_CATALOG } = await import('./listFeatureCatalog');
+        const keys = LIST_FEATURE_CATALOG.map((f) => f.key);
+        expect(new Set(keys).size).toBe(keys.length);
+        expect([...keys].sort()).toEqual([...LIST_FEATURE_KEYS].sort());
+        for (const f of LIST_FEATURE_CATALOG) expect(f.hint.length).toBeGreaterThan(20);
+    });
+});

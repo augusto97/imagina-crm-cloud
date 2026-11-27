@@ -60,6 +60,7 @@ export * from './schemas/automation-extras';
 export * from './schemas/automation-control';
 export * from './schemas/automation-steps';
 export * from './schemas/automation-ai-draft';
+export * from './schemas/list-features';
 export * from './schemas/duplicates';
 export * from './schemas/signatures';
 export * from './schemas/signature-automations';

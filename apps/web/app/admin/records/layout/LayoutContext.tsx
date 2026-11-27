@@ -1,7 +1,7 @@
 import { createContext, useContext, useMemo } from 'react';
 import { DERIVED_FIELD_TYPES } from '@/lib/fieldTypeCatalog';
 import { conditionHiddenFields } from '@/lib/fieldVisibility';
-import type { PortalPaymentsBlockData } from '@imagina-base/shared';
+import { readListFeatures, type ListFeatures, type PortalPaymentsBlockData } from '@imagina-base/shared';
 
 import type { PortalBootData } from '@/portal/types';
 import type { FieldEntity } from '@/types/field';
@@ -76,4 +76,14 @@ export function useConditionHiddenIds(): ReadonlySet<number> {
         () => (ctx.preview ? new Set<number>() : new Set(conditionHiddenFields(ctx.fields, ctx.values).keys())),
         [ctx.preview, ctx.fields, ctx.values],
     );
+}
+
+/**
+ * v0.1.475 (ADR-S115) — Las funciones que la lista tiene encendidas. En el
+ * portal la lista no trae sus ajustes: se leen como siempre (todo encendido),
+ * y ahí esos bloques igual no se dibujan.
+ */
+export function useLayoutFeatures(): ListFeatures {
+    const settings = useLayoutCtx().list.settings as Record<string, unknown> | undefined;
+    return useMemo(() => readListFeatures(settings), [settings]);
 }

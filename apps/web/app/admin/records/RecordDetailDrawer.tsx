@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { useLocation, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import type { AutoLayoutFlavor } from '@imagina-base/shared';
+import { readListFeatures, type AutoLayoutFlavor, type ListFeatureKey } from '@imagina-base/shared';
 import {
     Activity,
     Check,
@@ -273,6 +273,10 @@ export function RecordDetailDrawer({
     const listData = useList(view.ready && list === undefined ? listId : undefined);
     const listInfo = list ?? listData.data;
     const listSettings = listInfo?.settings as Record<string, unknown> | undefined;
+    // v0.1.475 — «Funciones de la lista»: lo apagado no se dibuja (mientras la
+    // lista no llegó, tampoco: así no aparece y se esconde enseguida).
+    const features = listSettings ? readListFeatures(listSettings) : null;
+    const featureOn = (k: ListFeatureKey): boolean => features !== null && features[k];
 
     // ——— v0.1.470: la ficha diseñada en la ventana ———
     // «Probar»: la ficha diseñada con una plantilla integrada, SIN guardarla.
@@ -858,7 +862,7 @@ export function RecordDetailDrawer({
                                     {/* Cuándo se creó y cuándo cambió (lo que no es un campo). */}
                                     <RecordMetaGrid record={record} twoCols className="imcrm-mb-3 imcrm-mt-4" />
                                     {/* A14 — «Posible duplicado de X» (Fusionar / No es duplicado). */}
-                                    {!isGuest && !storeRules && !record.parent_id && (
+                                    {!isGuest && !storeRules && !record.parent_id && featureOn('duplicates') && (
                                         <RecordDuplicateBanner
                                             listId={listId}
                                             listSlug={listSlug}
@@ -884,7 +888,7 @@ export function RecordDetailDrawer({
                                         solicitudes y «Pedir aprobación». Sin flujos, no ocupa lugar. */}
                                     {/* E6 — lo que propone un agente de IA (Aplicar / Descartar). */}
                                     {/* v0.1.456 — «Resumir con IA» y lo que se le pidió a un agente. */}
-                                    {view.ready && !isGuest && <RecordAiSummaryCard listId={listId} recordId={record.id} className="imcrm-mb-4" />}
+                                    {view.ready && !isGuest && featureOn('ai_summary') && <RecordAiSummaryCard listId={listId} recordId={record.id} className="imcrm-mb-4" />}
                                     {view.ready && !isGuest && <RecordAgentRuns listId={listId} recordId={record.id} className="imcrm-mb-4" />}
                                     {view.ready && !isGuest && <RecordAgentProposals listId={listId} recordId={record.id} className="imcrm-mb-5" />}
                                     {view.ready && !isGuest && <RecordApprovals listId={listId} recordId={record.id} className="imcrm-mb-5" />}
@@ -896,7 +900,8 @@ export function RecordDetailDrawer({
                                     {/* Descripción rica (v0.1.133) — el cuerpo tipo
                                         documento de la ficha, arriba de los campos
                                         (mismo lugar que en ClickUp). */}
-                                    {view.ready ? (
+                                    {view.ready && features !== null ? (
+                                        featureOn('description') && (
                                         <div data-tour="record-description">
                                             <RecordDescription
                                                 listKey={listSlug ?? listId}
@@ -906,6 +911,7 @@ export function RecordDetailDrawer({
                                                 draft={descDraft}
                                             />
                                         </div>
+                                        )
                                     ) : (
                                         skeleton('imcrm-mb-5 imcrm-h-16')
                                     )}
@@ -949,19 +955,20 @@ export function RecordDetailDrawer({
                                     )}
 
                                     {/* Subtareas (registro de primer nivel). */}
-                                    {!record.parent_id && listSlug !== undefined && view.ready && !isGuest && (
+                                    {!record.parent_id && listSlug !== undefined && view.ready && !isGuest && features !== null && (featureOn('subtasks') || (record.subtask_count ?? 0) > 0) && (
                                         <RecordSubtasks
                                             listId={listId}
                                             listSlug={listSlug}
                                             record={record}
                                             fields={fields}
                                             onOpenRecord={openOther}
+                                            allowCreate={featureOn('subtasks')}
                                             className="imcrm-mt-5"
                                         />
                                     )}
 
                                     {/* A9 — checklists del registro (no para un invitado). */}
-                                    {view.ready && !isGuest && (
+                                    {view.ready && !isGuest && featureOn('checklists') && (
                                         <RecordChecklists
                                             listId={listId}
                                             recordId={record.id}
@@ -973,7 +980,7 @@ export function RecordDetailDrawer({
                                     )}
 
                                     {/* A8 — dependencias («bloqueado por» / «bloquea»). */}
-                                    {view.ready && !isGuest && (
+                                    {view.ready && !isGuest && featureOn('dependencies') && (
                                         <RecordDependencies
                                             listId={listId}
                                             listSlug={listSlug}
@@ -984,7 +991,7 @@ export function RecordDetailDrawer({
                                     )}
 
                                     {/* v0.1.291 — registro de tiempo (cronómetro + cargas a mano). */}
-                                    {view.ready && !isGuest && (
+                                    {view.ready && !isGuest && featureOn('time_tracking') && (
                                         <div className="imcrm-mt-5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-p-3">
                                             <TimeTrackingPanel listId={listId} listKey={listSlug ?? String(listId)} recordId={record.id} />
                                         </div>

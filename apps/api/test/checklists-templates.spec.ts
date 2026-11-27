@@ -52,6 +52,10 @@ import { TenantTimeZones } from '../src/tenancy/tenant-time-zone.service';
 import { startPostgres, type TestPg } from './helpers/containers';
 import { memoryIntegrationApps, memoryOAuthStore } from './helpers/oauth-store';
 
+/** v0.1.475 — una lista de trabajo enciende sus funciones (una en blanco nace sólo con descripción y resumen). */
+const PROJECT_FEATURES = { subtasks: true, checklists: true, dependencies: true, time_tracking: true } as const;
+
+
 class CapturingDispatcher extends AutomationDispatcher {
     readonly events: TriggerEvent[] = [];
     override dispatch(event: TriggerEvent): void {
@@ -221,7 +225,7 @@ describe('Checklists y plantillas de registro (Postgres real + RLS)', () => {
                 { tenantId: tenantA, userId: clienteId, role: 'client' },
             ]),
         );
-        await lists.create(tenantA, { name: 'Proyectos', slug: 'proyectos' });
+        await lists.create(tenantA, { name: 'Proyectos', slug: 'proyectos', features: PROJECT_FEATURES });
         f.nombre = await fieldsSvc.create(tenantA, 'proyectos', { label: 'Nombre', type: 'text', slug: 'nombre' });
         f.estado = await fieldsSvc.create(tenantA, 'proyectos', {
             label: 'Estado',
