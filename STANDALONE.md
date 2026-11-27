@@ -2287,6 +2287,18 @@ falta para ver la ficha no compite con ella**: las acciones del menú
 abrirlo. Medido de punta a punta con un navegador real: plantilla integrada
 0,92 → 0,50 s la primera ficha y 0,53 → 0,31 s las siguientes.
 
+**Los desplegables scrollean dentro de una ventana (v0.1.473).** Toda ventana
+de Radix (registro flotante, alta, paneles laterales) bloquea el scroll de la
+página escuchando `wheel`/`touchmove` en el documento y cancelando lo que pase
+fuera de su contenido, y los desplegables se dibujan por portal fuera de ella:
+la rueda y el dedo sobre sus opciones quedaban cancelados. Regla: **el
+desplegable corta la propagación de `wheel` y `touchmove`** (en
+`PopoverContent`, el componente común) y lleva `overscroll-behavior: contain`
+para que al llegar al final no se mueva lo de atrás. Un flotante nuevo que se
+dibuje por portal y pueda scrollear dentro de una ventana sigue la misma regla
+(o usa `PopoverContent`). Los menús de Radix (`DropdownMenu`, modales) no lo
+necesitan: traen su propio bloqueo, que deja pasar su contenido.
+
 **Plantillas del portal del cliente (v0.1.237).** El portal tiene su propia
 galería (`portalTemplateLayout`, `packages/shared/src/templates/
 portal-templates.ts`): Mi cuenta, Estado de cuenta, Seguimiento de proyecto,

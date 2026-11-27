@@ -17881,6 +17881,33 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         lo vinculado sin pedir los gráficos aparte, «Acciones» con todas sus
         acciones también en el registro siguiente, sin errores de JS).
 
+  - [x] **Las listas de opciones vuelven a moverse con la rueda dentro de una
+        ventana (v0.1.473, addendum ADR-S26, reporte del usuario con captura:
+        "el scroll dentro de desplegables no está funcionando")**: dentro de
+        la ventana del registro, la lista de opciones de un campo de selección
+        (los meses) no se movía con la rueda ni con el dedo. Reproducido en el
+        navegador (416 px de contenido en 224 visibles, scroll en 0; en la
+        tabla sí funcionaba). Causa: toda ventana de Radix bloquea el scroll de
+        la página con `react-remove-scroll`, que escucha `wheel`/`touchmove`
+        en el documento y cancela lo que no esté dentro de su contenido; los
+        desplegables se dibujan por portal en el `<body>`, fuera de la ventana,
+        y el bloqueo de Radix vive en el overlay, así que ni el árbol de React
+        los salvaba. Venía desde siempre en la ficha simple, el alta y los
+        paneles laterales; se notó con la ficha diseñada en la ventana
+        (v0.1.470). Arreglo en `PopoverContent` (el componente común de todos
+        los desplegables): corta la propagación de `wheel` y `touchmove` en el
+        propio desplegable (escucha pasiva) y suma `overscroll-behavior:
+        contain`, así al llegar al final la ficha de atrás no se mueve; fuera
+        del desplegable la ventana sigue bloqueando la página. Nada de la app
+        escucha esos eventos dentro de un desplegable. Sin servidor ni
+        migración; novedad en el catálogo (ilustración `ficha-abrir`). Tests:
+        `popover.test.tsx` (3: rueda y dedo sobre las opciones dentro de una
+        ventana no se cancelan —fallan sin el arreglo—, fuera sí) + E2E
+        navegador 15/15 (ficha diseñada y simple en escritorio con la rueda y
+        en celular 390×844 oscuro con el dedo, llegar al final sin mover la
+        ficha, volver a subir, elegir la última opción la guarda, la ficha
+        misma sigue scrolleando, la tabla sin cambios; 10/15 sin el arreglo).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

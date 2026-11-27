@@ -4115,4 +4115,18 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
             '- El menú «Acciones» se prepara mientras miras la ficha, así no la demora.',
         ].join('\n'),
     },
+    {
+        key: 'v0.1.473-scroll-desplegables',
+        version: '0.1.473',
+        date: '2026-11-27',
+        kind: 'fix',
+        title: 'Las listas de opciones vuelven a moverse con la rueda',
+        summary:
+            'Dentro de la ficha de un registro, una lista de opciones larga (los meses, los estados) no se movía con la rueda del mouse ni con el dedo. Ya se mueve, y al llegar al final la ficha de atrás se queda quieta.',
+        media: { illustration: 'ficha-abrir' },
+        body: [
+            '- Pasa en la ventana del registro, en el alta y en los paneles laterales.',
+            '- En el celular, deslizar con el dedo sobre las opciones también funciona.',
+        ].join('\n'),
+    },
 ];
