@@ -430,7 +430,12 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.472**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.473**
+(**las listas de opciones vuelven a moverse con la rueda** dentro de una
+ventana — el bloqueo de scroll de la ventana cancelaba la rueda y el dedo sobre
+los desplegables, que se dibujan fuera de ella; arreglado en el componente
+común `PopoverContent`; sin servidor ni migración; addendum ADR-S26). Antes
+**v0.1.472**
 (**la ficha diseñada vuelve a abrir rápido** — el bundle de la ficha trae los
 datos de los gráficos de una plantilla integrada (antes una segunda vuelta al
 servidor), el código de la ficha se baja antes de abrirla y el menú «Acciones»
@@ -2412,6 +2417,25 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-27 · v0.1.473** — **Las listas de opciones vuelven a moverse con
+  la rueda** (sin servidor ni migración; addendum ADR-S26). Reporte del
+  usuario con captura: «el scroll dentro de desplegables no está funcionando»
+  (la lista de meses de un campo de selección dentro de la ficha). Reproducido
+  en el navegador: con la ventana del registro abierta la rueda no movía la
+  lista (416 px de contenido en 224 visibles, scroll en 0); en la tabla sí.
+  Causa: la ventana bloquea el scroll de la página con `react-remove-scroll`,
+  que escucha `wheel`/`touchmove` en el documento y cancela lo que no esté
+  dentro de su contenido; los desplegables se dibujan por portal en el `<body>`,
+  fuera de la ventana, y en Radix el bloqueo vive en el overlay (ni el árbol de
+  React los salva). Venía desde siempre en la ficha simple, el alta y los
+  paneles laterales; se notó con la ficha diseñada en la ventana. Arreglo en
+  `PopoverContent` (todos los desplegables): corta la propagación de
+  `wheel`/`touchmove` en el propio desplegable y suma
+  `overscroll-behavior: contain`, así al llegar al final no se mueve la ficha
+  de atrás. Fuera del desplegable el bloqueo sigue igual. Pruebas:
+  `popover.test.tsx` (3; las 2 de la rueda y el dedo fallan sin el arreglo) y
+  E2E navegador 15/15 (ficha diseñada y simple, escritorio y celular con el
+  dedo, la tabla, elegir la última opción guarda; 10/15 sin el arreglo).
 - **2026-11-26 · v0.1.472** — **La ficha diseñada vuelve a abrir rápido**
   (sin migración; addendum ADR-S26). Pregunta del usuario: «siento que ahora
   el abrir la ficha de registro está un poco más lenta, revisa si al aplicarle
