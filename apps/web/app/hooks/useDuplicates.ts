@@ -13,6 +13,7 @@ import { api } from '@/lib/api';
 import { invalidateWorkspaceData } from '@/lib/workspaceInvalidate';
 
 import { bulkHistoryKeys } from './useBulkHistory';
+import { listsKeys } from './useLists';
 import { invalidateForList, recordsKeys } from './useRecords';
 
 /**
@@ -58,7 +59,13 @@ export function useUpdateDuplicateSettings(listId: number) {
         onError: (_err, _input, ctx) => {
             if (ctx?.prev) qc.setQueryData(duplicatesKeys.settings(listId), ctx.prev);
         },
-        onSettled: () => void qc.invalidateQueries({ queryKey: duplicatesKeys.forList(listId) }),
+        onSettled: (_data, _err, input) => {
+            void qc.invalidateQueries({ queryKey: duplicatesKeys.forList(listId) });
+            // v0.1.475 — «Buscar duplicados en esta lista» es la función «Aviso de
+            // duplicados» de la lista: la ficha y Configuración → Funciones la leen
+            // de la lista.
+            if (input.enabled !== undefined) void qc.invalidateQueries({ queryKey: listsKeys.all });
+        },
     });
 }
 

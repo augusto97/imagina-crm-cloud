@@ -1,6 +1,6 @@
 import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { Role } from '@imagina-base/shared';
-import { roleHasCapability } from '@imagina-base/shared';
+import { LIST_FEATURES_BASE, roleHasCapability } from '@imagina-base/shared';
 import { and, eq, isNull } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { lists, records, tenants } from '../src/db/schema';
@@ -80,9 +80,10 @@ describe('ListsService (Postgres real + RLS)', () => {
         const b = await service.update(tenantA, l.slug, { settings: { crm_template_custom: null, crm_template_id: 'auto' } }, { mergeSettings: true });
         expect(b.settings).not.toHaveProperty('crm_template_custom');
         expect(b.settings).toMatchObject({ crm_template_id: 'auto', portal: { enabled: true }, shop_orders_of: { shop_id: 7 } });
-        // Los usos internos (sin mergeSettings) siguen reemplazando el objeto entero.
+        // Los usos internos (sin mergeSettings) siguen reemplazando el objeto entero,
+        // salvo las funciones de la lista (v0.1.475): perderlas volvería a encender todo.
         const c = await service.update(tenantA, l.slug, { settings: { only: 1 } });
-        expect(c.settings).toEqual({ only: 1 });
+        expect(c.settings).toEqual({ only: 1, features: { ...LIST_FEATURES_BASE } });
         expect(mergeListSettings({ a: 1, b: 2 }, { b: null, c: 3 })).toEqual({ a: 1, c: 3 });
     });
 

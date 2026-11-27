@@ -44,6 +44,8 @@ interface DescriptionEditorProps {
      * esto (o sin permiso de usar la IA) el menú no ofrece la IA.
      */
     aiListKey?: string | number;
+    /** v0.1.475 — la lista apagó las subtareas: el menú «/» no ofrece crearlas. */
+    allowSubtasks?: boolean;
     /**
      * `fromUser` distingue una edición real de la normalización que hace el
      * propio editor al cargar (agrega el párrafo final, completa atributos por
@@ -91,6 +93,7 @@ export function DescriptionEditor({
     listSlug,
     recordId,
     aiListKey,
+    allowSubtasks,
     onChange,
     onBlurFlush,
 }: DescriptionEditorProps): JSX.Element {
@@ -125,8 +128,11 @@ export function DescriptionEditor({
     const aiPanelRef = useRef(aiPanel);
     aiPanelRef.current = aiPanel;
     const commands = useMemo(
-        () => filterCommands(slash.query).filter((c) => c.action !== 'aiWrite' || aiOn),
-        [slash.query, aiOn],
+        () =>
+            filterCommands(slash.query).filter(
+                (c) => (c.action !== 'aiWrite' || aiOn) && (c.action !== 'subtask' || allowSubtasks !== false),
+            ),
+        [slash.query, aiOn, allowSubtasks],
     );
     const commandsRef = useRef(commands);
     commandsRef.current = commands;

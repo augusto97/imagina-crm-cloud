@@ -430,7 +430,14 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.474**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.475**
+(**cada lista elige qué funciones usa** — Configuración de la lista →
+Funciones: descripción, resumen con IA, subtareas, checklists, dependencias,
+tiempo registrado y aviso de duplicados; apagar esconde, nunca borra; las
+listas de antes quedaron según su uso y el aviso de duplicados sólo sigue
+donde alguien eligió reglas a mano, así «Anualidades LIC» ya no lo muestra;
+listas nuevas en blanco: sólo descripción y resumen con IA; migración 0143;
+ADR-S115). Antes **v0.1.474**
 (**el período del tablero filtra todos los gráficos** — también los agrupados
 por fecha, y los indicadores/donas/tablas por la fecha que se elige para cada
 lista con «N widgets sin fecha»; **recuadro al instante** al pasar el mouse
@@ -2422,6 +2429,28 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-27 · v0.1.475** — **Cada lista elige qué funciones usa**
+  (migración 0143; ADR-S115). Reporte del usuario con 2 capturas de la ficha
+  de «Anualidades LIC»: el aviso «Posibles duplicados» salía en todos los
+  registros y era invasivo en listas donde repetirse es normal; pidió que eso
+  —y el tiempo registrado, las subtareas, los checklists y similares— fueran
+  módulos que cada lista enciende o apaga. Eligió (AskUserQuestion) «según el
+  uso» para las listas existentes y «según cómo se crea» para las nuevas.
+  Hecho: `lists.settings.features` con siete funciones (descripción, resumen
+  con IA, subtareas, checklists, dependencias, tiempo, duplicados), sección
+  **Configuración → Funciones** con interruptores, y lo apagado sale de la
+  ficha (modal, página y diseñada), de la tabla y de los menús; el servidor
+  también lo respeta (IA, dependencias y duplicados responden 409
+  `list_feature_off` o nada). Nunca se borra nada; las subtareas que ya
+  existen se siguen viendo. Migración: encendido lo que cada lista ya usa, el
+  aviso de duplicados sólo con reglas a mano (en desarrollo: 597 listas, 10
+  con subtareas, 0 con duplicados). Nuevas: en blanco/archivo/Airtable sólo
+  descripción y resumen con IA; de plantilla, lo que la plantilla necesita;
+  duplicar copia las suyas. Pruebas: shared 1251, `list-features.spec` (6,
+  incluida la migración), `templates.spec` con las funciones por plantilla,
+  front 1058; E2E navegador 29/29 en escritorio y 27/27 en celular oscuro.
+  Ayuda: guía `list-features`, sección en Aprende → Listas y campos y novedad.
 
 - **2026-11-27 · v0.1.474** — **El período del tablero filtra todos los
   gráficos, recuadro al instante y columnas verticales** (sin migración;

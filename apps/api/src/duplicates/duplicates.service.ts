@@ -7,7 +7,9 @@ import {
     duplicateRuleKey,
     duplicateRuleLabel,
     isDuplicateRuleFieldType,
+    mergeListFeatures,
     readDuplicateSettings,
+    readListFeatures,
     resolveTitleFieldId,
     type DuplicateGroup,
     type DuplicateGroupsPage,
@@ -136,7 +138,12 @@ export class DuplicatesService {
             const byId = new Map(scope.fields.map((f) => [f.id, f]));
             const current = scope.list.settings?.duplicates;
             const next: Record<string, unknown> = current && typeof current === 'object' && !Array.isArray(current) ? { ...(current as Record<string, unknown>) } : {};
-            if (input.enabled !== undefined) next.enabled = input.enabled;
+            // v0.1.475 — encender o apagar es la función «Duplicados» de la lista
+            // (`settings.features.duplicates`), la misma de «Funciones de la lista».
+            delete next.enabled;
+            const features = input.enabled !== undefined
+                ? mergeListFeatures(scope.list.settings, { duplicates: input.enabled })
+                : readListFeatures(scope.list.settings);
             if (input.warn_on_create !== undefined) next.warn_on_create = input.warn_on_create;
             if (input.rules === null) delete next.rules;
             else if (input.rules !== undefined) {
@@ -155,7 +162,7 @@ export class DuplicatesService {
             await tx
                 .update(lists)
                 .set({
-                    settings: sql`jsonb_set(coalesce(${lists.settings}, '{}'::jsonb), '{duplicates}', ${JSON.stringify(next)}::jsonb)`,
+                    settings: sql`jsonb_set(jsonb_set(coalesce(${lists.settings}, '{}'::jsonb), '{duplicates}', ${JSON.stringify(next)}::jsonb), '{features}', ${JSON.stringify(features)}::jsonb)`,
                     updatedAt: new Date(),
                 })
                 .where(and(eq(lists.tenantId, tenantId), eq(lists.id, scope.list.id)));
@@ -166,9 +173,9 @@ export class DuplicatesService {
                 targetType: 'list',
                 targetId: scope.list.id,
                 targetLabel: scope.list.name,
-                meta: { duplicates: next },
+                meta: { duplicates: next, enabled: features.duplicates },
             });
-            return readDuplicateSettings({ ...(scope.list.settings ?? {}), duplicates: next }, scope.fields);
+            return readDuplicateSettings({ ...(scope.list.settings ?? {}), duplicates: next, features }, scope.fields);
         });
         this.realtime.lists(tenantId);
         return out;

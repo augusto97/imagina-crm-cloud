@@ -26,6 +26,7 @@ import {
     isUserWritableType,
     systemFieldBaseType,
     readDependencySettings,
+    readListFeatures,
     RESCHEDULE_MAX_DEPTH,
     RESCHEDULE_MAX_RECORDS,
     shiftDateValue,
@@ -498,6 +499,7 @@ export class RecordsService {
         const run = <T>(fn: (tx: Tx) => Promise<T>): Promise<T> =>
             outerTx ? fn(outerTx) : this.tenantDb.withTenant(tenantId, fn);
         const guest = actor.role === 'guest';
+        const feat = readListFeatures(list.settings);
         const { row, fields, hiddenKeys, relMap, relFieldIds, subtaskCount, blockedOpen, approvalPending, checklist, rt } = await run(async (tx) => {
             const found = await this.repo.findById(tx, tenantId, list.id, id);
             const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
@@ -527,9 +529,10 @@ export class RecordsService {
                 relFieldIds: fields.filter((f) => f.type === 'relation').map((f) => f.id),
                 subtaskCount: r ? counts.get(r.id) ?? 0 : 0,
                 // C3 — un invitado no ve los indicadores de la operación interna.
-                blockedOpen: r && !guest ? (await this.openBlockers(tx, tenantId, fields, hiddenIds, [r.id])).get(r.id) ?? 0 : 0,
+                // v0.1.475 — una función apagada en la lista no se cuenta (ni su indicador).
+                blockedOpen: r && !guest && feat.dependencies ? (await this.openBlockers(tx, tenantId, fields, hiddenIds, [r.id])).get(r.id) ?? 0 : 0,
                 approvalPending: r && !guest ? (await pendingApprovalCounts(tx, [r.id])).get(r.id) ?? 0 : 0,
-                checklist: r && !guest ? (await this.checklists.progressOf(tx, tenantId, [r.id])).get(r.id) : undefined,
+                checklist: r && !guest && feat.checklists ? (await this.checklists.progressOf(tx, tenantId, [r.id])).get(r.id) : undefined,
                 rt: r ? await this.formulaRuntime(tx, tenantId, list.id, fields, plans) : undefined,
             };
         });
@@ -541,6 +544,7 @@ export class RecordsService {
                 blocked_by_open: blockedOpen,
                 approval_pending: approvalPending,
                 ...withChecklist(checklist),
+                ...withoutDescriptionIcon(feat),
             },
             hiddenKeys,
         );
@@ -1165,12 +1169,14 @@ export class RecordsService {
         const subtaskCounts = await this.repo.subtaskCounts(tx, tenantId, ids);
         // C3 — a un invitado no se le cuentan ni muestran (ver `ReadContext.guest`).
         const internal = !ctx.guest;
+        // v0.1.475 — lo que la lista apagó en «Funciones» no se cuenta ni se muestra.
+        const feat = readListFeatures(ctx.list.settings);
         // A8 — bloqueantes abiertos de la tanda (icono «bloqueado»), una consulta.
-        const blocked = internal ? await this.openBlockers(tx, tenantId, ctx.fields, ctx.hiddenIds, ids) : new Map<number, number>();
+        const blocked = internal && feat.dependencies ? await this.openBlockers(tx, tenantId, ctx.fields, ctx.hiddenIds, ids) : new Map<number, number>();
         // C5 — aprobaciones pendientes de la tanda (indicador de la fila), una consulta.
         const pendingApprovals = internal ? await pendingApprovalCounts(tx, ids) : new Map<number, number>();
         // A9 — progreso de los checklists de la tanda («☑ 3/8»), una consulta.
-        const progress = internal ? await this.checklists.progressOf(tx, tenantId, ids) : new Map<number, { done: number; total: number }>();
+        const progress = internal && feat.checklists ? await this.checklists.progressOf(tx, tenantId, ids) : new Map<number, { done: number; total: number }>();
         const hiddenKeys = new Set([...ctx.hiddenIds].map((id) => jsonbKeyForField(id)));
         return result.map((r) =>
             stripHidden(
@@ -1179,6 +1185,7 @@ export class RecordsService {
                     blocked_by_open: blocked.get(r.id) ?? 0,
                     approval_pending: pendingApprovals.get(r.id) ?? 0,
                     ...withChecklist(progress.get(r.id)),
+                    ...withoutDescriptionIcon(feat),
                 },
                 hiddenKeys,
             ),
@@ -1350,10 +1357,11 @@ export class RecordsService {
                 : 0;
             // C3 — un invitado no ve los indicadores de la operación interna.
             const internal = full && actor.role !== 'guest';
+            const feat = readListFeatures(list.settings);
             const hiddenIds = new Set([...hiddenKeys].map((k) => Number(k.slice(1))));
-            const blockedOpen = internal ? (await this.openBlockers(tx, tenantId, fields, hiddenIds, [id])).get(id) ?? 0 : 0;
+            const blockedOpen = internal && feat.dependencies ? (await this.openBlockers(tx, tenantId, fields, hiddenIds, [id])).get(id) ?? 0 : 0;
             const approvalPending = internal ? (await pendingApprovalCounts(tx, [id])).get(id) ?? 0 : 0;
-            const checklist = internal ? (await this.checklists.progressOf(tx, tenantId, [id])).get(id) : undefined;
+            const checklist = internal && feat.checklists ? (await this.checklists.progressOf(tx, tenantId, [id])).get(id) : undefined;
             const rt = full ? await this.formulaRuntime(tx, tenantId, listId, fields) : undefined;
             return { updated, enriched, before: current.data, rels, relFieldIds, subtasks, rescheduled, blockedOpen, approvalPending, checklist, rt, list, fields, hiddenKeys };
         });
@@ -1417,6 +1425,7 @@ export class RecordsService {
                 blocked_by_open: result.blockedOpen,
                 approval_pending: result.approvalPending,
                 ...withChecklist(result.checklist),
+                ...withoutDescriptionIcon(readListFeatures(result.list.settings)),
                 ...(result.rescheduled.length > 0 ? { rescheduled: result.rescheduled.map((r) => r.id) } : {}),
             },
             result.hiddenKeys,
@@ -2796,6 +2805,11 @@ function toRecord(
         // Fórmulas (A1): las que dieron error en esta fila, con el motivo.
         ...(row.formulaErrors ? { formula_errors: row.formulaErrors } : {}),
     };
+}
+
+/** v0.1.475 — con la descripción apagada en la lista, la fila no lleva su icono. */
+function withoutDescriptionIcon(feat: { description: boolean }): { has_description?: false } {
+    return feat.description ? {} : { has_description: false };
 }
 
 /** A9 — el progreso del checklist sólo viaja si el registro tiene ítems. */

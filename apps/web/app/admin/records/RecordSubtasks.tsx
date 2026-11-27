@@ -31,6 +31,12 @@ interface RecordSubtasksProps {
     onOpenRecord?: (id: number) => void;
     /** Sin alta en línea (la vista previa del editor de la ficha). */
     readOnly?: boolean;
+    /**
+     * v0.1.475 — con las subtareas apagadas en la lista se siguen viendo las
+     * que ya hay (si no, quedarían registros sin forma de abrirlos), pero no se
+     * ofrece crear nuevas.
+     */
+    allowCreate?: boolean;
     className?: string;
 }
 
@@ -45,11 +51,11 @@ function titleOf(record: RecordEntity | undefined, titleField: FieldEntity | und
  * registro): la lista de hijas con su estado, alta en línea y, si el registro
  * ES una subtarea, el vínculo a su padre. Un solo nivel, como en la tabla.
  */
-export function RecordSubtasks({ listId, listSlug, record, fields, onOpenRecord, readOnly = false, className }: RecordSubtasksProps): JSX.Element | null {
+export function RecordSubtasks({ listId, listSlug, record, fields, onOpenRecord, readOnly = false, allowCreate = true, className }: RecordSubtasksProps): JSX.Element | null {
     const titleField = useMemo(() => titleFieldOf(fields), [fields]);
     const statusField = useMemo(() => pickStatusField(fields), [fields]);
     const storeRules = useStoreRules();
-    const canCreate = useCan(CAP.CREATE_RECORDS) && !storeRules && !readOnly;
+    const canCreate = useCan(CAP.CREATE_RECORDS) && !storeRules && !readOnly && allowCreate;
     const isSubtask = record.parent_id !== null && record.parent_id !== undefined;
     const parent = useRecord(isSubtask ? listId : undefined, isSubtask ? (record.parent_id as number) : undefined);
     const children = useRecords(isSubtask ? undefined : listId, subtasksQuery(record.id));

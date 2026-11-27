@@ -13,6 +13,8 @@ import {
 } from '@nestjs/common';
 import {
     createListSchema,
+    LIST_FEATURE_KEYS,
+    readListFeatures,
     updateListPermissionsSchema,
     updateListSchema,
     type CreateListInput,
@@ -153,15 +155,35 @@ export class ListsController {
 
     @Patch(':idOrSlug')
     @RequireCapability('manage_lists')
-    update(
+    async update(
         @Req() req: FastifyRequest,
         @Param('idOrSlug') idOrSlug: string,
         @Body(new ZodValidationPipe(updateListSchema)) patch: UpdateListInput,
     ): Promise<List> {
-        return this.lists.update(tenantId(req), idOrSlug, patch, {
+        const rawFeatures = (patch.settings as Record<string, unknown> | undefined)?.features;
+        const before = rawFeatures ? await this.lists.get(tenantId(req), idOrSlug).catch(() => null) : null;
+        const list = await this.lists.update(tenantId(req), idOrSlug, patch, {
             actor: { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) },
             mergeSettings: true,
         });
+        // v0.1.475 — encender o apagar funciones de la lista queda en la bitácora.
+        if (before) {
+            const was = readListFeatures(before.settings);
+            const now = readListFeatures(list.settings);
+            const changed = LIST_FEATURE_KEYS.filter((k) => was[k] !== now[k]);
+            if (changed.length > 0) {
+                await this.audit.log({
+                    tenantId: tenantId(req),
+                    userId: req.authUserId ?? null,
+                    action: 'list.features',
+                    targetType: 'list',
+                    targetId: list.id,
+                    targetLabel: list.name,
+                    meta: { on: changed.filter((k) => now[k]), off: changed.filter((k) => !now[k]) },
+                });
+            }
+        }
+        return list;
     }
 
     @Delete(':idOrSlug')

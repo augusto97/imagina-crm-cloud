@@ -29,7 +29,7 @@ import { RecordAgentRuns, RecordAiSummaryCard } from '@/admin/records/ai/RecordA
 import { RecordDuplicateBanner } from '../duplicates/DuplicateHints';
 import { lockedReasonsFor, recordGoneInSource, useStoreRules } from '../storeRules';
 import { LayoutBlockView } from './LayoutBlocks';
-import { LayoutContext, useConditionHiddenIds, useLayoutCtx, type LayoutCtx } from './LayoutContext';
+import { LayoutContext, useConditionHiddenIds, useLayoutCtx, useLayoutFeatures, type LayoutCtx } from './LayoutContext';
 import { designRecordHref, layoutHasConversation, readUnplacedOpenPref, writeUnplacedOpenPref } from './recordModalMode';
 import { LayoutHeader } from './LayoutHeader';
 import { resolveTheme, tint } from './layoutTheme';
@@ -261,10 +261,20 @@ function ImplicitSubtasks({ layout, onOpenRecord }: { layout: RecordLayoutV3; on
     const first = layout.pages[0]!;
     const onFirst = tab === null || tab === first.id || !layout.pages.some((p) => p.id === tab);
     const placed = layout.pages.some((p) => p.sections.some((s) => s.blocks.some((col) => col.some((b) => b.type === 'subtasks'))));
+    const features = useLayoutFeatures();
     const r = ctx.record;
     const has = (r.subtask_count ?? 0) > 0 || (r.parent_id !== null && r.parent_id !== undefined);
     if (!onFirst || placed || !has) return null;
-    return <RecordSubtasks listId={ctx.list.id} listSlug={ctx.list.slug} record={r} fields={ctx.fields} onOpenRecord={onOpenRecord} />;
+    return (
+        <RecordSubtasks
+            listId={ctx.list.id}
+            listSlug={ctx.list.slug}
+            record={r}
+            fields={ctx.fields}
+            onOpenRecord={onOpenRecord}
+            allowCreate={features.subtasks}
+        />
+    );
 }
 
 /**
@@ -308,6 +318,7 @@ function ImplicitApprovals({ layout, onOpenRecord }: { layout: RecordLayoutV3; o
     const isGuest = useIsGuest();
     const navigate = useNavigate();
     const storeRules = useStoreRules();
+    const features = useLayoutFeatures();
     const placed = layout.pages.some((p) => p.sections.some((s) => s.blocks.some((col) => col.some((b) => b.type === 'approval'))));
     // C3 — las aprobaciones son de la empresa: un invitado no las ve.
     if (isGuest) return null;
@@ -319,7 +330,7 @@ function ImplicitApprovals({ layout, onOpenRecord }: { layout: RecordLayoutV3; o
     const ai =
         ctx.preview === true || ctx.mode === 'portal' ? null : (
             <>
-                {!aiPlaced && <RecordAiSummaryCard listId={ctx.list.id} recordId={ctx.record.id} className="imcrm-mb-3" />}
+                {!aiPlaced && features.ai_summary && <RecordAiSummaryCard listId={ctx.list.id} recordId={ctx.record.id} className="imcrm-mb-3" />}
                 <RecordAgentRuns listId={ctx.list.id} recordId={ctx.record.id} className="imcrm-mb-3" />
             </>
         );
@@ -334,7 +345,7 @@ function ImplicitApprovals({ layout, onOpenRecord }: { layout: RecordLayoutV3; o
         ctx.preview === true ? null : (
             <>
                 {/* A14 — «Posible duplicado de X» (Fusionar / No es duplicado). */}
-                {!storeRules && ctx.mode !== 'portal' && !ctx.record.parent_id && (
+                {!storeRules && ctx.mode !== 'portal' && !ctx.record.parent_id && features.duplicates && (
                     <RecordDuplicateBanner
                         listId={ctx.list.id}
                         listSlug={ctx.list.slug}

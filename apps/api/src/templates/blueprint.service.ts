@@ -19,6 +19,9 @@ import {
     resolveFieldRefs,
     resolveListRefs,
     suggestRecordLayoutTemplate,
+    listFeaturesInputSchema,
+    readListFeatures,
+    suggestListFeatures,
     tokenizeFieldRefs,
     tokenizeListRefs,
     widgetTypeSchema,
@@ -72,6 +75,12 @@ export interface MaterializeOptions {
      * lo piden: ahí la ficha es la que traen.
      */
     suggestRecordLayout?: boolean;
+    /**
+     * v0.1.475 — Una lista que arma la IA (el asistente, «Empezar fácil») nace
+     * con las funciones que sugiere su tipo (`suggestListFeatures`) si el
+     * blueprint no las declara. Sin esto: las del blueprint o la base.
+     */
+    suggestFeatures?: boolean;
 }
 
 export interface MaterializeResult {
@@ -192,6 +201,9 @@ export class BlueprintService {
                     settings.helpdesk = rest;
                 }
             }
+            // v0.1.475 — las funciones de la lista (subtareas, checklists…)
+            // viajan siempre, también sin «ajustes»: son parte de cómo se usa.
+            settings.features = readListFeatures(list.settings);
 
             const bp: BlueprintList = {
                 key: list.slug,
@@ -408,10 +420,21 @@ export class BlueprintService {
         const created: List[] = [];
         const keyToListId = new Map<string, number>();
         for (const [i, bl] of blueprint.lists.entries()) {
+            const name = i === 0 && opts.name !== undefined ? opts.name : bl.name;
+            // v0.1.475 — con qué funciones nace: las que trae el blueprint (una
+            // plantilla del sistema o una lista duplicada), las sugeridas por
+            // el tipo de lista (lo que arma la IA) o la base.
+            const declared = listFeaturesInputSchema.safeParse(bl.settings.features);
+            const features = declared.success
+                ? declared.data
+                : opts.suggestFeatures === true
+                  ? suggestListFeatures({ name, fields: bl.fields })
+                  : undefined;
             const list = await this.lists.create(tenantId, {
-                name: i === 0 && opts.name !== undefined ? opts.name : bl.name,
+                name,
                 icon: bl.icon ?? undefined,
                 color: bl.color ?? undefined,
+                ...(features ? { features } : {}),
             });
             if (opts.groupId !== undefined && opts.groupId !== null) {
                 await this.lists.update(tenantId, String(list.id), { group_id: opts.groupId });

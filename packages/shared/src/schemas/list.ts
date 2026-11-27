@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { listFeaturesInputSchema } from './list-features';
 import { idSchema, isoDateTimeSchema } from './common';
 import { listSlugSchema } from './slug';
 
@@ -41,6 +42,11 @@ export const createListSchema = z.object({
     color: z.string().max(32).optional(),
     /** v0.1.173 — nacer DENTRO de una carpeta (menú contextual de la carpeta). */
     group_id: idSchema.nullable().optional(),
+    /**
+     * v0.1.475 — las funciones con las que nace (subtareas, checklists…). Sin
+     * esto, la base: sólo la descripción y el resumen con IA.
+     */
+    features: listFeaturesInputSchema.optional(),
 });
 export type CreateListInput = z.infer<typeof createListSchema>;
 

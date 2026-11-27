@@ -32,6 +32,7 @@ import {
     type CreateRecordTemplateInput,
     type RecordTemplate,
     type RecordTemplateContent,
+    readListFeatures,
 } from '@imagina-base/shared';
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
@@ -599,6 +600,9 @@ export class DataTools implements AiProposalApplier {
         const remove = (input.remove ?? []).map((p) => ({ blocker: p.blocker, blocked: p.blocked }));
         if (add.length === 0 && remove.length === 0) throw new AiToolError('Pasa al menos una dependencia en `add` o en `remove`.');
         const { list } = await this.loadList(ctx, input.list);
+        if (add.length > 0 && !readListFeatures(list.settings as Record<string, unknown>).dependencies) {
+            throw new AiToolError(`Las dependencias están apagadas en «${list.name}». Enciéndelas primero con propose_update_list (features: { dependencies: true }) o pide a quien administra la lista que lo haga en Configuración → Funciones.`);
+        }
         const plan = await this.dependencies.plan(ctx.tenantId, actorOf(ctx), String(list.id), add, remove);
         if (plan.problems.length > 0) throw new AiToolError(plan.problems.slice(0, 10).join(' '));
         const t = (id: number): string => plan.titles.get(id) ?? `Registro #${id}`;

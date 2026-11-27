@@ -54,6 +54,7 @@ import {
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useToast } from '@/components/ui/toast';
 import { useAddDependencyPair, useRemoveDependencyById } from '@/hooks/useDependencies';
+import { useListFeatures } from '@/hooks/useListFeatures';
 import { useEventCallback } from '@/hooks/useEventCallback';
 import { downloadGanttPdf, useDeleteGanttBaseline, useGanttBundle, useSaveGanttBaseline } from '@/hooks/useGanttBundle';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
@@ -194,6 +195,9 @@ export function GanttView({
     }, [view.config]);
     const config = localConfig ?? view.config;
     const settings = useMemo(() => viewConfigToGantt(config), [config]);
+    // v0.1.475 — sin dependencias en la lista, el Gantt no dibuja flechas ni deja crearlas.
+    const listFeatures = useListFeatures(listId);
+    const depsOn = settings.showDependencies && (listFeatures?.dependencies ?? true);
     const saveConfig = useEventCallback((next: SavedViewConfig): void => {
         setLocalConfig(next);
         // Sin permiso, el ajuste vale sólo en esta pantalla.
@@ -818,7 +822,7 @@ export function GanttView({
     );
 
     const arrows = useMemo(() => {
-        if (!settings.showDependencies || !data) return [];
+        if (!depsOn || !data) return [];
         const out: Array<{ id: number; from: number; to: number; d: string; conflict: boolean }> = [];
         for (const dep of data.dependencies) {
             const ia = rowIndexById.get(dep.blocker_id);
@@ -835,7 +839,7 @@ export function GanttView({
             out.push({ id: dep.id, from: dep.blocker_id, to: dep.blocked_id, d: dependencyPath(from, to), conflict: b.start <= a.end });
         }
         return out;
-    }, [settings.showDependencies, data, rowIndexById, firstRow, lastRow, barGeom, canvas]);
+    }, [depsOn, data, rowIndexById, firstRow, lastRow, barGeom, canvas]);
 
     const menuRecord = menu ? recordById.get(menu.id) ?? null : null;
     const dragTip = useMemo(() => {
@@ -868,7 +872,7 @@ export function GanttView({
     const bodyH = rows.length * GANTT_ROW_H;
     const todayX = xOfDay(canvas, today) + canvas.ppd / 2;
     const showWeekends = settings.zoom === 'day';
-    const canLink = canEdit && settings.showDependencies && !touchOnly;
+    const canLink = canEdit && depsOn && !touchOnly;
 
     const unscheduledList = (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-1" data-testid="gantt-unscheduled-list">

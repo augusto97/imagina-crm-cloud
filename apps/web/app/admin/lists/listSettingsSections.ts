@@ -1,4 +1,4 @@
-import { BookmarkPlus, CalendarClock, ClipboardCheck, ClipboardList, Columns3, FileText, Globe2, Inbox, Paintbrush, Settings2, ShieldCheck, ShoppingBag, Timer, type LucideIcon } from 'lucide-react';
+import { BookmarkPlus, ToggleRight, CalendarClock, ClipboardCheck, ClipboardList, Columns3, FileText, Globe2, Inbox, Paintbrush, Settings2, ShieldCheck, ShoppingBag, Timer, type LucideIcon } from 'lucide-react';
 
 import { __ } from '@/lib/i18n';
 
@@ -17,6 +17,7 @@ import { __ } from '@/lib/i18n';
 export type ListSettingsSectionId =
     | 'campos'
     | 'general'
+    | 'funciones'
     | 'apariencia'
     | 'permisos'
     | 'compartir'
@@ -90,6 +91,16 @@ export const LIST_SETTINGS_SECTIONS: readonly ListSettingsSection[] = [
         icon: Paintbrush,
         title: __('Apariencia'),
         description: __('Cómo se ve la ficha de un registro cuando alguien la abre.'),
+    },
+    {
+        // v0.1.475 (ADR-S115) — qué funciones de la ficha usa esta lista.
+        id: 'funciones',
+        label: __('Funciones'),
+        group: 'list',
+        short: __('Subtareas, checklists, tiempo y más'),
+        icon: ToggleRight,
+        title: __('Funciones de la lista'),
+        description: __('Elige qué usa esta lista. Una lista simple no necesita subtareas ni checklists; una de proyectos sí. Apagar una función no borra nada.'),
     },
     {
         id: 'permisos',
@@ -209,7 +220,7 @@ export function listSettingsSection(id: ListSettingsSectionId): ListSettingsSect
 
 /** Orden del menú (dentro de cada grupo, en este orden). */
 const NAV_ORDER: readonly ListSettingsSectionId[] = [
-    'campos', 'general', 'apariencia',
+    'campos', 'general', 'apariencia', 'funciones',
     'permisos', 'compartir',
     'formularios', 'agenda', 'tienda', 'correo',
     'plantillas', 'aprobaciones', 'documentos', 'sla',

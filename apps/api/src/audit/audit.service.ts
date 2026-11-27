@@ -25,6 +25,7 @@ export type AuditAction =
     | 'list.create'
     | 'list.delete'
     | 'list.permissions'
+    | 'list.features'
     | 'list.public_enable'
     | 'list.public_disable'
     // A14 (v0.1.445) — duplicados: reglas de la lista y fusiones.

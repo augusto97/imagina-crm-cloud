@@ -111,6 +111,7 @@ export const articles: LearnArticle[] = [
                     { name: 'Campos', what: 'El administrador de campos: crear, editar, ordenar y borrar las columnas de la lista.', tip: 'Es la sección que más vas a usar.' },
                     { name: 'General', what: 'Nombre, ícono y color, dirección web y descripción. También duplicar la lista, guardarla como plantilla y eliminarla.' },
                     { name: 'Apariencia', what: 'Cómo se ve la ficha de cada registro: **Ficha simple** (todos los campos, uno debajo del otro) o **Ficha diseñada** (portada, etapas, pestañas y gráficos).' },
+                    { name: 'Funciones', what: 'Qué usa esta lista: **Descripción**, **Resumen con IA**, **Subtareas**, **Checklists**, **Dependencias**, **Tiempo registrado** y **Aviso de duplicados**. Lo que apagas se esconde de la ficha, la tabla y los menús.', tip: 'Apagar nunca borra: al encender de nuevo, todo vuelve como estaba.' },
                     { name: 'Permisos', what: 'Quién ve y quién edita los registros de esta lista, por rol, por equipo o por persona.' },
                     { name: 'Compartir', what: 'El portal del cliente y la publicación de la lista con un enlace público.' },
                     { name: 'Documentos', what: 'Plantillas de PDF (cotizaciones, cuentas de cobro) que se generan desde los registros.' },
@@ -137,6 +138,17 @@ export const articles: LearnArticle[] = [
                 title: 'Cada sección guarda lo suyo',
                 md: 'En **General**, los cambios se aplican al tocar **Guardar cambios**. En **Campos**, cada campo se guarda al crearlo o editarlo. No hay un botón que guarde todas las secciones a la vez: termina lo de una sección antes de pasar a la siguiente.',
             },
+            { t: 'h', text: 'Funciones: una lista simple se ve simple' },
+            {
+                t: 'p',
+                md: 'No todas las listas necesitan lo mismo. Unos pagos o unas anualidades no usan subtareas, checklists ni registro de tiempo; un proyecto sí. En **Funciones** enciendes o apagas cada una para esta lista y el cambio se guarda solo. Una lista nueva en blanco empieza sólo con la **Descripción** y el **Resumen con IA**; una de plantilla trae lo que esa plantilla necesita.',
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                title: '¿La ficha avisa «Posibles duplicados» y en tu lista repetir es normal?',
+                md: 'Apaga **Aviso de duplicados** en **Funciones**. Si después lo necesitas, enciéndelo y elige con qué se reconocen en **Personalizar vista → Buscar duplicados**.',
+            },
             { t: 'h', text: 'Ideas' },
             {
                 t: 'example',
@@ -158,6 +170,7 @@ export const articles: LearnArticle[] = [
                 items: [
                     { q: 'No veo «Configurar lista».', a: 'La configuración la ve quien administra listas (normalmente el administrador de la empresa). Si necesitas un cambio, pídeselo a esa persona.' },
                     { q: '¿Qué pasa con las automatizaciones y tableros si renombro la lista?', a: 'Nada: todo apunta a la lista, no a su nombre. Puedes renombrar con tranquilidad.' },
+                    { q: 'Apagué una función y desaparecieron las subtareas o los checklists.', a: 'Siguen guardados. Vuelve a **Funciones** y enciéndela: aparecen como estaban. Las subtareas que ya existían se siguen viendo aunque la función esté apagada; sólo deja de ofrecerse crear nuevas.' },
                     { q: 'Borré una lista por error.', a: 'Ve a **Ajustes → Papelera** y restáurala. Vuelve con sus registros, campos, vistas y automatizaciones, siempre que no hayan pasado 30 días.' },
                 ],
             },

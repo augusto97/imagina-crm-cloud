@@ -291,6 +291,7 @@ export class OnboardingService {
                 groupId: folder?.id ?? null,
                 includeRecords: opts.includeSamples,
                 suggestRecordLayout: true,
+                suggestFeatures: true,
             });
         } catch (err) {
             // Si no llegó a crearse ninguna lista, la carpeta no queda vacía en el menú.

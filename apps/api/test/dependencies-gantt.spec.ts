@@ -26,6 +26,10 @@ import { ViewsRepository } from '../src/views/views.repository';
 import { ViewsService } from '../src/views/views.service';
 import { startPostgres, type TestPg } from './helpers/containers';
 
+/** v0.1.475 — una lista de trabajo enciende sus funciones (una en blanco nace sólo con descripción y resumen). */
+const PROJECT_FEATURES = { subtasks: true, checklists: true, dependencies: true, time_tracking: true } as const;
+
+
 const rt = new RealtimeService();
 
 /** Dispatcher que anota los eventos (sin cola). */
@@ -112,7 +116,7 @@ describe('Dependencias entre registros + Gantt (Postgres real + RLS)', () => {
             await tx.delete(fields).where(eq(fields.tenantId, tenantA));
             await tx.delete(lists).where(eq(lists.tenantId, tenantA));
         });
-        await lists_.create(tenantA, { name: 'Proyecto' });
+        await lists_.create(tenantA, { name: 'Proyecto', features: PROJECT_FEATURES });
         const mk = async (slug: string, type: string, config?: Record<string, unknown>) => {
             f[slug] = (await fields_.create(tenantA, 'proyecto', { label: slug, slug, type, ...(config ? { config } : {}) } as never)).id;
         };

@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ListFolderCrumb } from '@/admin/lists/ListFolderCrumb';
-import { isPaymentSyncList, mirrorGoneFieldId, mirrorSourceName, parseTeamGroupKey, readMirrorListMarker, SCAN_SEARCH_FIELD_TYPES, type BulkStructureAction } from '@imagina-base/shared';
+import { isPaymentSyncList, mirrorGoneFieldId, mirrorSourceName, parseTeamGroupKey, readListFeatures, readMirrorListMarker, SCAN_SEARCH_FIELD_TYPES, type BulkStructureAction } from '@imagina-base/shared';
 import {
     ArrowLeft,
     BookmarkPlus,
@@ -444,6 +444,8 @@ export function RecordsPage(): JSX.Element {
     // de `store-rules` (las mismas que aplica el backend).
     // v0.1.333 (ADR-S83) — o de un sitio WordPress: mismas reglas, otra fuente.
     const mirror = readMirrorListMarker(list.data?.settings);
+    // v0.1.475 — «Funciones de la lista»: sin subtareas no se ofrece crearlas ni mover registros como subtareas.
+    const listFeatures = useMemo(() => readListFeatures(list.data?.settings), [list.data?.settings]);
     const storeMarker = mirror?.source === 'store' ? mirror.marker : null;
     const siteMarker = mirror?.source === 'site' ? mirror.marker : null;
     const storeRules = useMemo<StoreRules | null>(
@@ -498,7 +500,7 @@ export function RecordsPage(): JSX.Element {
             ? { delete: () => setStructure({ action: 'delete', matching: false }) }
             : undefined
         : {
-              ...(canEditAny || canEditOwn ? { move: () => setStructure({ action: 'move', matching: false }) } : {}),
+              ...((canEditAny || canEditOwn) && listFeatures.subtasks ? { move: () => setStructure({ action: 'move', matching: false }) } : {}),
               // v0.1.340 — duplicar es un clic: sin diálogo, con un aviso que se cierra solo.
               ...(canCreateRecords ? { duplicate: () => void quickDuplicate(selectedIds, { onDone: () => setSelectedIds([]) }) } : {}),
               ...(canDeleteAny || canDeleteOwn ? { delete: () => setStructure({ action: 'delete', matching: false }) } : {}),
@@ -1907,7 +1909,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     density={state.density}
                                     fontSize={state.fontSize}
                                     singleClickEdit={state.singleClickEdit}
-                                    onCreateSubtask={canCreateRecords ? onGroupedCreateSubtask : undefined}
+                                    onCreateSubtask={canCreateRecords && listFeatures.subtasks ? onGroupedCreateSubtask : undefined}
                                     footerAggregates={state.footerAggregates}
                                     onFooterAggregatesChange={onGroupedFooterAggregates}
                                     onStatusChange={setGroupedStatus}
@@ -1962,7 +1964,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     fontSize={state.fontSize}
                                     singleClickEdit={state.singleClickEdit}
                                     rowNumberOffset={(state.page - 1) * state.perPage}
-                                    onCreateSubtask={!canCreateRecords ? undefined : (record) => {
+                                    onCreateSubtask={!canCreateRecords || !listFeatures.subtasks ? undefined : (record) => {
                                         setCreateDefaults(undefined);
                                         setCreateParentId(record.id);
                                         setCreateOpen(true);
